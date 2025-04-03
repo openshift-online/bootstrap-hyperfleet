@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  generateName: deprovision-rosa-hcp-cluster-
+spec:
+  taskRef:
+    kind: Task
+    name: deprovision-rosa-hcp
+  params:
+  - name: aws-secret
+    value: <SECRET_CONTAINING_AWS_KEYS>
+  - name: rosa-token-secret
+    value: <SECRET_CONTAINING_ROSA_TOKEN>
+  - name: cluster-name
+    value: <CLUSTER_NAME>
+  - name: region
+    value: us-east-1
