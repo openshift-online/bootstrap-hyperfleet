@@ -2,14 +2,14 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: hcm-ai-advanced-cluster-management
-  namespace: maas-config
+  namespace: openshift-gitops
 spec:
   destination:
     name: in-cluster
   project: default
   source:
     path: operators/advanced-cluster-management/aggregate/overlays/release-2.13
-    repoURL: 'https://github.com/app-sre/hcm-ai-playground'
+    repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:
     automated:

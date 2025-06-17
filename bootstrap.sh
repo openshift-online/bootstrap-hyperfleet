@@ -15,7 +15,11 @@ oc apply -k ./prereqs
 
 # Wait for the Application CR to become available
 echo "Waiting for the Application CR to become available"
-oc wait --for=condition=Established CustomResourceDefinition/applications.argoproj.io -n openshift-gitops
+while [[ ! $(oc get CustomResourceDefinition/applications.argoproj.io) && i < 10 ]]; do
+  echo "Waiting for Application CR to become available..."
+  sleep 5
+  i=$((i + 1))
+done
 
 # Apply the GitOps Applications to complete bootstrap
 echo "Applying the GitOps Applications to complete bootstrap"
