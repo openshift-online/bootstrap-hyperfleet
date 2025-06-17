@@ -1,0 +1,4 @@
+kind: Kustomization
+
+resources:
+- ./advanced-cluster-management.application.yaml
