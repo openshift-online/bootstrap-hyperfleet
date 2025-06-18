@@ -2,4 +2,4 @@ kind: Kustomization
 
 resources:
 - ./openshift-gitops.subscription.yaml
-- openshift-gitops.clusterrolebinding.yaml
+- ./openshift-gitops.clusterrolebinding.yaml
