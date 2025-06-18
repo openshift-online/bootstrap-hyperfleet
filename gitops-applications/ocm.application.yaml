@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: 'https://github.com/markturansky/managed-openshift-in-a-box-gitops'
     path: applications/ocm
-    targetRevision: main
+    targetRevision: add_cs_app
   syncPolicy:
     automated:
       selfHeal: true
