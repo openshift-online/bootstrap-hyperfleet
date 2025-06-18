@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: hcm-ai-advanced-cluster-management
+  name: advanced-cluster-management
   namespace: openshift-gitops
 spec:
   destination:
