@@ -3,3 +3,6 @@ kind: Kustomization
 resources:
 - ./advanced-cluster-management.application.yaml
 - ./ocm.application.yaml
+- ./cluster-01.ocm.application.yaml
+- ./cluster-02.ocm.application.yaml
+- ./cluster-03.ocm.application.yaml
