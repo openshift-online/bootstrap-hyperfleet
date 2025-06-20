@@ -1,0 +1,83 @@
+apiVersion: hive.openshift.io/v1
+kind: ClusterDeployment
+metadata:
+  name: 'cluster-01'
+  namespace: 'cluster-01'
+  labels:
+    cloud: 'AWS'
+    region: 'us-east-1'
+    vendor: OpenShift
+spec:
+  baseDomain: mturansk3.rosa.mturansk-test.csu2.i3.devshift.org
+  clusterName: 'cluster-01'
+  controlPlaneConfig:
+    servingCertificates: {}
+  installAttemptsLimit: 1
+  installed: false
+  platform:
+    aws:
+      credentialsSecretRef:
+        name: aws-creds
+      region: us-east-1
+  provisioning:
+    installConfigSecretRef:
+      name: cluster-01-install-config
+    sshPrivateKeySecretRef:
+      name: cluster-01-ssh-private-key
+    imageSetRef:
+      #quay.io/openshift-release-dev/ocp-release:4.18.17-multi
+      name: img4.18.17-multi-appsub
+  pullSecretRef:
+    name: cluster-01-pull-secret
+---
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  labels:
+    cloud: Amazon
+    region: us-east-1
+    name: 'cluster-01'
+    vendor: OpenShift
+  name: 'cluster-01'
+spec:
+  hubAcceptsClient: true
+---
+apiVersion: hive.openshift.io/v1
+kind: MachinePool
+metadata:
+  name: cluster-01-worker
+  namespace: 'cluster-01'
+spec:
+  clusterDeploymentRef:
+    name: 'cluster-01'
+  name: worker
+  platform:
+    aws:
+      rootVolume:
+        iops: 2000
+        size: 100
+        type: io1
+      type: t3a.xlarge  # 4 vCPU, 16 GiB RAM - General Purpose
+      zones:
+        - us-east-1c
+  replicas: 1
+---
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: 'cluster-01'
+  namespace: 'cluster-01'
+spec:
+  clusterName: 'cluster-01'
+  clusterNamespace: 'cluster-01'
+  clusterLabels:
+    cloud: Amazon
+    vendor: OpenShift
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true
