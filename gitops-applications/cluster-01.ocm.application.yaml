@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: 'https://github.com/markturansky/managed-openshift-in-a-box-gitops'
     path: applications/ocm/deployments/overlays/int
-    targetRevision: cluster-01
+    targetRevision: main
   syncPolicy:
     automated:
       selfHeal: true
