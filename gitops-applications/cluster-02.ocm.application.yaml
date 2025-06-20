@@ -7,8 +7,8 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/markturansky/managed-openshift-in-a-box-gitops'
-    path: applications/ocm
-    targetRevision: add_cs_app
+    path: applications/ocm/deployments/overlays/stage
+    targetRevision: cluster-02
   syncPolicy:
     automated:
       selfHeal: true
@@ -17,3 +17,4 @@ spec:
   # TODO: make this across clusters once cluster-01 provisioning is debugged
   destination:
     name: in-cluster
+    namespace: cluster-02

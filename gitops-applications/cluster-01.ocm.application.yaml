@@ -1,14 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ocm-in-a-box
+  name: cluster-01-ocm
   namespace: openshift-gitops
 spec:
   project: default
   source:
     repoURL: 'https://github.com/markturansky/managed-openshift-in-a-box-gitops'
-    path: applications/ocm
-    targetRevision: add_cs_app
+    path: applications/ocm/deployments/overlays/int
+    targetRevision: cluster-01
   syncPolicy:
     automated:
       selfHeal: true
@@ -17,3 +17,4 @@ spec:
   # TODO: make this across clusters once cluster-01 provisioning is debugged
   destination:
     name: in-cluster
+    namespace: cluster-01
