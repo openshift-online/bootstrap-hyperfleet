@@ -5,6 +5,30 @@ This repository contains the scripting, configuration, GitOps content, and docum
 
 # Install
 
-1. Assume an OpenShift cluster as base
-   2. Example: use the OpenShift Installer w/ AWS credentials for bootstrap cluster
-3. 
+Basic manual install
+
+```mermaid
+sequenceDiagram
+   actor Admin
+   actor Installer
+   actor OCP
+   actor Argo
+   actor Git
+   actor Tketon
+   
+   Admin->>Installer: Provision/Get Cluster
+   Installer->>Admin: obtain KubeConfig
+   
+   Admin->>OCP: run ./bootstrap.sh
+   OCP->>Admin: RHCP (ACM, Argo, config) is installed
+      
+   Argo->>Git: Get desired state
+   Git->>Argo: Regional OCM YAML
+   
+   Argo->>OCP: Argo applies YAML
+   OCP->>Argo: Deployment status
+   
+   Admin->>OCP: oc get pods 
+   OCP->>Admin: Regional OCM is green 
+    
+```
