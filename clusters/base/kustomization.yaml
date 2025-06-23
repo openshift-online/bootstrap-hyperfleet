@@ -11,6 +11,6 @@ generatorOptions:
   disableNameSuffixHash: true
 
 secretGenerator:
-  - name: cluster-01-install-config
+  - name: install-config
     files:
       - install-config.yaml
