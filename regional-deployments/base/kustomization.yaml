@@ -24,7 +24,7 @@ secretGenerator:
       - db.password="foobar"
       - db.user="cs-db"
       - db.port="5432"
-  - name: cs-db
+  - name: osl-db
     literals:
       - db.host="osl-db"
       - db.name="osl-db"
