@@ -3,3 +3,9 @@ kind: Kustomization
 
 resources:
   - ../clusters/overlay/region-01
+
+  # these are 3 separate namespaces until working provisioned clusters
+  # then we can split into the cluster+deployment aggregates
+  - ../regional-deployments/overlays/region-01
+  - ../regional-deployments/overlays/region-02
+  - ../regional-deployments/overlays/region-03

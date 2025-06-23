@@ -1,0 +1,105 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    template.openshift.io/expose-uri: postgres://{.spec.clusterIP}:{.spec.ports[?(.name==\postgresql\)].port}
+  name: ams-db
+spec:
+  ports:
+    - name: postgresql
+      nodePort: 0
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+  selector:
+    name: ams-db
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ams-db
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    template.alpha.openshift.io/wait-for-ready: true
+  name: ams-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ams-db
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        name: ams-db
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  key: db.user
+                  name: ams-db
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: db.password
+                  name: ams-db
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  key: db.name
+                  name: ams-db
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: db.port
+                  name: ams-db
+            - name: PGDATA
+              value: /var/lib/pgsql/data/pgdata
+          image: docker.io/library/postgres:16.2
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 120
+            timeoutSeconds: 10
+          name: postgresql
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec /usr/bin/pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h localhost -p $POSTGRES_PORT
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+            - mountPath: /var/lib/pgsql/data
+              name: ams-db-data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+        - name: ams-db-data
+          #emptyDir: {}
+          persistentVolumeClaim:
+            claimName: ams-db
+
