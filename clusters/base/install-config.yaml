@@ -1,7 +1,7 @@
 apiVersion: v1
 metadata:
   name: 'cluster-01'
-baseDomain: mturansk3.rosa.mturansk-test.csu2.i3.devshift.org
+baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
 controlPlane:
   architecture: amd64
   hyperthreading: Enabled
