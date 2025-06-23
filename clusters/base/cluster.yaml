@@ -5,7 +5,7 @@ metadata:
   namespace: cluster-01
   name: cluster-01
 spec:
-  baseDomain: mturansk3.rosa.mturansk-test.csu2.i3.devshift.org
+  baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
   clusterName: cluster-01
   controlPlaneConfig:
     servingCertificates: {}
