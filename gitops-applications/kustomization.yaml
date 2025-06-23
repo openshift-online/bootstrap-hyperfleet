@@ -4,4 +4,5 @@ resources:
 - ./advanced-cluster-management.application.yaml
 - ./openshift-pipelines-operator.application.yaml
 - ./regional-clusters.application.yaml
+- ./regional-deployments.application.yaml
 
