@@ -2,7 +2,7 @@
 apiVersion: hive.openshift.io/v1
 kind: ClusterDeployment
 metadata:
-  namespace: cluster-01
+  namespace: regional-clusters
   name: cluster-01
 spec:
   baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
@@ -38,7 +38,7 @@ apiVersion: hive.openshift.io/v1
 kind: MachinePool
 metadata:
   name: cluster-01-worker
-  namespace: 'cluster-01'
+  namespace: cluster-01
 spec:
   clusterDeploymentRef:
     name: 'cluster-01'
