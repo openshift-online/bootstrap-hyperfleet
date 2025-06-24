@@ -16,6 +16,12 @@ patches:
       - op: replace
         path: /spec/clusterName
         value: cluster-01
+      - op: replace
+        path: /spec/platform/aws/credentialsSecretRef/name
+        value: aws-creds
+      - op: replace
+        path: /spec/platform/aws/credentialsSecretRef/namespace
+        value: hive
   - target:
       kind: ManagedCluster
       version: v1
