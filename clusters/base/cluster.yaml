@@ -25,12 +25,12 @@ spec:
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
+  name: cluster-01
   labels:
-    cloud: Amazon
-    region: us-east-1
-    name: 'cluster-01'
-    vendor: OpenShift
-  name: 'cluster-01'
+    cloud: auto-detect
+    cluster.open-cluster-management.io/clusterset: default
+    name: cluster-01
+    vendor: auto-detect
 spec:
   hubAcceptsClient: true
 ---
@@ -57,19 +57,20 @@ spec:
 apiVersion: agent.open-cluster-management.io/v1
 kind: KlusterletAddonConfig
 metadata:
-  name: 'cluster-01'
-  namespace: 'cluster-01'
+  name: cluster-01
+  namespace: cluster-01
 spec:
-  clusterName: 'cluster-01'
-  clusterNamespace: 'cluster-01'
-  clusterLabels:
-    cloud: Amazon
-    vendor: OpenShift
   applicationManager:
     enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: auto-detect
+    name: cluster-01
+    vendor: auto-detect
+  clusterName: cluster-01
+  clusterNamespace: cluster-01
   policyController:
     enabled: true
   searchCollector:
-    enabled: true
-  certPolicyController:
     enabled: true
