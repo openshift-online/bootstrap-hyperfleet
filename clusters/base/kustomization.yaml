@@ -10,5 +10,6 @@ generatorOptions:
 
 secretGenerator:
   - name: install-config
+    namespace: regional-clusters
     files:
       - install-config.yaml
