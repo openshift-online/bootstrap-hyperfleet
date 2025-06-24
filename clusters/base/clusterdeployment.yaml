@@ -1,0 +1,23 @@
+---
+apiVersion: hive.openshift.io/v1
+kind: ClusterDeployment
+metadata:
+  namespace: hive-managed-clusters
+  name: cluster-01
+spec:
+  baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
+  clusterName: cluster-01
+  controlPlaneConfig:
+    servingCertificates: {}
+  platform:
+    aws:
+      credentialsSecretRef:
+        name: aws-creds
+      region: us-east-1
+  provisioning:
+    imageSetRef:
+      name: img4.19.0-multi-appsub
+    installConfigSecretRef:
+      name: install-config
+  pullSecretRef:
+    name: pull-secret

@@ -1,0 +1,19 @@
+apiVersion: hive.openshift.io/v1
+kind: MachinePool
+metadata:
+  name: cluster-01-worker
+  namespace: cluster-01
+spec:
+  clusterDeploymentRef:
+    name: 'cluster-01'
+  name: worker
+  platform:
+    aws:
+      rootVolume:
+        iops: 2000
+        size: 100
+        type: io1
+      type: t3a.xlarge  # 4 vCPU, 16 GiB RAM - General Purpose
+      zones:
+        - us-east-1c
+  replicas: 1
