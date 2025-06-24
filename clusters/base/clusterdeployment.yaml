@@ -13,7 +13,6 @@ spec:
     aws:
       credentialsSecretRef:
         name: aws-creds
-        namespace: hive
       region: us-east-1
   provisioning:
     imageSetRef:
