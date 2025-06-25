@@ -5,6 +5,6 @@ namespace: openshift-gitops
 
 resources:
   - subscription.yaml
-  - config.yaml
+#  - config.yaml
   - openshift-gitops.configmap.yaml
   - namespace.yaml
