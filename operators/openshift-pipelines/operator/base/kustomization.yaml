@@ -7,3 +7,4 @@ resources:
   - subscription.yaml
   - config.yaml
   - openshift-gitops.configmap.yaml
+  - namespace.yaml
