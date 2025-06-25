@@ -5,4 +5,3 @@ namespace: ocm-region-02
 
 resources:
   - ../../base
-  - namespace.yaml
