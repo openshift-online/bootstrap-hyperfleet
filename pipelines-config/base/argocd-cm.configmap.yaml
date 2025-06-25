@@ -20,7 +20,7 @@ data:
         groups: []
         insecureCA: true
         issuer: https://kubernetes.default.svc
-        redirectURI: https://openshift-gitops-server-openshift-gitops.apps.mt-test.rosa.mturansk-test.csu2.i3.devshift.org/api/dex/callback
+        redirectURI: https://openshift-gitops-server-openshift-gitops.apps.mturansk3.rosa.mturansk-test.csu2.i3.devshift.org/api/dex/callback
       id: openshift
       name: OpenShift
       type: openshift
@@ -35,5 +35,5 @@ data:
   resource.exclusions: ""
   resource.inclusions: ""
   statusbadge.enabled: "false"
-  url: https://openshift-gitops-server-openshift-gitops.apps.mt-test.rosa.mturansk-test.csu2.i3.devshift.org
+  url: "https://openshift-gitops-server-openshift-gitops.apps.mturansk3.rosa.mturansk-test.csu2.i3.devshift.org"
   users.anonymous.enabled: "false"
