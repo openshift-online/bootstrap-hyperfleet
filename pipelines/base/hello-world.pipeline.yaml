@@ -7,12 +7,8 @@ spec:
     A simple pipeline that prints a hello world message and
     shows the details of the git revision that triggered it.
   params:
-    - name: repo-url
+    - name: message
       type: string
-      description: The git repository URL.
-    - name: revision
-      type: string
-      description: The git revision that triggered the run.
   tasks:
     - name: hello-world-task
       taskSpec:
