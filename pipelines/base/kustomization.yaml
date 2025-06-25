@@ -7,4 +7,4 @@ commonAnnotations:
 resources:
   - hello-world.pipeline.yaml
   - hello-world.pipelinerun.yaml
-  - openshift-gitops.configmap.yaml
+

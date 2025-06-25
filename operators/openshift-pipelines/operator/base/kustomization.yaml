@@ -6,3 +6,4 @@ namespace: openshift-operators
 resources:
   - subscription.yaml
   - config.yaml
+  - openshift-gitops.configmap.yaml
