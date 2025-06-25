@@ -32,13 +32,7 @@ data:
   oidc.config: ""
   repositories: ""
   repository.credentials: ""
-  resource.exclusions: |
-    - apiGroups:	
-      - tekton.dev	
-      clusters:	
-      - '*'	
-      kinds:	
-      - TaskRun	
+  resource.exclusions: ""
   resource.inclusions: ""
   statusbadge.enabled: "false"
   url: "https://openshift-gitops-server-openshift-gitops.apps.mturansk3.rosa.mturansk-test.csu2.i3.devshift.org"
