@@ -6,3 +6,4 @@ resources:
 - ./regional-clusters.application.yaml
 - ./regional-deployments.application.yaml
 - ./regional-pipelines.application.yaml
+- ./regional-pipelines-config.application.yaml
