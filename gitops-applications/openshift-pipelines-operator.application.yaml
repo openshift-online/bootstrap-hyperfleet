@@ -11,6 +11,7 @@ spec:
     path: operators/openshift-pipelines/operator/overlays/pipelines-1.18
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
+
   syncPolicy:
     automated:
       selfHeal: true
