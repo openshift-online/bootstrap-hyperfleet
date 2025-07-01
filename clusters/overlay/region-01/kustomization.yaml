@@ -1,6 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+resources:
+    - namespace.yaml
+    - ../../base
+
+secretGenerator:
+    - name: install-config
+      namespace: cluster-01
+      files:
+          - install-config.yaml
 patches:
   - target:
       kind: ClusterDeployment
@@ -8,8 +17,8 @@ patches:
       group: hive.openshift.io
     patch: |
       - op: replace
-        path: /metadata/name
-        value: hive-managed-clusters
+        path: /metadata/namespace
+        value: cluster-01
       - op: replace
         path: /metadata/name
         value: cluster-01
@@ -63,10 +72,8 @@ patches:
         value: cluster-01
       - op: replace
         path: /spec/clusterNamespace
-        value: hive-managed-clusters
+        value: cluster-01
       - op: replace
         path: /metadata/name
         value: cluster-01
 
-resources:
-  - ../../base
