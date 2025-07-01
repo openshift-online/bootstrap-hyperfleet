@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: openshift-gitops
+spec:
+  destination:
+    name: in-cluster
+    project: default
+  source:
+    path: ''
+    repoURL: https://helm.releases.hashicorp.com
+    targetRevision: 0.30.0
+    chart: vault
+  sources: []
+  project: default
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
