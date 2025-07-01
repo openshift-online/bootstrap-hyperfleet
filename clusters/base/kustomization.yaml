@@ -8,6 +8,5 @@ resources:
   - clusterdeployment.yaml
   - managedcluster.yaml
   - machinepool.yaml
-  - klusterletaddonconfig.yaml
 
 
