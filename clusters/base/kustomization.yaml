@@ -5,14 +5,9 @@ generatorOptions:
   disableNameSuffixHash: true
 
 resources:
-  - namespace.yaml
   - clusterdeployment.yaml
   - managedcluster.yaml
   - machinepool.yaml
   - klusterletaddonconfig.yaml
 
-secretGenerator:
-  - name: install-config
-    namespace: hive-managed-clusters
-    files:
-      - install-config.yaml
+
