@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eso
+  namespace: openshift-gitops
+spec:
+  destination:
+    name: in-cluster
+    namespace: external-secrets
+  source:
+    path: ''
+    repoURL: https://charts.external-secrets.io
+    targetRevision: 0.18.1
+    chart: external-secrets
+  sources: []
+  project: default
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
