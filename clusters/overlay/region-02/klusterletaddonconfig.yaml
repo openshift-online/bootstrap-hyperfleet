@@ -1,0 +1,20 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: cluster-02
+  namespace: cluster-02
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: auto-detect
+    name: cluster-02
+    vendor: auto-detect
+  clusterName: cluster-02
+  clusterNamespace: cluster-02
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
