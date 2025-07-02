@@ -6,6 +6,10 @@ resources:
   - klusterletaddonconfig.yaml
   - ../../base
 
+# This will disable name hashing for all generators in this file
+generatorOptions:
+  disableNameSuffixHash: true
+
 secretGenerator:
   - name: install-config
     namespace: cluster-05

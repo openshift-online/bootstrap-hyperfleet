@@ -9,8 +9,8 @@ spec:
   certPolicyController:
     enabled: true
   clusterLabels:
-    cloud: auto-detect
-    vendor: auto-detect
+    cloud: Amazon
+    vendor: OpenShift
   clusterName: cluster-05
   clusterNamespace: cluster-05
   policyController:

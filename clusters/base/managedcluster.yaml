@@ -3,9 +3,9 @@ kind: ManagedCluster
 metadata:
   name: cluster-01
   labels:
-    cloud: auto-detect
-    cluster.open-cluster-management.io/clusterset: default
     name: cluster-01
-    vendor: auto-detect
+    cloud: Amazon
+    vendor: OpenShift
+    cluster.open-cluster-management.io/clusterset: default
 spec:
   hubAcceptsClient: true

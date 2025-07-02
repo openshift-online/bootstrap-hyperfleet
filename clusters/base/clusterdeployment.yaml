@@ -13,7 +13,6 @@ spec:
     aws:
       credentialsSecretRef:
         name: aws-creds
-        namespace: hive-managed-clusters
       region: us-east-1
   provisioning:
     imageSetRef:
@@ -22,4 +21,3 @@ spec:
       name: install-config
   pullSecretRef:
     name: pull-secret
-    namespace: hive-managed-clusters
