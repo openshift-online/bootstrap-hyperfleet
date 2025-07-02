@@ -32,3 +32,15 @@ sequenceDiagram
    OCP->>Admin: Regional OCM is green 
     
 ```
+
+# Secrets
+
+Until there is Vault and secrets we can rely on, we must create and apply 2 secrets for each cluster created.
+
+From ACM, retrieve the `aws-creds` and `pull-secret`, store them locally, and apply them to your cluster/namespace when needed.
+
+```
+oc get secret aws-creds -n hive-managed-clusters -o yaml > aws-creds.yaml
+oc get secret pull-secret -n hive-managed-clusters -o yaml > pull-secret.yaml
+```
+

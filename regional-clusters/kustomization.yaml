@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - ../clusters/overlay/region-01
   - ../clusters/overlay/region-02
+  - ../clusters/overlay/region-05

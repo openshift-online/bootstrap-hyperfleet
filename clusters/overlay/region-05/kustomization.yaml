@@ -1,0 +1,81 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - klusterletaddonconfig.yaml
+  - ../../base
+
+secretGenerator:
+  - name: install-config
+    namespace: cluster-05
+    files:
+      - install-config.yaml
+
+patches:
+    - target:
+          kind: ClusterDeployment
+          version: v1
+          group: hive.openshift.io
+      patch: |
+        - op: replace
+          path: /metadata/namespace
+          value: cluster-05
+        - op: replace
+          path: /metadata/name
+          value: cluster-05
+        - op: replace
+          path: /spec/clusterName
+          value: cluster-05
+        - op: replace
+          path: /spec/platform/aws/credentialsSecretRef/name
+          value: aws-creds
+    - target:
+          kind: ManagedCluster
+          version: v1
+          group: cluster.open-cluster-management.io
+      patch: |
+        - op: replace
+          path: /metadata/namespace
+          value: cluster-05
+        - op: replace
+          path: /metadata/name
+          value: cluster-05
+        - op: replace
+          path: /metadata/labels/name
+          value: cluster-05
+    - target:
+          kind: MachinePool
+          version: v1
+          group: hive.openshift.io
+      patch: |
+        - op: replace
+          path: /metadata/namespace
+          value: cluster-05
+        - op: replace
+          path: /spec/clusterDeploymentRef/name
+          value: cluster-05
+        - op: replace
+          path: /metadata/name
+          value: cluster-05-worker
+    - target:
+          kind: KlusterletAddonConfig
+          version: hive.openshift.io/v1
+          group: agent.open-cluster-management.io
+      patch: |
+        - op: replace
+          path: /metadata/namespace
+          value: cluster-05
+        - op: replace
+          path: /metadata/name
+          value: cluster-05
+        - op: replace
+          path: /spec/clusterLabels/name
+          value: cluster-05
+        - op: replace
+          path: /spec/clusterNamespace
+          value: cluster-05
+        - op: replace
+          path: /metadata/name
+          value: cluster-05
+
