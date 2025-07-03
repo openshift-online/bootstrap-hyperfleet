@@ -1,8 +1,8 @@
 apiVersion: agent.open-cluster-management.io/v1
 kind: KlusterletAddonConfig
 metadata:
-  name: cluster-02
-  namespace: cluster-02
+  name: cluster-20
+  namespace: cluster-20
 spec:
   applicationManager:
     enabled: true
@@ -10,10 +10,10 @@ spec:
     enabled: true
   clusterLabels:
     cloud: Amazon
-    name: cluster-02
+    name: cluster-20
     vendor: OpenShift
-  clusterName: cluster-02
-  clusterNamespace: cluster-02
+  clusterName: cluster-20
+  clusterNamespace: cluster-20
   policyController:
     enabled: true
   searchCollector:

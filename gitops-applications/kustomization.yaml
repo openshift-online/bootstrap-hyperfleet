@@ -1,6 +1,9 @@
 kind: Kustomization
 
+namespace: openshift-gitops
+
 resources:
+- ./namespace.yaml
 - ./advanced-cluster-management.application.yaml
 - ./openshift-pipelines-operator.application.yaml
 - ./vault.application.yaml
