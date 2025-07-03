@@ -31,3 +31,5 @@ echo "Waiting for regional clusters to provision"
 ./wait.kube.sh cd cluster-10 cluster-10 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
 
 ./wait.kube.sh cd cluster-20 cluster-20 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
+
+./wait.kube.sh cd cluster-30 cluster-30 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"

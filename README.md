@@ -49,6 +49,8 @@ To add `cluster-30`, do the following:
 6. Run ./bootstrap.sh to wait for cluster-30 to be provisioned or watch the ACM console 
 ```
 
+See https://github.com/openshift-online/bootstrap/pull/48
+
 Argo applies the new cluster as part of the [regional clusters](./gitops-applications/regional-clusters.application.yaml) gitops application.
 
 
