@@ -25,5 +25,9 @@ echo "Waiting for openshift-gitops (aka Argo) to complete"
 echo "Waiting for ACM to complete"
 ./wait.kube.sh mch multiclusterhub open-cluster-management '{.status.conditions[?(@.type=="Complete")].message}' "All hub components ready."
 
-echo "Control plane is ready."
-oc get route console -n openshift-console
+echo "Control plane is ready: $(oc whoami --show-console)"
+
+echo "Waiting for regional clusters to provision"
+./wait.kube.sh cd cluster-10 cluster-10 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
+
+./wait.kube.sh cd cluster-20 cluster-20 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
