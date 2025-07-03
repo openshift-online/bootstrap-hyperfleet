@@ -5,11 +5,12 @@ metadata:
   namespace: openshift-gitops
 spec:
   destination:
-    name: in-cluster
+    name: cluster-01
+    server: https://api.cluster-30.rosa.mturansk-test.csu2.i3.devshift.org:6443
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: regional-deployments
+    path: regional-deployments/overlays/region-03
     targetRevision: main
   syncPolicy:
     automated:
