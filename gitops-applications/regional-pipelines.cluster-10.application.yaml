@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: regional-pipelines
+  name: regional-pipelines-cluster-10
   namespace: openshift-gitops
 spec:
   destination:
