@@ -12,7 +12,7 @@ generatorOptions:
 
 secretGenerator:
     - name: install-config
-      namespace: cluster-01
+      namespace: cluster-10
       files:
           - install-config.yaml
 patches:
@@ -23,13 +23,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/name
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /spec/clusterName
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /spec/platform/aws/credentialsSecretRef/name
         value: aws-creds
@@ -40,13 +40,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/name
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/labels/name
-        value: cluster-01
+        value: cluster-10
   - target:
       kind: MachinePool
       version: v1
@@ -54,13 +54,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /spec/clusterDeploymentRef/name
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/name
-        value: cluster-01-worker
+        value: cluster-10-worker
   - target:
       kind: KlusterletAddonConfig
       version: hive.openshift.io/v1
@@ -68,17 +68,17 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/name
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /spec/clusterLabels/name
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /spec/clusterNamespace
-        value: cluster-01
+        value: cluster-10
       - op: replace
         path: /metadata/name
-        value: cluster-01
+        value: cluster-10
 
