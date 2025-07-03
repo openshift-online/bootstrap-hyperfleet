@@ -4,7 +4,7 @@ metadata:
   name: regional-deployments-cluster-10
   namespace: openshift-gitops
 spec:
-  destination:10
+  destination:
     server: https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443
   project: default
   source:
