@@ -15,6 +15,9 @@ oc apply -k ./prereqs
 
 ./status.sh applications.argoproj.io
 
+echo "Fake Vault here -- create some necessary secrets"
+./bootstrap.vault.sh
+
 # Apply the GitOps Applications to complete bootstrap
 echo "Applying the GitOps Applications to complete bootstrap"
 oc apply -k ./gitops-applications
