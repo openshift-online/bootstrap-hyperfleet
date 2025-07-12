@@ -1,4 +1,4 @@
-package clusters
+package api
 
 import (
 	hivev1 "github.com/openshift/hive/apis/hive/v1"

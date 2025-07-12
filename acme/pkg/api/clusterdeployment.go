@@ -1,4 +1,4 @@
-package clusters
+package api
 
 import (
 	hivev1 "github.com/openshift/hive/apis/hive/v1"
@@ -6,22 +6,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-type ClusterDeploymentConfig struct {
-	Name            string
-	BaseDomain      string
-	AWSCreds        string
-	Region          string
-	ClusterImageSet string
-	InstallConfig   string
-	PullSecret      string
-
-	MasterReplicas     int64
-	MasterInstanceType string
-
-	WorkerReplicas     int64
-	WorkerInstanceType string
-}
 
 func NewClusterDeployment(config *ClusterDeploymentConfig) hivev1.ClusterDeployment {
 	return hivev1.ClusterDeployment{

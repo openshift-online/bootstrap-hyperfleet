@@ -1,12 +1,12 @@
 package clusters
 
 import (
-	clusterTypes "github.com/openshift-online/bootstrap/acme/pkg/clusters"
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
 )
 
-func GetRegions() []*clusterTypes.ClusterDeploymentConfig {
+func GetRegions() []*api.ClusterDeploymentConfig {
 
-	return []*clusterTypes.ClusterDeploymentConfig{
+	return []*api.ClusterDeploymentConfig{
 		{
 			Name:            "cluster-01",
 			BaseDomain:      "rosa.mturansk-test.csu2.i3.devshift.org",

@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/openshift-online/bootstrap/acme/cmd/clusters"
-	clusterTypes "github.com/openshift-online/bootstrap/acme/pkg/clusters"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,13 +14,13 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+
+	"github.com/openshift-online/bootstrap/acme/cmd/clusters"
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
 )
 
 var (
-	kubeconfig   string
-	argocdServer string
-	argocdToken  string
-	namespace    string
+	kubeconfig string
 )
 
 func main() {
@@ -33,17 +31,6 @@ func main() {
 	}
 
 	rootCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
-	rootCmd.PersistentFlags().StringVar(&argocdServer, "argocd-server", "localhost:8080", "ArgoCD server address")
-	rootCmd.PersistentFlags().StringVar(&argocdToken, "argocd-token", "", "ArgoCD authentication token")
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Kubernetes namespace")
-
-	// Add subcommands
-	//rootCmd.AddCommand(createAppCmd())
-	//rootCmd.AddCommand(listAppsCmd())
-	//rootCmd.AddCommand(syncAppCmd())
-	//rootCmd.AddCommand(statusCmd())
-	//rootCmd.AddCommand(deleteAppCmd())
-
 	rootCmd.AddCommand(NewClustersCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -67,10 +54,10 @@ func runClusters(cmd *cobra.Command, args []string) {
 
 	for _, spec := range desiredClusters {
 
-		cd := clusterTypes.NewClusterDeployment(spec)
-		ic := clusterTypes.NewInstallConfig(spec)
-		mp := clusterTypes.NewMachinePool(spec)
-		mc := clusterTypes.NewManagedCluster(spec)
+		cd := api.NewClusterDeployment(spec)
+		ic := api.NewInstallConfig(spec)
+		mp := api.NewMachinePool(spec)
+		mc := api.NewManagedCluster(spec)
 
 		//d := "/home/mturansk/projects/src/github.com/openshift-online/bootstrap/clusters/overlay/cluster-04/clusterdeployment.json"
 
