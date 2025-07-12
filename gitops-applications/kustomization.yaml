@@ -8,7 +8,7 @@ resources:
 - ./openshift-pipelines-operator.application.yaml
 - ./vault.application.yaml
 - ./eso.application.yaml
-- ./regional-clusters.application.yaml
+- ./regional-clusters.cluster-10.application.yaml
 - ./regional-deployments.cluster-10.application.yaml
-- ./regional-pipelines.cluster-10.application.yaml
+#- ./regional-pipelines.cluster-10.application.yaml
 
