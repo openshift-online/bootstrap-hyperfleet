@@ -2,12 +2,12 @@
   "kind": "ClusterDeployment",
   "apiVersion": "hive.openshift.io/v1",
   "metadata": {
-    "name": "cluster-01",
-    "namespace": "cluster-01",
+    "name": "cluster-10",
+    "namespace": "cluster-10",
     "creationTimestamp": null
   },
   "spec": {
-    "clusterName": "cluster-01",
+    "clusterName": "cluster-10",
     "baseDomain": "rosa.mturansk-test.csu2.i3.devshift.org",
     "platform": {
       "aws": {

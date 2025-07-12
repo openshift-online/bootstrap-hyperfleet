@@ -2,13 +2,13 @@
   "kind": "MachinePool",
   "apiVersion": "hive.openshift.io/v1",
   "metadata": {
-    "name": "cluster-01-worker",
-    "namespace": "cluster-01",
+    "name": "cluster-10-worker",
+    "namespace": "cluster-10",
     "creationTimestamp": null
   },
   "spec": {
     "clusterDeploymentRef": {
-      "name": "cluster-01"
+      "name": "cluster-10"
     },
     "name": "worker",
     "replicas": 1,

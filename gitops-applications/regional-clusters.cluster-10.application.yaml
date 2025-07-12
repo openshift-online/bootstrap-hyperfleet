@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regional-clusters
+  namespace: openshift-gitops
+spec:
+  destination:
+    name: in-cluster
+  project: default
+  source:
+    path: clusters/overlay/cluster-10
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false

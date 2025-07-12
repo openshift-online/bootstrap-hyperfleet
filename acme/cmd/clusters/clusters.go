@@ -8,8 +8,8 @@ func GetRegions() []*api.ClusterDeploymentConfig {
 
 	return []*api.ClusterDeploymentConfig{
 		{
-			Name:            "cluster-01",
-			Namespace:       "cluster-01",
+			Name:            "cluster-10",
+			Namespace:       "cluster-10",
 			BaseDomain:      "rosa.mturansk-test.csu2.i3.devshift.org",
 			AWSCreds:        "aws-creds",
 			Region:          "us-east-1",
