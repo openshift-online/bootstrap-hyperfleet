@@ -1,11 +1,15 @@
-package api
+package acme
 
 import (
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewInstallConfig(config *ClusterDeploymentConfig) *InstallConfig {
-	return &InstallConfig{
+func NewInstallConfig(config *api.ClusterDeploymentConfig) *corev1.Secret {
+
+	ic := InstallConfig{
 		APIVersion: "v1",
 		BaseDomain: config.BaseDomain,
 		Metadata: metav1.ObjectMeta{
@@ -75,6 +79,18 @@ func NewInstallConfig(config *ClusterDeploymentConfig) *InstallConfig {
 		},
 		PullSecret: "", // This will be omitted in the final YAML
 	}
+
+	y, err := yaml.Marshal(ic)
+	if err != nil {
+		return nil
+	}
+
+	secret := api.NewSecret("install-config", config.Namespace)
+	secret.Data = map[string][]byte{
+		"install-config.yaml": []byte(y),
+	}
+
+	return secret
 }
 
 // InstallConfig is the top-level structure for the install-config.yaml file.

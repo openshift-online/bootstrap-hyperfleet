@@ -100,8 +100,23 @@ The ACME tool is a Go CLI application that:
 
 The ACME tool implements a structured data model in `acme/pkg/api/` that represents the relationships between cluster entities:
 
-**Core Entity:**
-- `CentralControlPlane` - Top-level entity representing the bootstrap control plane that orchestrates regional cluster management
+**Code Organization:**
+- `acme/pkg/api/external/` - Generated API structs and wrappers for upstream CRDs
+- `acme/pkg/api/acme/` - Custom ACME project-specific data models
+- `acme/pkg/api/` - Base package for shared types (ClusterDeploymentConfig)
+
+**Generated/External API Code:**
+- `managedcluster.go` - Complete `cluster.open-cluster-management.io/v1` API (generated in previous session)
+- `klusterletaddonconfig.go` - Complete `agent.open-cluster-management.io/v1` KlusterletAddonConfig API structs
+- `kustomization.go` - Complete `kustomize.config.k8s.io/v1beta1` API structs with full Kustomization CRD definitions
+- `clusterdeployment.go` - Constructor functions using official `hivev1.ClusterDeployment` types
+- `machinepool.go` - Constructor functions using official `hivev1.MachinePool` types
+
+**Custom ACME Project Models:**
+- `CentralControlPlane` - Top-level entity representing the bootstrap control plane
+- `RegionalCluster` - Regional cluster entity with 1:1 relationships to all components
+- `ClusterDeploymentConfig` - Configuration parameters for cluster deployment (in base api package)
+- `InstallConfig` - Custom project-specific OpenShift installation configuration struct
 
 **Entity Relationships:**
 - `CentralControlPlane` 1:Many `RegionalCluster` - One control plane manages multiple regional clusters
@@ -113,8 +128,13 @@ The ACME tool implements a structured data model in `acme/pkg/api/` that represe
 - `RegionalCluster` 1:1 `ManagedCluster` - ACM cluster management resource
 
 **Constructor Pattern:**
-- `NewRegionalCluster(config)` creates all related entities from a single ClusterDeploymentConfig
-- Individual constructors available for each entity type (NewClusterDeployment, NewInstallConfig, etc.)
+- `acme.NewRegionalCluster(config)` creates all related entities from a single ClusterDeploymentConfig
+- External constructors create official API objects:
+  - `external.NewClusterDeployment(config)` - Hive ClusterDeployment CRD
+  - `external.NewMachinePool(config)` - Hive MachinePool CRD
+  - `external.NewManagedCluster(config)` - ACM ManagedCluster CRD
+- ACME constructors create custom project entities:
+  - `acme.NewInstallConfig(config)` - Custom install config as Kubernetes Secret
 
 **Testing:**
 ```bash
@@ -129,3 +149,7 @@ cd acme && go run cmd/main.go clusters
 - Secrets management is handled through external processes (Vault integration planned)
 - The bootstrap process requires cluster-admin permissions
 - Regional clusters are provisioned automatically via ACM and Hive
+
+## Development Best Practices
+
+- Always `make build` to test after code changes

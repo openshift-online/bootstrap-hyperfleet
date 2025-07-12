@@ -2,6 +2,7 @@ package api
 
 type ClusterDeploymentConfig struct {
 	Name            string
+	Namespace       string
 	BaseDomain      string
 	AWSCreds        string
 	Region          string

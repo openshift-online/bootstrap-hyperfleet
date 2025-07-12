@@ -1,11 +1,16 @@
-package api
+// Code generated from cluster.open-cluster-management.io/v1 API specification.
+// This file contains the complete ManagedCluster CRD definitions for ACM.
+// Generated in a previous Claude Code session for multi-cluster management.
+
+package external
 
 import (
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func NewManagedCluster(config *ClusterDeploymentConfig) ManagedCluster {
+func NewManagedCluster(config *api.ClusterDeploymentConfig) ManagedCluster {
 	return ManagedCluster{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "cluster.open-cluster-management.io/v1",
