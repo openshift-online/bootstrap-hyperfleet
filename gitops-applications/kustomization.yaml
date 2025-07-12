@@ -10,9 +10,5 @@ resources:
 - ./eso.application.yaml
 - ./regional-clusters.application.yaml
 - ./regional-deployments.cluster-10.application.yaml
-- ./regional-deployments.cluster-20.application.yaml
-- ./regional-deployments.cluster-30.application.yaml
 - ./regional-pipelines.cluster-10.application.yaml
-- ./regional-pipelines.cluster-20.application.yaml
-- ./regional-pipelines.cluster-30.application.yaml
 

@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: regional-deployments/overlays/region-01
+    path: regional-deployments/overlays/cluster-01
     targetRevision: main
   syncPolicy:
     automated:
