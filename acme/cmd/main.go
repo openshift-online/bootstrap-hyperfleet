@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/openshift-online/bootstrap/acme/pkg/api/external"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"sigs.k8s.io/yaml"
 )
 
 var (
@@ -54,6 +56,9 @@ func runClusters(cmd *cobra.Command, args []string) {
 }
 
 func generateClusterFiles(clusterName string, rc acme.RegionalCluster) {
+
+	kustomization := external.NewKustomization(&rc.ClusterDeploymentConfig)
+
 	files := map[string]interface{}{
 		"namespace.json":             rc.Namespace,
 		"clusterdeployment.json":     rc.ClusterDeployment,
@@ -68,15 +73,30 @@ func generateClusterFiles(clusterName string, rc acme.RegionalCluster) {
 		if err := WriteFile(path, toJSON(obj)); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
 		}
+
+		kustomization.Resources = append(kustomization.Resources, filename)
 	}
+
+	if err := WriteFile("./clusters/overlay/"+clusterName+"/kustomization.yaml", toYAML(kustomization)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing kustomization.yaml: %v\n", err)
+	}
+
 }
 
 func toJSON(obj interface{}) string {
-	j, err := json.MarshalIndent(obj, "", "  ")
+	y, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return err.Error()
 	}
-	return string(j)
+	return string(y)
+}
+
+func toYAML(obj interface{}) string {
+	y, err := yaml.Marshal(obj)
+	if err != nil {
+		return err.Error()
+	}
+	return string(y)
 }
 
 func GetProjectRootDir() string {
