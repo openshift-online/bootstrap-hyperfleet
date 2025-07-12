@@ -27,4 +27,5 @@ type RegionalCluster struct {
 	MachinePool             hivev1.MachinePool
 	ManagedCluster          external.ManagedCluster
 	KlusterletAddonConfig   external.KlusterletAddonConfig
+	Kustomization           external.Kustomization
 }

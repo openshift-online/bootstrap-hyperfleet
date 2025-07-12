@@ -5,8 +5,26 @@
 package external
 
 import (
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func NewKustomization(config *api.ClusterDeploymentConfig) Kustomization {
+	return Kustomization{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kustomize.config.k8s.io/v1beta1",
+			Kind:       "Kustomization",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      config.Name,
+			Namespace: config.Namespace,
+		},
+		Resources: []string{},
+		CommonLabels: map[string]string{
+			"cluster": config.Name,
+		},
+	}
+}
 
 // Kustomization defines a kustomization configuration
 type Kustomization struct {
@@ -115,14 +133,14 @@ type Patch struct {
 
 // Selector specifies a set of resources
 type Selector struct {
-	Group                 string            `json:"group,omitempty"`
-	Version               string            `json:"version,omitempty"`
-	Kind                  string            `json:"kind,omitempty"`
-	Namespace             string            `json:"namespace,omitempty"`
-	Name                  string            `json:"name,omitempty"`
-	AnnotationSelector    string            `json:"annotationSelector,omitempty"`
-	LabelSelector         string            `json:"labelSelector,omitempty"`
-	FieldSelector         string            `json:"fieldSelector,omitempty"`
+	Group              string `json:"group,omitempty"`
+	Version            string `json:"version,omitempty"`
+	Kind               string `json:"kind,omitempty"`
+	Namespace          string `json:"namespace,omitempty"`
+	Name               string `json:"name,omitempty"`
+	AnnotationSelector string `json:"annotationSelector,omitempty"`
+	LabelSelector      string `json:"labelSelector,omitempty"`
+	FieldSelector      string `json:"fieldSelector,omitempty"`
 }
 
 // ConfigMapArgs contains the metadata of how to generate a configmap

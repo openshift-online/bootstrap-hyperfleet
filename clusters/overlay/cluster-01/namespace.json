@@ -1,0 +1,10 @@
+{
+  "kind": "Namespace",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "cluster-01",
+    "creationTimestamp": null
+  },
+  "spec": {},
+  "status": {}
+}

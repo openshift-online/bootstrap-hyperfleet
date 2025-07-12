@@ -16,6 +16,12 @@ func GetRegions() []*api.ClusterDeploymentConfig {
 			ClusterImageSet: "img4.19.0-multi-appsub",
 			InstallConfig:   "install-config",
 			PullSecret:      "pull-secret",
+
+			MasterReplicas:     1,
+			MasterInstanceType: "t3a.xlarge",
+
+			WorkerReplicas:     1,
+			WorkerInstanceType: "t3a.xlarge",
 		},
 		//{
 		//	Name:            "cluster-02",
