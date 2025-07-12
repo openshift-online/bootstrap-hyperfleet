@@ -1,29 +1,18 @@
-package clusters
+// Code generated wrapper for hive.openshift.io/v1 ClusterDeployment API.
+// This file contains constructor functions for official Hive ClusterDeployment CRDs.
+// Uses official Hive API types from github.com/openshift/hive.
+
+package external
 
 import (
+	"github.com/openshift-online/bootstrap/acme/pkg/api"
 	hivev1 "github.com/openshift/hive/apis/hive/v1"
 	"github.com/openshift/hive/apis/hive/v1/aws"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type ClusterDeploymentConfig struct {
-	Name            string
-	BaseDomain      string
-	AWSCreds        string
-	Region          string
-	ClusterImageSet string
-	InstallConfig   string
-	PullSecret      string
-
-	MasterReplicas     int64
-	MasterInstanceType string
-
-	WorkerReplicas     int64
-	WorkerInstanceType string
-}
-
-func NewClusterDeployment(config *ClusterDeploymentConfig) hivev1.ClusterDeployment {
+func NewClusterDeployment(config *api.ClusterDeploymentConfig) hivev1.ClusterDeployment {
 	return hivev1.ClusterDeployment{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "hive.openshift.io/v1",

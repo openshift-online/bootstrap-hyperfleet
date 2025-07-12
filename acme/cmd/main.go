@@ -3,15 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/openshift-online/bootstrap/acme/cmd/clusters"
-	clusterTypes "github.com/openshift-online/bootstrap/acme/pkg/clusters"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 
+	"github.com/openshift-online/bootstrap/acme/cmd/clusters"
+	"github.com/openshift-online/bootstrap/acme/pkg/api/acme"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -19,31 +18,17 @@ import (
 )
 
 var (
-	kubeconfig   string
-	argocdServer string
-	argocdToken  string
-	namespace    string
+	kubeconfig string
 )
 
 func main() {
-	var rootCmd = &cobra.Command{
-		Use:   "k8s-argocd-manager",
-		Short: "A tool to manage Kubernetes and ArgoCD resources",
-		Long:  "A comprehensive tool for managing Kubernetes deployments and ArgoCD applications",
+	rootCmd := &cobra.Command{
+		Use:   "acme",
+		Short: "ACME cluster configuration generator",
+		Long:  "Generate OpenShift cluster manifests for GitOps deployment",
 	}
 
 	rootCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
-	rootCmd.PersistentFlags().StringVar(&argocdServer, "argocd-server", "localhost:8080", "ArgoCD server address")
-	rootCmd.PersistentFlags().StringVar(&argocdToken, "argocd-token", "", "ArgoCD authentication token")
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Kubernetes namespace")
-
-	// Add subcommands
-	//rootCmd.AddCommand(createAppCmd())
-	//rootCmd.AddCommand(listAppsCmd())
-	//rootCmd.AddCommand(syncAppCmd())
-	//rootCmd.AddCommand(statusCmd())
-	//rootCmd.AddCommand(deleteAppCmd())
-
 	rootCmd.AddCommand(NewClustersCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -52,49 +37,37 @@ func main() {
 }
 
 func NewClustersCmd() *cobra.Command {
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "clusters",
-		Short: "clusters",
+		Short: "Generate cluster configuration manifests",
 		Run:   runClusters,
 	}
-	return cmd
 }
 
 func runClusters(cmd *cobra.Command, args []string) {
-
 	desiredClusters := clusters.GetRegions()
 
 	for _, spec := range desiredClusters {
+		rc := acme.NewRegionalCluster(spec)
+		generateClusterFiles(spec.Name, rc)
+	}
+}
 
-		cd := clusterTypes.NewClusterDeployment(spec)
-		ic := clusterTypes.NewInstallConfig(spec)
-		mp := clusterTypes.NewMachinePool(spec)
-		mc := clusterTypes.NewManagedCluster(spec)
+func generateClusterFiles(clusterName string, rc acme.RegionalCluster) {
+	files := map[string]interface{}{
+		"namespace.json":             rc.Namespace,
+		"clusterdeployment.json":     rc.ClusterDeployment,
+		"installconfig.json":         rc.InstallConfig,
+		"machinepool.json":           rc.MachinePool,
+		"managedcluster.json":        rc.ManagedCluster,
+		"klusterletaddonconfig.json": rc.KlusterletAddonConfig,
+	}
 
-		//d := "/home/mturansk/projects/src/github.com/openshift-online/bootstrap/clusters/overlay/cluster-04/clusterdeployment.json"
-
-		if err := WriteFile("./clusters/overlay/"+spec.Name+"/clusterdeployment.json", toJSON(cd)); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
+	for filename, obj := range files {
+		path := "./clusters/overlay/" + clusterName + "/" + filename
+		if err := WriteFile(path, toJSON(obj)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
 		}
-
-		if err := WriteFile("./clusters/overlay/"+spec.Name+"/installconfig.json", toJSON(ic)); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-		}
-
-		if err := WriteFile("./clusters/overlay/"+spec.Name+"/machinepool.json", toJSON(mp)); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-		}
-
-		if err := WriteFile("./clusters/overlay/"+spec.Name+"/managedcluster.json", toJSON(mc)); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-		}
-
-		//fmt.Println(toJSON(cd))
-		//fmt.Println(toJSON(ic))
-		//fmt.Println(toJSON(mp))
-		//fmt.Println(toJSON(mc))
-
 	}
 }
 
@@ -106,34 +79,6 @@ func toJSON(obj interface{}) string {
 	return string(j)
 }
 
-func getKubeConfig() (*rest.Config, error) {
-	if kubeconfig == "" {
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = filepath.Join(home, ".kube", "config")
-		}
-	}
-
-	// Try in-cluster config first
-	if config, err := rest.InClusterConfig(); err == nil {
-		return config, nil
-	}
-
-	// Fall back to kubeconfig file
-	return clientcmd.BuildConfigFromFlags("", kubeconfig)
-}
-
-// Read the contents of file into string value
-func ReadFileValueString(file string, val *string) error {
-	fileContents, err := ReadFile(file)
-	if err != nil {
-		return err
-	}
-
-	*val = strings.TrimSuffix(fileContents, "\n")
-	return err
-}
-
-// Return project root path based on the relative path of this file
 func GetProjectRootDir() string {
 	_, b, _, _ := runtime.Caller(0)
 	basepath := filepath.Dir(filepath.Join(b, "..", ".."))
@@ -205,4 +150,20 @@ func WriteFile(path, contents string) error {
 	fmt.Printf("Successfully wrote object to %s\n", path)
 
 	return nil
+}
+
+func getKubeConfig() (*rest.Config, error) {
+	if kubeconfig == "" {
+		if home := homedir.HomeDir(); home != "" {
+			kubeconfig = filepath.Join(home, ".kube", "config")
+		}
+	}
+
+	// Try in-cluster config first
+	if config, err := rest.InClusterConfig(); err == nil {
+		return config, nil
+	}
+
+	// Fall back to kubeconfig file
+	return clientcmd.BuildConfigFromFlags("", kubeconfig)
 }
