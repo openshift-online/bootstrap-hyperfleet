@@ -3,7 +3,8 @@
   "kind": "MachinePool",
   "metadata": {
     "name": "cluster-10-worker",
-    "namespace": "cluster-10"
+    "namespace": "cluster-10",
+    "creationTimestamp": null
   },
   "spec": {
     "clusterDeploymentRef": {

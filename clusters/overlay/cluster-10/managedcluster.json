@@ -2,6 +2,7 @@
   "apiVersion": "cluster.open-cluster-management.io/v1",
   "kind": "ManagedCluster",
   "metadata": {
+    "name": "cluster-10",
     "labels": {
       "cloud": "Amazon",
       "cluster.open-cluster-management.io/clusterset": "default",

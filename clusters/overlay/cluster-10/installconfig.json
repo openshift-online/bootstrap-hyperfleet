@@ -6,7 +6,8 @@
   "kind": "Secret",
   "metadata": {
     "name": "install-config",
-    "namespace": "cluster-10"
+    "namespace": "cluster-10",
+    "creationTimestamp": null
   },
   "type": "Opaque"
 }

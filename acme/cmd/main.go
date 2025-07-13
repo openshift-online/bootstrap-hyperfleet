@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 
 	"github.com/openshift-online/bootstrap/acme/cmd/clusters"
@@ -62,11 +63,19 @@ func runClusters(cmd *cobra.Command, args []string) {
 			"klusterletaddonconfig.json": rc.KlusterletAddonConfig,
 		}
 
-		for filename, obj := range files {
-			path := "./clusters/overlay/" + spec.Name + "/" + filename
-			if err := WriteFile(path, toJSON(obj)); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
-			}
+	// Get sorted keys for consistent output ordering
+	var filenames []string
+	for filename := range files {
+		filenames = append(filenames, filename)
+	}
+	sort.Strings(filenames)
+
+	for _, filename := range filenames {
+		obj := files[filename]
+		path := "./clusters/overlay/" + spec.Name + "/" + filename
+		if err := WriteFile(path, toJSON(obj)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
+		}
 
 			kustomization.Resources = append(kustomization.Resources, filename)
 		}
@@ -91,15 +100,15 @@ func removeRuntimeFields(obj interface{}) interface{} {
 	if err != nil {
 		return obj
 	}
-	
+
 	var objMap map[string]interface{}
 	if err := json.Unmarshal(objBytes, &objMap); err != nil {
 		return obj
 	}
-	
+
 	// Remove status field
 	delete(objMap, "status")
-	
+
 	// Remove creationTimestamp from metadata
 	if metadata, ok := objMap["metadata"].(map[string]interface{}); ok {
 		delete(metadata, "creationTimestamp")
@@ -107,7 +116,7 @@ func removeRuntimeFields(obj interface{}) interface{} {
 			delete(objMap, "metadata")
 		}
 	}
-	
+
 	return objMap
 }
 
