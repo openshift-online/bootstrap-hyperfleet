@@ -3,8 +3,7 @@
   "apiVersion": "hive.openshift.io/v1",
   "metadata": {
     "name": "cluster-10",
-    "namespace": "cluster-10",
-    "creationTimestamp": null
+    "namespace": "cluster-10"
   },
   "spec": {
     "clusterName": "cluster-10",

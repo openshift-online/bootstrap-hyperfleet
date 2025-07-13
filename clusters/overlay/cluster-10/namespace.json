@@ -2,8 +2,7 @@
   "kind": "Namespace",
   "apiVersion": "v1",
   "metadata": {
-    "name": "cluster-10",
-    "creationTimestamp": null
+    "name": "cluster-10"
   },
   "spec": {},
   "status": {}

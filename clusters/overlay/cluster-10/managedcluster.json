@@ -3,7 +3,6 @@
   "apiVersion": "cluster.open-cluster-management.io/v1",
   "metadata": {
     "name": "cluster-10",
-    "creationTimestamp": null,
     "labels": {
       "cloud": "Amazon",
       "cluster.open-cluster-management.io/clusterset": "default",
