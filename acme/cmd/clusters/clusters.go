@@ -12,7 +12,7 @@ func GetRegions() []*api.ClusterDeploymentConfig {
 			Namespace:       "cluster-10",
 			BaseDomain:      "rosa.mturansk-test.csu2.i3.devshift.org",
 			AWSCreds:        "aws-creds",
-			Region:          "us-east-1",
+			Region:          "us-east-1c",
 			ClusterImageSet: "img4.19.0-multi-appsub",
 			InstallConfig:   "install-config",
 			PullSecret:      "pull-secret",
