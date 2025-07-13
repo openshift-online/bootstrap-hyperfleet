@@ -51,48 +51,69 @@ func runClusters(cmd *cobra.Command, args []string) {
 
 	for _, spec := range desiredClusters {
 		rc := acme.NewRegionalCluster(spec)
-		generateClusterFiles(spec.Name, rc)
-	}
-}
+		kustomization := external.NewKustomization(&rc.ClusterDeploymentConfig)
 
-func generateClusterFiles(clusterName string, rc acme.RegionalCluster) {
-
-	kustomization := external.NewKustomization(&rc.ClusterDeploymentConfig)
-
-	files := map[string]interface{}{
-		"namespace.json":             rc.Namespace,
-		"clusterdeployment.json":     rc.ClusterDeployment,
-		"installconfig.json":         rc.InstallConfig,
-		"machinepool.json":           rc.MachinePool,
-		"managedcluster.json":        rc.ManagedCluster,
-		"klusterletaddonconfig.json": rc.KlusterletAddonConfig,
-	}
-
-	for filename, obj := range files {
-		path := "./clusters/overlay/" + clusterName + "/" + filename
-		if err := WriteFile(path, toJSON(obj)); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
+		files := map[string]interface{}{
+			"namespace.json":             rc.Namespace,
+			"clusterdeployment.json":     rc.ClusterDeployment,
+			"installconfig.json":         rc.InstallConfig,
+			"machinepool.json":           rc.MachinePool,
+			"managedcluster.json":        rc.ManagedCluster,
+			"klusterletaddonconfig.json": rc.KlusterletAddonConfig,
 		}
 
-		kustomization.Resources = append(kustomization.Resources, filename)
-	}
+		for filename, obj := range files {
+			path := "./clusters/overlay/" + spec.Name + "/" + filename
+			if err := WriteFile(path, toJSON(obj)); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", filename, err)
+			}
 
-	if err := WriteFile("./clusters/overlay/"+clusterName+"/kustomization.yaml", toYAML(kustomization)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing kustomization.yaml: %v\n", err)
-	}
+			kustomization.Resources = append(kustomization.Resources, filename)
+		}
 
+		if err := WriteFile("./clusters/overlay/"+spec.Name+"/kustomization.yaml", toYAML(kustomization)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing kustomization.yaml: %v\n", err)
+		}
+	}
 }
 
 func toJSON(obj interface{}) string {
-	y, err := json.MarshalIndent(obj, "", "  ")
+	cleanObj := removeRuntimeFields(obj)
+	y, err := json.MarshalIndent(cleanObj, "", "  ")
 	if err != nil {
 		return err.Error()
 	}
 	return string(y)
 }
 
+func removeRuntimeFields(obj interface{}) interface{} {
+	objBytes, err := json.Marshal(obj)
+	if err != nil {
+		return obj
+	}
+	
+	var objMap map[string]interface{}
+	if err := json.Unmarshal(objBytes, &objMap); err != nil {
+		return obj
+	}
+	
+	// Remove status field
+	delete(objMap, "status")
+	
+	// Remove creationTimestamp from metadata
+	if metadata, ok := objMap["metadata"].(map[string]interface{}); ok {
+		delete(metadata, "creationTimestamp")
+		if len(metadata) == 0 {
+			delete(objMap, "metadata")
+		}
+	}
+	
+	return objMap
+}
+
 func toYAML(obj interface{}) string {
-	y, err := yaml.Marshal(obj)
+	cleanObj := removeRuntimeFields(obj)
+	y, err := yaml.Marshal(cleanObj)
 	if err != nil {
 		return err.Error()
 	}

@@ -1,6 +1,6 @@
 {
-  "kind": "MachinePool",
   "apiVersion": "hive.openshift.io/v1",
+  "kind": "MachinePool",
   "metadata": {
     "name": "cluster-10-worker",
     "namespace": "cluster-10"
@@ -10,20 +10,19 @@
       "name": "cluster-10"
     },
     "name": "worker",
-    "replicas": 1,
     "platform": {
       "aws": {
-        "zones": [
-          "us-east-1c"
-        ],
-        "type": "t3a.xlarge",
         "rootVolume": {
           "iops": 2000,
           "size": 100,
           "type": "io1"
-        }
+        },
+        "type": "t3a.xlarge",
+        "zones": [
+          "us-east-1c"
+        ]
       }
-    }
-  },
-  "status": {}
+    },
+    "replicas": 1
+  }
 }

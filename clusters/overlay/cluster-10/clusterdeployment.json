@@ -1,13 +1,17 @@
 {
-  "kind": "ClusterDeployment",
   "apiVersion": "hive.openshift.io/v1",
+  "kind": "ClusterDeployment",
   "metadata": {
     "name": "cluster-10",
     "namespace": "cluster-10"
   },
   "spec": {
-    "clusterName": "cluster-10",
     "baseDomain": "rosa.mturansk-test.csu2.i3.devshift.org",
+    "clusterName": "cluster-10",
+    "controlPlaneConfig": {
+      "servingCertificates": {}
+    },
+    "installed": false,
     "platform": {
       "aws": {
         "credentialsSecretRef": {
@@ -16,21 +20,16 @@
         "region": "us-east-1c"
       }
     },
-    "pullSecretRef": {
-      "name": "pull-secret"
-    },
-    "controlPlaneConfig": {
-      "servingCertificates": {}
-    },
-    "installed": false,
     "provisioning": {
-      "installConfigSecretRef": {
-        "name": "install-config"
-      },
       "imageSetRef": {
         "name": "img4.19.0-multi-appsub"
+      },
+      "installConfigSecretRef": {
+        "name": "install-config"
       }
+    },
+    "pullSecretRef": {
+      "name": "pull-secret"
     }
-  },
-  "status": {}
+  }
 }
