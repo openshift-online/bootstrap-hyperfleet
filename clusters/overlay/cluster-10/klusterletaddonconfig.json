@@ -3,7 +3,8 @@
   "kind": "KlusterletAddonConfig",
   "metadata": {
     "name": "cluster-10",
-    "namespace": "cluster-10"
+    "namespace": "cluster-10",
+    "creationTimestamp": null
   },
   "spec": {
     "applicationManager": {
