@@ -6,9 +6,9 @@ metadata:
   name: cluster-10
   namespace: cluster-10
 resources:
-  - managedcluster.json
-  - klusterletaddonconfig.json
-  - namespace.json
-  - clusterdeployment.json
-  - installconfig.json
-  - machinepool.json
+- managedcluster.json
+- klusterletaddonconfig.json
+- namespace.json
+- clusterdeployment.json
+- installconfig.json
+- machinepool.json

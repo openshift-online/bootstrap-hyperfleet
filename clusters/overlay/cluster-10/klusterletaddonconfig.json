@@ -1,49 +1,32 @@
 {
-  "kind": "KlusterletAddonConfig",
   "apiVersion": "agent.open-cluster-management.io/v1",
+  "kind": "KlusterletAddonConfig",
   "metadata": {
     "name": "cluster-10",
     "namespace": "cluster-10"
   },
   "spec": {
-    "clusterName": "cluster-10",
-    "clusterNamespace": "cluster-10",
+    "applicationManager": {
+      "enabled": true
+    },
+    "certPolicyController": {
+      "enabled": true
+    },
     "clusterLabels": {
       "cloud": "Amazon",
       "name": "cluster-10",
       "vendor": "OpenShift"
     },
-    "applicationManager": {
-      "enabled": true
+    "clusterName": "cluster-10",
+    "clusterNamespace": "cluster-10",
+    "iamPolicyController": {
+      "enabled": false
     },
     "policyController": {
       "enabled": true
     },
     "searchCollector": {
       "enabled": true
-    },
-    "certPolicyController": {
-      "enabled": true
-    },
-    "iamPolicyController": {
-      "enabled": false
-    }
-  },
-  "status": {
-    "applicationManagerStatus": {
-      "enabled": false
-    },
-    "policyControllerStatus": {
-      "enabled": false
-    },
-    "searchCollectorStatus": {
-      "enabled": false
-    },
-    "certPolicyControllerStatus": {
-      "enabled": false
-    },
-    "iamPolicyControllerStatus": {
-      "enabled": false
     }
   }
 }
