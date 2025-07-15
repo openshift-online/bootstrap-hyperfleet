@@ -1,0 +1,7 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cluster-40
+  labels:
+    name: cluster-40

@@ -10,6 +10,8 @@ resources:
 - ./eso.application.yaml
 - ./regional-clusters.cluster-10.application.yaml
 - ./regional-deployments.cluster-10.application.yaml
+- ./regional-clusters.cluster-40.application.yaml
+- ./regional-deployments.cluster-40.application.yaml
 - ./acm-gitops-integration.application.yaml
 #- ./regional-pipelines.cluster-10.application.yaml
 

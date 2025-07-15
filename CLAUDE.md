@@ -12,7 +12,7 @@ The codebase is organized into several key components:
 
 ### Core Components
 - **Bootstrap Control Plane**: Uses OpenShift GitOps to manage the initial cluster setup
-- **Cluster Provisioning**: Leverages Hive ClusterDeployments for automated cluster creation
+- **Cluster Provisioning**: Uses CAPI (Cluster API) for automated cluster creation
 - **Regional Management**: Uses ACM for multi-cluster management across regions
 - **Configuration Management**: Pure Kustomize-based approach for generating cluster manifests
 
