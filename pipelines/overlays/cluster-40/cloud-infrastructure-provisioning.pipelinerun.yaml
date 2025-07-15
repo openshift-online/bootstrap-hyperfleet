@@ -1,0 +1,35 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  annotations:
+    description: "Pipeline run for cluster-40 (EKS) infrastructure provisioning"
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning-pipeline
+  params:
+    - name: cluster-name
+      value: "cluster-40"
+    - name: cloud-provider
+      value: "aws"
+    - name: region
+      value: "ap-southeast-1"
+    - name: instance-type
+      value: "m5.large"
+    - name: node-count
+      value: "3"
+    - name: dry-run
+      value: "false"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+  timeouts:
+    pipeline: "2h0m0s"
+    tasks: "30m0s"
+    finally: "10m0s"
