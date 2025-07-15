@@ -129,4 +129,4 @@ oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.ya
 - Use `kustomize build` to validate configuration changes
 - Test overlays before applying to clusters
 - Follow GitOps principles for all cluster modifications
-- Reference existing cluster overlays (region-01, region-02, region-03) as templates
+- Reference existing cluster overlays (cluster-10, region-02, region-03) as templates

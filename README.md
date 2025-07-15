@@ -33,7 +33,7 @@ oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.ya
 
 # Clusters
 
-Clusters are defined in this repository.  `region-01`, `region-02`, `region-02` are the examples.
+Clusters are defined in this repository.  `cluster-10`, `region-02`, `region-02` are the examples.
 
 The process for adding `cluster-40` is currently manual. Improvements to workflows and tooling around adding new
 clusters is expected to continue.

@@ -1,4 +1,4 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: ocm-region-01
+  name: ocm-cluster-10
