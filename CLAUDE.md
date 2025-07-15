@@ -23,6 +23,7 @@ The codebase is organized into several key components:
 - `regional-deployments/`: Regional service configurations
 - `prereqs/`: Prerequisites for bootstrap process
 - `pipelines/`: Tekton pipeline configurations
+- `acm-gitops/`: ACM GitOps integration with automated ArgoCD cluster registration
 
 ## Common Commands
 
@@ -123,6 +124,22 @@ Currently uses manual secret management (Vault integration planned):
 oc get secret aws-creds -n $cluster_namespace -o yaml > secrets/aws-creds.yaml
 oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
 ```
+
+## ACM GitOps Integration
+
+The project uses ACM's native GitOps integration to automatically register ManagedClusters with ArgoCD:
+
+### Components
+- **GitOpsCluster CR**: Automatically registers clusters with ArgoCD based on Placement selection
+- **ManagedClusterSetBinding**: Binds the global ManagedClusterSet to openshift-gitops namespace
+- **Placement**: Selects clusters based on labels (OpenShift + Amazon)
+- **Policy**: Automates the creation of GitOps resources across clusters
+
+### Features
+- **Automated Cluster Registration**: No manual ArgoCD secret management required
+- **ApplicationManager Integration**: KlusterletAddonConfig enables ArgoCD permissions on target clusters
+- **Policy-Driven**: ACM policies ensure consistent GitOps configuration across all clusters
+- **Label-Based Selection**: Clusters are automatically included based on vendor=OpenShift, cloud=Amazon labels
 
 ## Development Best Practices
 
