@@ -1,0 +1,174 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # The name of the Job.
+  name: argo-cluster-10-import
+  namespace: openshift-gitops
+spec:
+  # The template for the Pod that the Job will create.
+  template:
+    spec:
+      volumes:
+        # An emptyDir volume is temporary and is created when a Pod is assigned to a node.
+        # It is initially empty and shares the Pod's lifecycle.
+        - name: kubeconfig-dir
+          emptyDir: {}
+      # The containers that will run in the Pod.
+      containers:
+        - name: oc-client-container
+          # Use an official OpenShift CLI image. This image contains the 'oc' binary.
+          image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+          volumeMounts:
+            - name: kubeconfig-dir
+              mountPath: /kubeconfig
+          # The command to run in the container. We use bash to execute a script.
+          command: ["/bin/bash", "-c"]
+          # The arguments to the command, which is our script.
+          args:
+            - |
+              # This script will be executed by bash.
+              echo "----- Starting OpenShift CLI Job..."
+              
+              # This Job needs to run on the Hub cluster to get cluster details.
+              # Login to the Hub cluster first using the pod's service account token.
+              echo "----- Logging into Hub Cluster ---"
+              oc login --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) --server=https://kubernetes.default.svc --insecure-skip-tls-verify=true
+              
+              # Get the API URL and kubeadmin password secret name for the target cluster from its ClusterDeployment
+              echo "----- Fetching details for cluster-10 from its ClusterDeployment ---"
+              CLUSTER_API_URL=$(oc get clusterdeployment cluster-10 -n cluster-10 -o jsonpath='{.status.apiURL}')
+              KUBEADMIN_PASSWORD_SECRET_NAME=$(oc get clusterdeployment cluster-10 -n cluster-10 -o jsonpath='{.spec.clusterMetadata.adminPasswordSecretRef.name}')
+              
+              if [ -z "$CLUSTER_API_URL" ] || [ -z "$KUBEADMIN_PASSWORD_SECRET_NAME" ]; then
+                echo "----- Error: Could not retrieve API URL or admin password secret name from ClusterDeployment."
+                exit 1
+              fi
+              
+              echo "----- Target Cluster API URL: $CLUSTER_API_URL"
+              echo "----- Admin Password Secret: $KUBEADMIN_PASSWORD_SECRET_NAME"
+              
+              # Get the kubeadmin password from its secret in the cluster's namespace
+              KUBEADMIN_PASSWORD=$(oc get secret $KUBEADMIN_PASSWORD_SECRET_NAME -n cluster-10 -o jsonpath='{.data.password}' | base64 --decode)
+              
+              if [ -z "$KUBEADMIN_PASSWORD" ]; then
+                echo "----- Error: Could not retrieve kubeadmin password from secret."
+                exit 1
+              fi
+              
+              # Now, login to the remote cluster using the fetched credentials.
+              # We use a temporary kubeconfig to avoid overwriting the hub login context.
+              echo "----- Logging into remote cluster: cluster-10 ---"
+              export KUBECONFIG=/tmp/remote_kubeconfig
+              oc login "$CLUSTER_API_URL" --username=kubeadmin --password="$KUBEADMIN_PASSWORD" --insecure-skip-tls-verify=true
+              
+              # Generate a long-lived token from the logged-in session
+              echo "----- Generating API token ---"
+              export USER_TOKEN=$(oc whoami --show-token)
+              
+              if [ -z "$USER_TOKEN" ]; then
+                echo "----- Error: Failed to generate token."
+                exit 1
+              fi
+              
+              
+              echo "----- Logging out of new cluster." 
+              oc logout
+              
+              
+              echo "----- Logging into Hub Cluster ---"
+              oc login --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) --server=https://kubernetes.default.svc --insecure-skip-tls-verify=true
+
+              echo "Get the cluster CA for argo"
+              export CLUSTER_CA_DATA=$(oc get secrets -n openshift-gitops openshift-gitops-ca -o jsonpath='{.data.ca\.crt}' | base64 -d -w 0)
+
+              if [ -z "$CLUSTER_CA_DATA" ]; then
+                echo "----- Error: CLUSTER_CA_DATA is empty"
+                exit 1
+              fi
+              
+              echo "----- Cluster Server URL: $CLUSTER_API_URL"
+              echo "----- User Token: ${USER_TOKEN:0:10}..."
+              echo "----- CA Data Length: ${#CLUSTER_CA_DATA}"
+              
+              cat <<"EOF" > ./kubeconfig/template.secret.yaml
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: cluster-10-secret
+                namespace: openshift-gitops
+                labels:
+                  # This label is required for Argo CD to recognize this as a cluster secret
+                  argocd.argoproj.io/secret-type: cluster
+              type: Opaque
+              stringData:
+                # The name of the cluster. This will be displayed in the Argo CD UI.
+                name: cluster-10
+                # The API server URL of the destination cluster.
+                server: "%CLUSTER_API_URL%"
+                server.insecure: "true"
+                # The configuration for connecting to the cluster.
+                config: |
+                  {
+                    "bearerToken": "%USER_TOKEN%",
+                    "tlsClientConfig": {
+                      "insecure": "true"
+                    }
+                  }
+              EOF
+
+              echo "----- What does the template secret look like?"
+              cat ./kubeconfig/template.secret.yaml
+              
+              sed -e "s|%CLUSTER_API_URL%|$CLUSTER_API_URL|g" -e "s|%USER_TOKEN%|$USER_TOKEN|g"  ./kubeconfig/template.secret.yaml > ./kubeconfig/rendered.secret.yaml
+              
+              echo "----- What does rendered secret look like?"
+              cat ./kubeconfig/rendered.secret.yaml
+              
+              echo "----- Logout of the new cluster and log back into the hub"
+              oc login --token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) --server=https://kubernetes.default.svc --insecure-skip-tls-verify=true
+              
+              echo "----- Apply the argo secret to import the new cluster"
+              oc apply -f ./kubeconfig/rendered.secret.yaml
+              
+              echo "----- This is the applied secret!"
+              oc get secret -n openshift-gitops cluster-10-secret -ojson
+              
+              echo "----- Job finished successfully."
+              
+              sleep 1800
+
+
+      # The restart policy for the Pod. 'Never' means it will not be restarted if it fails.
+      # 'OnFailure' will restart the container if it exits with a non-zero status.
+      restartPolicy: OnFailure
+      # The ServiceAccount to use for the Pod. The token from this ServiceAccount
+      # will be used by the 'oc login' command.
+      serviceAccountName: argo-cluster-importer
+  # The number of times the Job should be retried if it fails.
+  backoffLimit: 4
+
+apiVersion: apps.open-cluster-management.io/v1beta1
+kind: GitOpsCluster
+metadata:
+  name: gitops-cluster-sample
+  namespace: dev
+spec:
+  argoServer:
+    cluster: local-cluster
+    argoNamespace: openshift-gitops
+  placementRef:
+    kind: Placement
+    apiVersion: cluster.open-cluster-management.io/v1beta1
+    name: all-openshift-clusters
+
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: placement
+  namespace: ns1
+spec:
+  tolerations:
+    - key: cluster.open-cluster-management.io/unreachable
+      operator: Exists
+    - key: cluster.open-cluster-management.io/unavailable
+      operator: Exists
