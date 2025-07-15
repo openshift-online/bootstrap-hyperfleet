@@ -1,5 +1,5 @@
 ---
-apiVersion: cluster.x-k8s.io/v1beta2
+apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachinePool
 metadata:
   name: cluster-40-worker
@@ -13,6 +13,6 @@ spec:
       bootstrap:
         dataSecretName: ""
       infrastructureRef:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: AWSManagedMachinePool
         name: cluster-40-worker
