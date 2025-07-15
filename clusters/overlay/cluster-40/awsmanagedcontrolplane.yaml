@@ -8,6 +8,7 @@ spec:
   region: ap-southeast-1
   sshKeyName: ""
   version: v1.28
+  baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
   vpc:
     availabilityZoneUsageLimit: 2
     availabilityZoneSelection: Ordered

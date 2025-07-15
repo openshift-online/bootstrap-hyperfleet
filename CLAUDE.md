@@ -95,26 +95,45 @@ The project uses pure Kustomize for generating cluster manifests:
 - The bootstrap process requires cluster-admin permissions
 - Regional clusters are provisioned automatically via ACM and Hive
 
+## Claude Memories
+
+- Don't run `bootstrap.sh` from a Claude session
+
 ## Adding New Clusters
 
-To add a new cluster (e.g., `cluster-40`), follow this manual process:
+### Current Implementation: cluster-40 (EKS)
+**Status**: Implemented and ready for deployment
+- **Type**: EKS cluster using CAPI v1beta2 resources
+- **Region**: ap-southeast-1
+- **Compute**: m5.large instances (3 nodes, scaling 1-10)
+- **Base Domain**: rosa.mturansk-test.csu2.i3.devshift.org
+- **Resources**: AWSManagedControlPlane, AWSManagedMachinePool, ArgoCD applications
+- **GitOps**: Configured with ArgoCD applications for cluster + regional deployments
 
-### Prerequisites
-- Bootstrap control plane cluster running with cluster-admin access
-- AWS credentials and pull secrets configured
-- Secrets stored in `secrets/aws-creds.yaml` and `secrets/pull-secret.yaml`
+### General Process for Adding New Clusters
 
-### Step-by-Step Process
-1. **Copy existing overlay**: Copy `./clusters/overlay/region-02` to `./clusters/overlay/region-04`
-2. **Update cluster references**: Find/Replace 'cluster-10' with 'cluster-40' in all files within the new overlay
-3. **Add to kustomization**: Add the new cluster overlay to `./regional-clusters/kustomization.yaml`
-4. **Update bootstrap script**: Add the new cluster to `./bootstrap.sh` for status monitoring
-5. **Create Pull Request**: Submit changes to the repository
-6. **Deploy**: Run `./bootstrap.sh` to provision cluster-40 or monitor via ACM console
+#### For OCP Clusters (Hive-based):
+1. **Copy existing overlay**: Copy `./clusters/overlay/cluster-20` to `./clusters/overlay/cluster-XX`
+2. **Update cluster references**: Find/Replace cluster names in all files
+3. **Configure region and compute**: Update install-config.yaml for target region/instance type
+4. **Uses**: ClusterDeployment + MachinePool resources
+
+#### For EKS Clusters (CAPI-based):
+1. **Create overlay directory**: `mkdir -p ./clusters/overlay/cluster-XX`
+2. **Create CAPI resources**: AWSManagedControlPlane + AWSManagedMachinePool
+3. **Configure region and compute**: Set AWS region and instance type in CAPI resources
+4. **Set base domain**: Add baseDomain to AWSManagedControlPlane
+5. **Uses**: CAPI v1beta2 API versions for all resources
+
+#### Common Steps:
+1. **Create regional deployment overlay**: Copy and update `./regional-deployments/overlays/`
+2. **Create ArgoCD applications**: Copy and update cluster + regional deployment apps
+3. **Update kustomization**: Add applications to `./gitops-applications/kustomization.yaml`
+4. **Deploy**: Run `./bootstrap.sh` to provision cluster (not from Claude session)
 
 ### GitOps Workflow
-- ArgoCD applies the new cluster via the [regional clusters](./gitops-applications/regional-clusters.application.yaml) application
-- Hive ClusterDeployments handle automated cluster provisioning
+- ArgoCD applies the new cluster via regional clusters application
+- CAPI handles EKS cluster provisioning, Hive handles OCP cluster provisioning
 - ACM imports and manages the new cluster for governance
 
 ### Secret Management
@@ -139,7 +158,23 @@ The project uses ACM's native GitOps integration to automatically register Manag
 - **Automated Cluster Registration**: No manual ArgoCD secret management required
 - **ApplicationManager Integration**: KlusterletAddonConfig enables ArgoCD permissions on target clusters
 - **Policy-Driven**: ACM policies ensure consistent GitOps configuration across all clusters
-- **Label-Based Selection**: Clusters are automatically included based on vendor=OpenShift, cloud=Amazon labels
+- **Label-Based Selection**: Clusters are automatically included based on vendor=OpenShift/EKS, cloud=Amazon labels
+
+## NEWREGION.md Test Plan
+
+An interactive test plan is available at `NEWREGION.md` that guides through creating new regional deployments:
+- **Interactive Configuration**: Prompts for cluster type (OCP/EKS), region, compute type, and cluster name
+- **Type-Specific Instructions**: Different steps for OCP vs EKS cluster creation
+- **Validation Steps**: Includes kustomize build testing and GitOps integration verification
+- **Rollback Procedures**: Instructions for cleaning up failed deployments
+
+## Current Cluster Status
+
+### Deployed Clusters
+- **cluster-10**: OCP cluster (existing)
+- **cluster-20**: OCP cluster (existing) 
+- **cluster-30**: OCP cluster (existing)
+- **cluster-40**: EKS cluster (implemented, ready for deployment)
 
 ## Development Best Practices
 
