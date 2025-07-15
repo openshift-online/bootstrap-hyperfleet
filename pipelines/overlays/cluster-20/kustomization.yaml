@@ -3,5 +3,13 @@ kind: Kustomization
 
 namespace: ocm-region-02
 
+commonAnnotations:
+  cluster: cluster-20
+  cluster-type: ocp
+  version: "v0.0.1"
+
 resources:
   - ../../base
+
+patchesStrategicMerge:
+  - cloud-infrastructure-provisioning.pipelinerun.yaml

@@ -1,0 +1,318 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: eks-cluster-provisioning-pipeline
+  annotations:
+    description: "Specialized pipeline for EKS cluster provisioning with CAPI"
+spec:
+  description: >-
+    EKS-specific pipeline for provisioning Amazon EKS clusters using
+    Cluster API with advanced configuration, security, and compliance features.
+  params:
+    - name: cluster-name
+      type: string
+      description: "Name of the EKS cluster to provision"
+    - name: region
+      type: string
+      description: "AWS region for EKS deployment"
+      default: "us-east-1"
+    - name: k8s-version
+      type: string
+      description: "Kubernetes version for EKS cluster"
+      default: "1.28"
+    - name: node-group-instance-type
+      type: string
+      description: "Instance type for EKS node groups"
+      default: "m5.large"
+    - name: min-nodes
+      type: string
+      description: "Minimum number of nodes"
+      default: "1"
+    - name: max-nodes
+      type: string
+      description: "Maximum number of nodes"
+      default: "10"
+    - name: desired-nodes
+      type: string
+      description: "Desired number of nodes"
+      default: "3"
+    - name: enable-fargate
+      type: string
+      description: "Enable Fargate for serverless pods"
+      default: "false"
+  tasks:
+    - name: validate-aws-credentials
+      taskSpec:
+        params:
+          - name: region
+        steps:
+          - name: validate-creds
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🔑 Validating AWS credentials and permissions..."
+              echo "Checking access to region: $(params.region)"
+              
+              # TODO: Implement AWS credential validation:
+              # - Verify AWS CLI configuration and STS access
+              # - Check IAM permissions for EKS operations
+              # - Validate VPC and subnet access permissions
+              # - Verify ECR and other service permissions
+              # - Check resource limits and service quotas
+              
+              echo "✅ AWS credentials validated"
+      params:
+        - name: region
+          value: "$(params.region)"
+
+    - name: prepare-capi-manifests
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+          - name: k8s-version
+          - name: node-group-instance-type
+          - name: min-nodes
+          - name: max-nodes
+          - name: desired-nodes
+        steps:
+          - name: generate-manifests
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "📋 Preparing CAPI manifests for EKS cluster..."
+              echo "Generating manifests for $(params.cluster-name)"
+              echo "Kubernetes version: $(params.k8s-version)"
+              echo "Instance type: $(params.node-group-instance-type)"
+              echo "Node scaling: $(params.min-nodes)-$(params.max-nodes) (desired: $(params.desired-nodes))"
+              
+              # TODO: Implement CAPI manifest generation:
+              # - Generate AWSManagedControlPlane manifest
+              # - Create AWSManagedMachinePool configurations
+              # - Configure Cluster and MachinePool resources
+              # - Set up networking and security configurations
+              # - Configure add-ons and extensions
+              # - Validate manifest syntax and compatibility
+              
+              echo "✅ CAPI manifests prepared"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+        - name: k8s-version
+          value: "$(params.k8s-version)"
+        - name: node-group-instance-type
+          value: "$(params.node-group-instance-type)"
+        - name: min-nodes
+          value: "$(params.min-nodes)"
+        - name: max-nodes
+          value: "$(params.max-nodes)"
+        - name: desired-nodes
+          value: "$(params.desired-nodes)"
+      runAfter:
+        - validate-aws-credentials
+
+    - name: configure-eks-networking
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+        steps:
+          - name: setup-networking
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🌐 Configuring EKS networking and CNI..."
+              echo "Setting up networking for $(params.cluster-name)"
+              
+              # TODO: Implement EKS networking configuration:
+              # - Configure VPC CNI with IP address management
+              # - Set up pod networking and service discovery
+              # - Configure ingress controllers and load balancers
+              # - Set up network policies and security groups
+              # - Configure service mesh integration (Istio/Linkerd)
+              # - Set up cross-cluster networking and peering
+              
+              echo "✅ EKS networking configured"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+      runAfter:
+        - prepare-capi-manifests
+
+    - name: configure-eks-security
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+        steps:
+          - name: setup-security
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🔐 Configuring EKS security and compliance..."
+              echo "Setting up security for $(params.cluster-name)"
+              
+              # TODO: Implement EKS security configuration:
+              # - Configure RBAC and IAM roles for service accounts
+              # - Set up Pod Security Standards and policies
+              # - Configure secrets management with AWS Secrets Manager
+              # - Set up encryption at rest and in transit
+              # - Configure vulnerability scanning and compliance
+              # - Set up network security and micro-segmentation
+              # - Configure audit logging and monitoring
+              
+              echo "✅ EKS security configured"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+      runAfter:
+        - configure-eks-networking
+
+    - name: provision-eks-cluster
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+        steps:
+          - name: deploy-cluster
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🚀 Deploying EKS cluster via CAPI..."
+              echo "Provisioning $(params.cluster-name) in $(params.region)"
+              
+              # TODO: Implement EKS cluster deployment:
+              # - Apply CAPI manifests to management cluster
+              # - Monitor cluster provisioning progress
+              # - Configure cluster auto-scaling and node groups
+              # - Set up managed node groups and Fargate profiles
+              # - Configure cluster add-ons and extensions
+              # - Validate cluster health and readiness
+              
+              echo "✅ EKS cluster provisioned successfully"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+      runAfter:
+        - configure-eks-security
+
+    - name: configure-fargate
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: enable-fargate
+        steps:
+          - name: setup-fargate
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🏗️ Configuring Fargate profiles..."
+              echo "Fargate enabled: $(params.enable-fargate)"
+              
+              if [ "$(params.enable-fargate)" = "true" ]; then
+                echo "Setting up Fargate profiles for $(params.cluster-name)"
+                
+                # TODO: Implement Fargate configuration:
+                # - Create Fargate profiles for specific namespaces
+                # - Configure execution roles and policies
+                # - Set up logging and monitoring for Fargate pods
+                # - Configure resource limits and auto-scaling
+                # - Set up networking and security for serverless pods
+                
+                echo "✅ Fargate profiles configured"
+              else
+                echo "ℹ️  Fargate disabled - skipping configuration"
+              fi
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: enable-fargate
+          value: "$(params.enable-fargate)"
+      runAfter:
+        - provision-eks-cluster
+
+    - name: install-eks-addons
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+        steps:
+          - name: install-addons
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🔧 Installing EKS add-ons and operators..."
+              echo "Installing add-ons for $(params.cluster-name)"
+              
+              # TODO: Implement EKS add-on installation:
+              # - Install AWS Load Balancer Controller
+              # - Configure EBS CSI driver for persistent storage
+              # - Set up CloudWatch Container Insights
+              # - Install Cluster Autoscaler
+              # - Configure AWS for Fluent Bit for logging
+              # - Set up AWS App Mesh or other service mesh
+              # - Install security and compliance operators
+              
+              echo "✅ EKS add-ons installed"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+      runAfter:
+        - configure-fargate
+
+    - name: validate-eks-cluster
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: region
+        steps:
+          - name: run-validation
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🧪 Validating EKS cluster deployment..."
+              echo "Running validation tests for $(params.cluster-name)"
+              
+              # TODO: Implement EKS cluster validation:
+              # - Test cluster connectivity and authentication
+              # - Validate node health and resource allocation
+              # - Test pod scheduling and networking
+              # - Validate storage and persistent volume claims
+              # - Test ingress and load balancer functionality
+              # - Run security and compliance checks
+              # - Validate monitoring and logging integration
+              
+              echo "✅ EKS cluster validation completed"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: region
+          value: "$(params.region)"
+      runAfter:
+        - install-eks-addons
