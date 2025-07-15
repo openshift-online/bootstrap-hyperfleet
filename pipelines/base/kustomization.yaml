@@ -7,8 +7,4 @@ commonAnnotations:
 resources:
   - hello-world.pipeline.yaml
   - hello-world.pipelinerun.yaml
-  - cloud-infrastructure-provisioning.pipeline.yaml
-  - cloud-infrastructure-provisioning.pipelinerun.yaml
-  - eks-cluster-provisioning.pipeline.yaml
-  - eks-cluster-provisioning.pipelinerun.yaml
 
