@@ -27,26 +27,26 @@ From ACM, retrieve the `aws-creds` and `pull-secret`, store them locally, and ap
 
 ```
 # TODO: get the correct namespace for these secrets
-oc get secret aws-creds -n hive-managed-clusters -o yaml > aws-creds.yaml
-oc get secret pull-secret -n hive-managed-clusters -o yaml > pull-secret.yaml
+oc get secret aws-creds -n $cluster_namespace -o yaml > secrets/aws-creds.yaml
+oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
 ```
 
 # Clusters
 
-Clusters are defined in this repository.  `cluster-10` and `cluster-20` are the examples.
+Clusters are defined in this repository.  `region-01`, `region-02`, `region-02` are the examples.
 
-The process for adding `cluster-30` is currently manual. Improvements to workflows and tooling around adding new
+The process for adding `cluster-40` is currently manual. Improvements to workflows and tooling around adding new
 clusters is expected to continue.
 
-To add `cluster-30`, do the following:
+To add `cluster-40`, do the following:
 
 ```
-1. Copy/paste ./clusters/overlay/region-02 as ./clusters/overlay/region-03
-2. Find/Replace 'cluster-20' with 'cluster-30' in the files in ./clusters/overlay/region-03
+1. Copy/paste ./clusters/overlay/region-02 as ./clusters/overlay/region-04
+2. Find/Replace 'cluster-10' with 'cluster-40' in the files in ./clusters/overlay/region-04
 3. Add the new cluster overlay to ./regional-clusters/kustomization.yaml
 4. Add the new cluster to the end of ./bootstrap.sh for observing status
 5. Create a Pull Request and submit to the repository.
-6. Run ./bootstrap.sh to wait for cluster-30 to be provisioned or watch the ACM console 
+6. Run ./bootstrap.sh to wait for cluster-40 to be provisioned or watch the ACM console 
 ```
 
 See https://github.com/openshift-online/bootstrap/pull/48

@@ -8,7 +8,7 @@ oc apply -f pull-secret.yaml -n cluster-10
 
 ./wait.kube.sh secret aws-creds cluster-10 {.kind} Secret
 ./wait.kube.sh secret pull-secret cluster-10 {.kind} Secret
-#
+
 #oc create namespace cluster-20 2>/dev/null
 #oc apply -f aws-creds.yaml -n cluster-20
 #oc apply -f pull-secret.yaml -n cluster-20
@@ -16,12 +16,12 @@ oc apply -f pull-secret.yaml -n cluster-10
 #./wait.kube.sh secret aws-creds cluster-20 '{.kind}' Secret
 #./wait.kube.sh secret pull-secret cluster-20 '{.kind}' Secret
 #
-#oc create namespace cluster-30 2>/dev/null
-#oc apply -f aws-creds.yaml -n cluster-30
-#oc apply -f pull-secret.yaml -n cluster-30
-#
-#./wait.kube.sh secret aws-creds cluster-30 '{.kind}' Secret
-#./wait.kube.sh secret pull-secret cluster-30 '{.kind}' Secret
+oc create namespace cluster-30 2>/dev/null
+oc apply -f aws-creds.yaml -n cluster-30
+oc apply -f pull-secret.yaml -n cluster-30
+
+./wait.kube.sh secret aws-creds cluster-30 '{.kind}' Secret
+./wait.kube.sh secret pull-secret cluster-30 '{.kind}' Secret
 
 
 

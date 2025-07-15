@@ -14,10 +14,9 @@ The codebase is organized into several key components:
 - **Bootstrap Control Plane**: Uses OpenShift GitOps to manage the initial cluster setup
 - **Cluster Provisioning**: Leverages Hive ClusterDeployments for automated cluster creation
 - **Regional Management**: Uses ACM for multi-cluster management across regions
-- **ACME Tool**: Go-based CLI tool for generating cluster configuration manifests
+- **Configuration Management**: Pure Kustomize-based approach for generating cluster manifests
 
 ### Directory Structure
-- `acme/`: Go CLI tool for cluster configuration generation
 - `clusters/`: Cluster deployment configurations (base + overlays)
 - `gitops-applications/`: ArgoCD Application manifests
 - `operators/`: Operator deployments (ACM, Pipelines, etc.)
@@ -39,21 +38,6 @@ The codebase is organized into several key components:
 ./wait.kube.sh route openshift-gitops-server openshift-gitops {.kind} Route
 ```
 
-### ACME Tool (Go CLI)
-```bash
-# Build the ACME tool
-cd acme && make build
-
-# Generate cluster configurations
-cd acme && make run
-
-# Run tests
-cd acme && make test
-
-# Install dependencies
-cd acme && make install-deps
-```
-
 ### Development Commands
 ```bash
 # Root level (no specific commands defined)
@@ -69,9 +53,8 @@ make podman-run
 - **OpenShift GitOps (ArgoCD)**: Continuous deployment and cluster management
 - **Red Hat Advanced Cluster Management (ACM)**: Multi-cluster management
 - **Hive**: OpenShift cluster provisioning operator
-- **Kustomize**: YAML configuration management
+- **Kustomize**: YAML configuration management and templating
 - **Tekton Pipelines**: CI/CD workflows
-- **Go**: ACME tool implementation with Kubernetes client libraries
 
 ## Cluster Management Workflow
 
@@ -88,59 +71,20 @@ make podman-run
 - Regional configurations support multiple availability zones
 - Kustomize for YAML templating and patching
 
-## ACME Tool Details
+## Kustomize Configuration Management
 
-The ACME tool is a Go CLI application that:
-- Generates ClusterDeployment, InstallConfig, MachinePool, and ManagedCluster manifests
-- Reads cluster specifications from code
-- Outputs JSON configurations for GitOps consumption
-- Supports multiple cluster regions and configurations
+The project uses pure Kustomize for generating cluster manifests:
+- ClusterDeployment manifests for Hive cluster provisioning
+- InstallConfig Secrets for OpenShift installation configuration
+- MachinePool manifests for worker node pool definitions
+- ManagedCluster manifests for ACM cluster management
 
-### Data Model
+### Configuration Structure
 
-The ACME tool implements a structured data model in `acme/pkg/api/` that represents the relationships between cluster entities:
-
-**Code Organization:**
-- `acme/pkg/api/external/` - Generated API structs and wrappers for upstream CRDs
-- `acme/pkg/api/acme/` - Custom ACME project-specific data models
-- `acme/pkg/api/` - Base package for shared types (ClusterDeploymentConfig)
-
-**Generated/External API Code:**
-- `managedcluster.go` - Complete `cluster.open-cluster-management.io/v1` API (generated in previous session)
-- `klusterletaddonconfig.go` - Complete `agent.open-cluster-management.io/v1` KlusterletAddonConfig API structs
-- `kustomization.go` - Complete `kustomize.config.k8s.io/v1beta1` API structs with full Kustomization CRD definitions
-- `clusterdeployment.go` - Constructor functions using official `hivev1.ClusterDeployment` types
-- `machinepool.go` - Constructor functions using official `hivev1.MachinePool` types
-
-**Custom ACME Project Models:**
-- `CentralControlPlane` - Top-level entity representing the bootstrap control plane
-- `RegionalCluster` - Regional cluster entity with 1:1 relationships to all components
-- `ClusterDeploymentConfig` - Configuration parameters for cluster deployment (in base api package)
-- `InstallConfig` - Custom project-specific OpenShift installation configuration struct
-
-**Entity Relationships:**
-- `CentralControlPlane` 1:Many `RegionalCluster` - One control plane manages multiple regional clusters
-- `CentralControlPlane` 1:1 `ClusterDeploymentConfig` - Control plane has its own configuration
-- `RegionalCluster` 1:1 `ClusterDeploymentConfig` - Each regional cluster has configuration parameters
-- `RegionalCluster` 1:1 `ClusterDeployment` - Hive cluster provisioning resource
-- `RegionalCluster` 1:1 `InstallConfig` - OpenShift installation configuration
-- `RegionalCluster` 1:1 `MachinePool` - Hive worker node pool definition  
-- `RegionalCluster` 1:1 `ManagedCluster` - ACM cluster management resource
-
-**Constructor Pattern:**
-- `acme.NewRegionalCluster(config)` creates all related entities from a single ClusterDeploymentConfig
-- External constructors create official API objects:
-  - `external.NewClusterDeployment(config)` - Hive ClusterDeployment CRD
-  - `external.NewMachinePool(config)` - Hive MachinePool CRD
-  - `external.NewManagedCluster(config)` - ACM ManagedCluster CRD
-- ACME constructors create custom project entities:
-  - `acme.NewInstallConfig(config)` - Custom install config as Kubernetes Secret
-
-**Testing:**
-```bash
-# Test the data model and entity generation
-cd acme && go run cmd/main.go clusters
-```
+- **Base configurations**: Common templates in `clusters/base/`
+- **Overlays**: Environment-specific customizations in `clusters/overlay/`
+- **Patches**: Kustomize patches for region-specific modifications
+- **Generators**: ConfigMap and Secret generators for cluster-specific data
 
 ## Important Notes
 
@@ -150,6 +94,39 @@ cd acme && go run cmd/main.go clusters
 - The bootstrap process requires cluster-admin permissions
 - Regional clusters are provisioned automatically via ACM and Hive
 
+## Adding New Clusters
+
+To add a new cluster (e.g., `cluster-40`), follow this manual process:
+
+### Prerequisites
+- Bootstrap control plane cluster running with cluster-admin access
+- AWS credentials and pull secrets configured
+- Secrets stored in `secrets/aws-creds.yaml` and `secrets/pull-secret.yaml`
+
+### Step-by-Step Process
+1. **Copy existing overlay**: Copy `./clusters/overlay/region-02` to `./clusters/overlay/region-04`
+2. **Update cluster references**: Find/Replace 'cluster-10' with 'cluster-40' in all files within the new overlay
+3. **Add to kustomization**: Add the new cluster overlay to `./regional-clusters/kustomization.yaml`
+4. **Update bootstrap script**: Add the new cluster to `./bootstrap.sh` for status monitoring
+5. **Create Pull Request**: Submit changes to the repository
+6. **Deploy**: Run `./bootstrap.sh` to provision cluster-40 or monitor via ACM console
+
+### GitOps Workflow
+- ArgoCD applies the new cluster via the [regional clusters](./gitops-applications/regional-clusters.application.yaml) application
+- Hive ClusterDeployments handle automated cluster provisioning
+- ACM imports and manages the new cluster for governance
+
+### Secret Management
+Currently uses manual secret management (Vault integration planned):
+```bash
+# Retrieve secrets from ACM for each cluster namespace
+oc get secret aws-creds -n $cluster_namespace -o yaml > secrets/aws-creds.yaml
+oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
+```
+
 ## Development Best Practices
 
-- Always `make build` to test after code changes
+- Use `kustomize build` to validate configuration changes
+- Test overlays before applying to clusters
+- Follow GitOps principles for all cluster modifications
+- Reference existing cluster overlays (region-01, region-02, region-03) as templates

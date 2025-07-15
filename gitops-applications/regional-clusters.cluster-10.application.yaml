@@ -8,7 +8,7 @@ spec:
     name: in-cluster
   project: default
   source:
-    path: clusters/overlay/cluster-10
+    path: clusters/overlay/region-01
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:
