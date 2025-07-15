@@ -52,18 +52,40 @@ make podman-run
 ## Key Technologies
 
 - **OpenShift GitOps (ArgoCD)**: Continuous deployment and cluster management
-- **Red Hat Advanced Cluster Management (ACM)**: Multi-cluster management
-- **Hive**: OpenShift cluster provisioning operator
+- **Red Hat Advanced Cluster Management (ACM)**: Multi-cluster management with CAPI integration
+- **Cluster API (CAPI)**: Kubernetes-native cluster lifecycle management
+- **Hive**: OpenShift cluster provisioning operator (for OCP clusters)
+- **Infrastructure Providers**: AWS, Azure, GCP, vSphere, OpenStack, BareMetal (via ACM)
 - **Kustomize**: YAML configuration management and templating
 - **Tekton Pipelines**: CI/CD workflows
 
 ## Cluster Management Workflow
 
 1. **Bootstrap**: Run `./bootstrap.sh` to set up the control plane
-2. **Provision**: Clusters are automatically provisioned via Hive ClusterDeployments
+2. **Provision**: Clusters are automatically provisioned via:
+   - **OCP Clusters**: Hive ClusterDeployments
+   - **EKS Clusters**: CAPI with ACM infrastructure providers
 3. **Import**: ACM imports managed clusters for governance
 4. **Deploy**: ArgoCD deploys applications to target clusters
 5. **Monitor**: Status monitoring via custom wait scripts
+
+## Infrastructure Provider Integration
+
+ACM is configured with infrastructure providers that automatically install and manage CAPI controllers:
+
+### Enabled Providers
+- **AWS**: EKS clusters via AWSManagedControlPlane and AWSManagedMachinePool
+- **Azure**: AKS clusters via Azure infrastructure provider
+- **GCP**: GKE clusters via GCP infrastructure provider
+- **vSphere**: On-premises clusters via vSphere provider
+- **OpenStack**: OpenStack-based clusters
+- **BareMetal**: Physical machine clusters
+
+### CAPI Integration
+- ACM MultiClusterHub automatically installs CAPI CRDs for enabled providers
+- No need for standalone CAPI operators
+- Infrastructure providers managed through ACM lifecycle
+- Seamless integration with ACM's cluster governance and policies
 
 ## Configuration Management
 
@@ -103,12 +125,13 @@ The project uses pure Kustomize for generating cluster manifests:
 
 ### Current Implementation: cluster-40 (EKS)
 **Status**: Implemented and ready for deployment
-- **Type**: EKS cluster using CAPI v1beta2 resources
+- **Type**: EKS cluster using CAPI v1beta1 resources (via ACM infrastructure providers)
 - **Region**: ap-southeast-1
 - **Compute**: m5.large instances (3 nodes, scaling 1-10)
 - **Base Domain**: rosa.mturansk-test.csu2.i3.devshift.org
 - **Resources**: AWSManagedControlPlane, AWSManagedMachinePool, ArgoCD applications
 - **GitOps**: Configured with ArgoCD applications for cluster + regional deployments
+- **CAPI CRDs**: Automatically installed by ACM infrastructure providers
 
 ### General Process for Adding New Clusters
 
@@ -123,7 +146,8 @@ The project uses pure Kustomize for generating cluster manifests:
 2. **Create CAPI resources**: AWSManagedControlPlane + AWSManagedMachinePool
 3. **Configure region and compute**: Set AWS region and instance type in CAPI resources
 4. **Set base domain**: Add baseDomain to AWSManagedControlPlane
-5. **Uses**: CAPI v1beta2 API versions for all resources
+5. **Uses**: CAPI v1beta1 API versions (compatible with ACM infrastructure providers)
+6. **CRDs**: Automatically installed by ACM when infrastructure providers are enabled
 
 #### Common Steps:
 1. **Create regional deployment overlay**: Copy and update `./regional-deployments/overlays/`
@@ -133,8 +157,10 @@ The project uses pure Kustomize for generating cluster manifests:
 
 ### GitOps Workflow
 - ArgoCD applies the new cluster via regional clusters application
-- CAPI handles EKS cluster provisioning, Hive handles OCP cluster provisioning
+- **OCP Clusters**: Hive handles cluster provisioning
+- **EKS Clusters**: CAPI (via ACM infrastructure providers) handles cluster provisioning
 - ACM imports and manages the new cluster for governance
+- Infrastructure providers automatically install required CRDs
 
 ### Secret Management
 Currently uses manual secret management (Vault integration planned):
@@ -146,19 +172,37 @@ oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.ya
 
 ## ACM GitOps Integration
 
-The project uses ACM's native GitOps integration to automatically register ManagedClusters with ArgoCD:
+The project uses ACM's native GitOps integration with infrastructure providers for comprehensive cluster management:
 
-### Components
+### Infrastructure Provider Components
+- **MultiClusterHub**: Configured with infrastructure providers for AWS, Azure, GCP, vSphere, OpenStack, BareMetal
+- **CAPI Controllers**: Automatically installed by ACM for enabled infrastructure providers
+- **Provider-Specific CRDs**: EKS, AKS, GKE, and other cloud-native cluster resources
+- **Unified Management**: Single interface for managing diverse cluster types
+
+### GitOps Integration Components
 - **GitOpsCluster CR**: Automatically registers clusters with ArgoCD based on Placement selection
 - **ManagedClusterSetBinding**: Binds the global ManagedClusterSet to openshift-gitops namespace
-- **Placement**: Selects clusters based on labels (OpenShift + Amazon)
+- **Placement**: Selects clusters based on labels (vendor=OpenShift/EKS, cloud=Amazon)
 - **Policy**: Automates the creation of GitOps resources across clusters
 
 ### Features
 - **Automated Cluster Registration**: No manual ArgoCD secret management required
 - **ApplicationManager Integration**: KlusterletAddonConfig enables ArgoCD permissions on target clusters
 - **Policy-Driven**: ACM policies ensure consistent GitOps configuration across all clusters
-- **Label-Based Selection**: Clusters are automatically included based on vendor=OpenShift/EKS, cloud=Amazon labels
+- **Multi-Provider Support**: Seamless management of OCP, EKS, AKS, GKE, and other cluster types
+- **Infrastructure Provider Lifecycle**: ACM manages CAPI controllers and CRDs automatically
+
+### ACM Configuration Location
+The ACM MultiClusterHub configuration is located at:
+```
+operators/advanced-cluster-management/instance/base/multiclusterhub.yaml
+```
+
+Key configuration sections:
+- `infrastructureProviders`: Enables AWS, Azure, GCP, vSphere, OpenStack, BareMetal
+- `overrides.components`: Configures all ACM components including hypershift
+- `availabilityConfig`: Set to High for production deployment
 
 ## NEWREGION.md Test Plan
 
