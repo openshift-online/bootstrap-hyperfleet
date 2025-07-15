@@ -1,0 +1,1090 @@
+---
+kind: Template
+apiVersion: v1
+metadata:
+  name: uhc-acct-mngr-service
+  annotations:
+    openshift.io/display-name: Unified Hybrid Cloud Account Manager Service
+    description: Account management API for the Unified Hybrid Cloud deployment
+    tags: golang,uhc,service-delivery
+    iconClass: icon-shadowman
+    template.openshift.io/provider-display-name: Red Hat, Inc.
+    template.openshift.io/documentation-url: https://gitlab.cee.redhat.com/service/uhc-account-manager
+labels:
+  template: uhc-account-manager
+parameters:
+
+  - name: DEPLOYMENT_NAME
+    displayName: Deployment name
+    description: Allows named deployments for blue/green deploys
+    value: uhc-acct-mngr
+
+  - name: GATE_NAME
+    displayName: Deployment gate name
+    description: Service pods and gating tests are labeled together
+    value: ocm-ams-test
+
+  - name: DEPLOYMENT_RING
+    displayName: Metric name
+    description: Allows pretty named in Grafana for blue/green deploys
+    value: green
+
+  - name: ENVIRONMENT
+    displayName: Environment
+    description: Which Account Manager environment to use for this deployment
+    value: production
+
+  - name: IMAGE_REGISTRY
+    displayName: Image Registry
+    required: true
+
+  - name: IMAGE_REPOSITORY
+    displayName: Image Repository
+    required: true
+
+  - name: VERSION
+    displayName: Image version
+    value: latest
+
+  - name: IMAGE_TAG
+    displayName: Image tag
+    value: latest
+
+  - name: GLOG_V
+    displayName: GLOG V Level
+    description: Log verbosity level
+    value: "10"
+
+  - name: ULOG_V
+    displayName: ULOG V Level
+    description: Log verbosity level
+    value: "debug"
+
+  - name: GODEBUG
+    description: GODEBUG env var value for API server
+    displayName: GODEBUG env
+    value: ""
+    # See https://golang.org/src/net/http/doc.go for details and supported values
+    # Inititally added to be able to disable http2 for TLS connections with value https2server=0
+
+  - name: MEMORY_REQUEST
+    description: Memory request for the API pods.
+    value: "512Mi"
+
+  - name: MEMORY_LIMIT
+    description: Memory limit for the API pods.
+    value: "1Gi"
+
+  - name: CPU_REQUEST
+    description: CPU request for the API pods.
+    value: "200m"
+
+  - name: CPU_LIMIT
+    description: CPU limit for the API pods.
+    value: "1"
+
+  - name: API_LIVENESS_PROBE_INITIAL_DELAY_SECONDS
+    description: api server liveness probe initial delay seconds
+    value: "15"
+
+  - name: API_LIVENESS_PROBE_PERIOD_SECONDS
+    description: api server liveness probe period seconds
+    value: "5"
+
+  - name: API_READINESS_PROBE_INITIAL_DELAY_SECONDS
+    description: api server readiness probe initial delay seconds
+    value: "20"
+
+  - name: API_READINESS_PROBE_PERIOD_SECONDS
+    description: api server readiness probe period seconds
+    value: "5"
+
+  - name: ENVOY_MEMORY_REQUEST
+    description: Envoy memory request for the API pods.
+    value: "256Mi"
+
+  - name: ENVOY_CPU_REQUEST
+    description: Envoy CPU request for the API pods.
+    value: "250m"
+
+  - name: ENVOY_MEMORY_LIMIT
+    description: Envoy memory limit for the API pods.
+    value: "512Mi"
+
+  - name: ENVOY_CPU_LIMIT
+    description: Envoy CPU limit for the API pods.
+    value: "500m"
+
+  - name: USERINFO_URL
+    displayName: UserInfo URL for token provider
+    value: ""
+
+  - name: JWKS_URL
+    displayName: JWK Token Certificate URL
+
+  - name: UHC_BASE_URL
+    displayName: OCM API Base URL for API pods with Envoy
+    description: OCM API Base URL for API pods with Envoy
+
+  - name: UHC_TOKEN_URL
+    description: Token URL to use for UHC/OCM API calls to other services
+    displayName: UHC Token URL
+
+  - name: AMS_SERVICE_SCOPES
+    description: Level of access that an app can request to a resource
+    value: "openid"
+
+  - name: AMS_SERVICE_INSECURE
+    description: Disables TLS cert verification on authentication.
+    value: "false"
+
+  - name: UHC_DEBUG
+    displayName: UHC API Debug mode
+    description: Debug mode for UHC API client
+    value: "false"
+
+  - name: TELEMETER_DEBUG
+    displayName: Telemeter API Debug mode
+    description: Debug mode for Telemeter API client
+    value: "false"
+
+  - name: STALE_SCREEN_PERIOD
+    displayName: "Stale screen period for account screening job"
+    description: "Period duration to Stale screen period for account screening job"
+    value: 72h
+
+  - name: CLEAN_SCREEN_PERIOD
+    displayName: Account clean screening period
+    description: Determine when banned account should be unbanned
+    value: 24h
+
+  - name: RESTRICTED_SCREEN_PERIOD
+    displayName: Restricted Account screening period
+    description: Defines the restricted screen period
+    value: 720h
+
+  - name: RESTRICTED_SCREEN_RETRY_PERIOD
+    displayName: Restricted Account screening retry period
+    description: Determine when restricted account should be screened again within the restricted screen period
+    value: 30m
+
+  - name: CLUSTER_TRANSFER_PERIOD
+    displayName: Cluster transfer period
+    description: Determine when cluster transfer should be expired
+    value: 120h
+
+  - name: RBAC_BASE_URL
+    displayName: RBAC service URL
+    description: URL against which reconcile RBAC account groups and roles
+    value: "https://mtls.internal.console.stage.redhat.com"
+
+  - name: RBAC_PROXY
+    displayName: RBAC service proxy
+    description: Proxy to utilize when reconciling with RBAC service
+    value: "http://squid.corp.redhat.com:3128"
+
+  - name: RBAC_PAGE_SIZE
+    displayName: RBAC service page size
+    description: Page size to use when querying RBAC service
+    value: "10"
+
+  - name: RHIT_BASE_USER_URL
+    displayName: RH IT user service base API URL
+    description: Base API URL for the RH IT user service
+
+  - name: RHIT_BASE_SUBSCRIPTION_URL
+    displayName: RH IT subscription service base API URL
+    description: Base API URL for the RH IT subscription service
+
+  - name: "RHIT_BASE_REGNUM_URL"
+    displayName: "RHIT regnum service base API URL"
+    description: "Base API URL for the RHIT regnum service"
+
+  - name: RHIT_BASE_REGISTRY_URL
+    displayName: RH IT registry service base API URL
+    description: Base API URL for the RH IT registry service
+
+  - name: RHIT_BASE_CANDLEPIN_URL
+    displayName: RH IT Candlepin service base API URL
+    description: Base API URL for the RH IT Candlepin service
+
+  - name: RHIT_BASE_EXPORT_COMPLIANCE_URL
+    displayName: RH IT export compliance base API URL
+    description: Base API URL for the RH IT export compliance service
+
+  - name: RHIT_BASE_TERMS_URL
+    displayName: RH IT terms base API URL
+    description: Base API URL for the RH IT terms service
+
+  - name: RHIT_BASE_TNC_URL
+    displayName: Red Hat's Terms and Conditions Service URL
+    description: Red Hat's Terms and Conditions Service URL
+    value: "https://www.stage.redhat.com/wapps/tnc"
+
+  - name: RHIT_BASE_ENTITLEMENTS_URL
+    displayName: RH IT entitlements base API URL
+    description: Base API URL for the RH IT entitlements service
+
+  - name: RHIT_TIMEOUT
+    displayName: User and Subscription Service Request Timeout
+    description: Timeout duration for all requests made to the user and subscription services
+    value: 5s
+
+  - name: QUAY_TIMEOUT
+    displayName: Quay.io Request Timeout
+    description: Timeout duration for all requests made to Quay.io
+    value: 5s
+
+  - name: METRICS_TIMEOUT
+    displayName: Metrics Request Timeout (seconds)
+    description: Timeout duration for all requests made to Metrics server
+    value: 5s
+
+  - name: TELEMETER_TIMEOUT
+    displayName: Telemeter Request Timeout (seconds)
+    description: Timeout duration for all requests made to Telemeter
+    value: 120s
+
+  - name: CLUSTER_REG_EXPIRATION
+    displayName: Cluster Registration Expiration Time
+    description: Duration that a cluster registration may exist before expiring
+    value: 6h
+
+  - name: OSD_TRIAL_DURATION
+    displayName: OSD Trial Duration
+    description: Duration that an OSD Trial subscription may exist before expiring
+    value: 1440h
+
+  - name: ORG_CLUSTER_REG_RATE_LIMIT
+    displayName: Cluster Registration Rate Limit Clusters Per Hour per organization
+    description: Number of clusters per hour to allow to be registered thorugh /cluster_registrations for a single organization
+    value: "50"
+
+  - name: CLUSTER_REG_RATE_LIMIT
+    displayName: Cluster Registration Rate Limit Clusters Per Hour per token
+    description: Number of clusters per hour to allow to be registered through /cluster_registrations for a single token
+    value: "10"
+
+  - name: AUTOMATIC_BAN
+    displayName: Automatic Ban
+    description: Automatically ban screened users with hits
+    value: "false"
+
+  - name: BLOCK_OSDTRIAL
+    displayName: Block OSDTrial
+    description: Block OSDTrial cluster authorization requests
+    value: "false"
+
+  - name: REPLICAS
+    description: Number of replicas of the service to run.
+    value: "1"
+
+  - name: ENABLE_JWT
+    displayName: Enable JWT
+    description: Enable JWT authentication validation
+    value: "true"
+
+  - name: ENABLE_HTTPS
+    displayName: Enable HTTPS
+    description: Enable HTTPS rather than HTTP
+    value: "true"
+
+  - name: API_SERVER_BINDADDRESS
+    displayName: API Server Bindaddress
+    description: API server bind adddress
+    value: :8000
+
+  - name: METRICS_SERVER_BINDADDRESS
+    displayName: Metrics Server Bindaddress
+    description: Metrics server bind adddress
+    value: :8080
+
+  - name: HEALTH_CHECK_SERVER_BINDADDRESS
+    displayName: Health check Server Bindaddress
+    description: Health check server bind adddress
+    value: :8083
+
+  - name: PPROF_SERVER_BINDADDRESS
+    displayName: PPROF Server Bindaddress
+    description: Support of /debug/pprof/ profiling endpoints; empty string will prevent the pprof server from running
+    value: localhost:8085
+
+  - name: API_SERVER_HOSTNAME
+    displayName: API Server Hostname
+    description: Server's public hostname
+    value: ""
+
+  - name: ENABLE_AUTHZ
+    displayName: Enable Authz
+    description: Enable Authorization on endpoints, should only be disabled for debug
+    value: "true"
+
+  - name: DB_MAX_OPEN_CONNS
+    displayName: Maximum Open Database Connections
+    description: Maximum number of open database connections per pod
+    value: "50"
+
+  - name: DB_QUERY_WRITE_TIMEOUT_SERVER
+    displayName: Request Write Timeout for DB requests
+    description: Timeout request after attempting to write to DB for this number of milliseconds; -1 means no timeout
+    value: "1000"
+
+  - name: DB_QUERY_READ_TIMEOUT_SERVER
+    displayName: Request Read Timeout for DB requests
+    description: Timeout request after awaiting to read an answer for this number of milliseconds; -1 means no timeout
+    value: "10000"
+
+  - name: DB_QUERY_CRONJOB_READ_TIMEOUT
+    displayName: Request Read Timeout for DB requests for Cronjobs
+    description: Timeout request after awaiting to read an answer for this number of milliseconds; -1 means no timeout
+    value: "-1"
+
+  - name: DB_QUERY_MIGRATION_READ_TIMEOUT
+    displayName: Request Read Timeout for DB requests for Migration
+    description: Timeout request after awaiting to read an answer for this number of milliseconds; -1 means no timeout; default is 60 mins
+    value: "3600000"
+
+  - name: DB_QUERY_MIGRATION_WRITE_TIMEOUT
+    displayName: Request Read Timeout for DB requests for Migration
+    description: Timeout request after awaiting to read an answer for this number of milliseconds; -1 means no timeout; default is 60 mins
+    value: "3600000"
+
+  - name: DB_SSLMODE
+    displayName: DB SSLmode
+    description: Database ssl mode (disable | require | verify-ca | verify-full)
+    value: "verify-full"
+
+  - name: ENABLE_DB_DEBUG
+    displayName: Enable DB Debug
+    description: framework's debug mode
+    value: "false"
+
+  - name: ENABLE_METRICS_HTTPS
+    displayName: Enable Metrics HTTPS
+    description: Enable HTTPS for metrics server
+    value: "false"
+
+  - name: ENABLE_QUAY_MOCK
+    displayName: Enable Quay Mock
+    description: Enable mock quay client
+    value: "false"
+
+  - name: ENABLE_RBAC_MOCK
+    displayName: Enable Rbac Mock
+    description: Enable mock rbac client
+    value: "false"
+
+  - name: ENABLE_RHIT_MOCK
+    displayName: Enable RHIT Mock
+    description: Enable mock rhit client
+    value: "false"
+
+  - name: ENABLE_METRICS_MOCK
+    displayName: Enable METRICS Mock
+    description: Enable mock metrics client
+    value: "false"
+
+  - name: ENABLE_UHC_MOCK
+    displayName: Enable UHC Mock
+    description: Enable mock uhc client
+    value: "false"
+
+  - name: ENABLE_CANDLEPIN_MOCK
+    displayName: Enable Candlepin Mock
+    description: Enable mock Candlepin client
+    value: "false"
+
+  - name: ENABLE_SEGMENT_MOCK
+    displayName: Enable Segment Mock
+    description: Enable mock Segment client
+    value: "false"
+
+  - name: ENABLE_UNLEASH_MOCK
+    displayName: Enable Unleash Mock
+    description: Enable mock Unleash client
+    value: "false"
+
+  - name: ENABLE_SUBSCRIPTION_FEATURE_RULE_SKUS
+    displayName: enable subscription feature rule skus
+    description: Enable fetching valid OCP skus from the Subscription Service sku rule api
+    value: "true"
+
+  - name: USE_CANDLEPIN_BASIC_AUTH
+    displayName: Use Candlepin Basic Auth
+    description: Use Basic instead of Cert auth in the Candlepin client
+    value: "false"
+
+  - name: HTTP_READ_TIMEOUT
+    displayName: HTTP Read Timeout
+    description: HTTP server read timeout
+    value: 60s
+
+  - name: HTTP_WRITE_TIMEOUT
+    displayName: HTTP Write Timeout
+    description: HTTP server write timeout
+    value: 60s
+
+  - name: API_SERVER_SHUTDOWN_TIMEOUT
+    displayName: API server shutdown timeout
+    description: Server shutdown timeout
+    value: 30s
+
+  - name: HYDRA_BASE_URL
+    displayName: Hydra Base URL
+    description: URL to access Hydra service
+    value: "https://access.redhat.com"
+
+  - name: METRICS_BASE_URL
+    displayName: Metrics Base URL
+    description: URL to access metrics
+    value: "uhc-acct-mngr-metrics.uhc-stage.svc.cluster.local"
+
+  # cannot call this TELEMETER_BASE_URL because it will conflict with App-Interface environment parameters
+  # causing app-interface test failures if you ever try to override it in a saas file:
+  # [2023-04-17 13:52:44] [ERROR] [saasherder.py:_validate_saas_files:372] - [saas-ocm-ams-jobs/fetch-telemeter-metrics-job] parameter found in target ****-stage-01/uhc-stage should be reused from env osd-stage: target: "TELEMETER_BASE_URL: https://infogw-proxy.api.stage.openshift.com/". env: "TELEMETER_BASE_URL: https://infogw-proxy.api.stage.openshift.com". consider "TELEMETER_BASE_URL: ${TELEMETER_BASE_URL}/"
+  - name: TELEMETER_URL
+    displayName: Telemeter Base URL
+    description: URL to access Telemeter service
+    value: "https://infogw-proxy.api.openshift.com/"
+
+  - name: HYDRA_TOKEN_URL
+    displayName: SSO URL
+    description: URL to access SSO services
+    value: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+
+  - name: HYDRA_DEBUG
+    displayName: Hydra Debug
+    description: Print debugging info of Hydra
+    value: "false"
+
+  - name: QUAY_REGISTRY_TEAM_NAME
+    displayName: Quay registry team name
+    description: The team name of quay registry
+    value: "integrationinstallers"
+
+  - name: QUAY_REGISTRY_ORG_NAME
+    displayName: Quay registry organization name
+    description: The organization name of quay registry
+    value: "openshift-sdb"
+
+  - name: ENABLE_SENTRY
+    displayName: Enable Sentry Error Reporting
+    value: "false"
+
+  - name: SENTRY_URL
+    displayName: Sentry base URL
+    description: Base URL (without https://) of sentry server
+    value: "glitchtip.devshift.net"
+
+  - name: SENTRY_KEY_FILE
+    displayName: Sentry key file path
+    description: Path to the sentry key file
+    value: "/secrets/service/sentry.key"
+
+  - name: SENTRY_CRONJOBS_KEY_FILE
+    displayName: Sentry key file path
+    description: Path to the sentry key file
+    value: "/secrets/service/sentry-cronjobs.key"
+
+  - name: SENTRY_PROJECT
+    displayName: Sentry Project ID
+    value: "10"
+
+  - name: CRONJOB_SENTRY_PROJECT
+    displayName: Cronjob Sentry Project ID
+    value: "23"
+
+  - name: CONSUMER_SENTRY_PROJECT
+    displayName: Cronjob Sentry Project ID
+    value: "32"
+
+  - name: ENABLE_SENTRY_DEBUG
+    displayName: Enable Sentry Debug Logging
+    value: "false"
+
+  - name: SENTRY_TIMEOUT
+    displayName: Sentry Timeout
+    description: Timeout for all Sentry operations
+    value: "5s"
+
+  - name: SEGMENT_KEY
+    displayName: Segment API Key
+    description: Segment API Key
+    value: ""
+
+  - name: UNLEASH_URL
+    displayName: Unleash base URL
+    description: Base URL (with https://) of unleash server
+    value: "https://ocm-integration.unleash.devshift.net/api"
+
+  - name: UNLEASH_TOKEN
+    displayName: Unleash token
+    description: Unleash token
+    value: ""
+
+  - name: UPDATE_DEPLOYMENT_CONFIG_CHANGE
+    displayName: UPDATE_DEPLOYMENT_CONFIG_CHANGE
+    description: Update the value to any random string to perform a rolling update of the deployment.
+    value: update_me_when_secret_config_changes
+
+  - name: ENABLE_TERMS_ENFORCEMENT
+    displayName: Enforcing Terms and Conditions
+    description: Enforcing Terms and Conditions
+    value: "false"
+
+  - name: ENABLE_TERMS_RETRY
+    displayName: Enforcing Terms and Conditions
+    description: Enforcing Terms and Conditions
+    value: "false"
+
+  - name: PERMISSION_CONDITION_CACHE
+    displayName: Use cache for permission.Condition compilaton result (bool)
+    description: Use cache for permission.Condition compilaton result (bool)
+    value: "true"
+
+  - name: ROLE_LIST_MAX_AGE
+    displayName: Role list max cache age (seconds)
+    description: HTTP Cache-Control max-age for Role List requests in seconds
+    value: "120"
+
+  - name: SUBSCRIPTION_LIST_MAX_AGE
+    displayName: Subscription list max cache age (seconds)
+    description: HTTP Cache-Control max-age for Subscription List requests in seconds
+    value: "0"
+
+  - name: PERMISSION_CONDITION_CACHE
+    displayName: Use cache for permission.Condition compilaton result (bool)
+    description: Use cache for permission.Condition compilaton result (bool)
+    value: "true"
+
+  - name: SKU_LIST_MAX_AGE
+    displayName: SKU list max cache age (seconds)
+    description: HTTP Cache-Control max-age for SKU List requests in seconds
+    value: "120"
+
+  - name: LABEL_METRICS_INCLUSION_DURATION
+    displayName: Label metrics inclusion duration
+    description: A cluster's last telemetry date needs be within in this duration in order to have labels collected
+    value: "168h"
+
+  - name: OSD_PENDING_DELETE_DURATION
+    displayName: OSD Pending Delete Duration
+    description: Duration that an expired OSD subscription may exist before expiring
+    value: "168h"
+
+  - name: MOA_SKU
+    displayName: MOA SKU
+    description: The $0 SKU for organizations having MOA clusters
+    value: "MW01369"
+
+  - name: OSD_MARKETPLACE_GCP_SKU
+    displayName: OSD Marketplace GCP SKU
+    description: The SKU for organizations having OSD clusters with marketplace-gcp billing model
+    value: "MW02610"
+
+  - name: OCP_SKU_LIST_FILE
+    displayName: OCP SKU List
+    description: Path to the OCP SKU list yaml file containing all OCP SKUs for reconciliation
+    value: "/configs/subscription-skus/ocp-skus.yaml"
+
+  - name: RHM_SKU_LIST_FILE
+    displayName: Red Hat Marketplace SKU List
+    description: Path to the Red Hat Marketplace SKU list yaml file containing all OCP SKUs for reconciliation
+    value: "/configs/subscription-skus/rhm-skus.yaml"
+
+  - name: AUTO_ENTITLEMENT_RENEW_DURATION
+    displayName: Auto entitlement renew duration
+    description: Duration until expiration during which a RHIT subscription should be renewed
+    value: "120h"
+
+  - name: ENVOY_IMAGE
+    description: Envoy image.
+    value: quay.io/app-sre/envoyproxy:v1.20.6
+
+  - name: ENABLE_CERTIFICATE_MOCK
+    displayName: Use mock certificates for certificates API
+    description: Use mock certificates for certificates API
+    value: "true"
+
+  - name: CERTIFICATE_MOCK_404_ORG_EXTERNAL_ID
+    displayName: The the organization external id for the mock API to return 404 response
+    description: The the organization external id for the mock API to return 404 response
+    value: "certificate-mock-404-org-external-id"
+
+  - name: MOCK_SCA_CRT_PATH
+    displayName: The path for the mock SCA certificate crt file
+    description: The path for the mock SCA certificate crt file
+    value: "/secrets/service/mock-sca.crt"
+
+  - name: MOCK_SCA_KEY_PATH
+    displayName: The path for the mock SCA certificate key file
+    description: The path for the mock SCA certificate key file
+    value: "/secrets/service/mock-sca.key"
+
+  # TODO: remove when email validation is no longer needed (SDB-2648, SDB-2731)
+  - name: ENABLE_ORG_SERVICE_ACCT_EMAIL_VALIDATION
+    displayName: Enable Organization Service Account Email Validation
+    description: Enables the @redhat.com email authz validation for organization service accounts
+    value: "false"
+
+  - name: ENABLE_CLAIM_AUDIT_LOGGING
+    displayName: Enables JWT claim audit logging
+    description: Info logging for JWT claims on authenticated requests
+    value: "false"
+
+objects:
+
+  - kind: ServiceAccount
+    apiVersion: v1
+    metadata:
+      name: account-manager
+      labels:
+        app: account-manager
+
+  - kind: Deployment
+    apiVersion: apps/v1
+    metadata:
+      name: ${DEPLOYMENT_NAME}
+      labels:
+        app: ${DEPLOYMENT_NAME}
+    spec:
+      selector:
+        matchLabels:
+          app: ${DEPLOYMENT_NAME}
+      replicas: ${{REPLICAS}}
+      strategy:
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app: ${DEPLOYMENT_NAME}
+            gate: ${GATE_NAME}
+          annotations:
+            ocm: ${{UPDATE_DEPLOYMENT_CONFIG_CHANGE}}
+        spec:
+          serviceAccount: account-manager
+          serviceAccountName: account-manager
+          volumes:
+            - name: tls
+              secret:
+                secretName: ${DEPLOYMENT_NAME}-tls
+            - name: tls-envoy
+              secret:
+                secretName: ${DEPLOYMENT_NAME}-tls-envoy
+            - name: envoy
+              configMap:
+                name: uhc-acct-mngr-envoy
+            - name: service
+              secret:
+                secretName: uhc-acct-mngr
+            - name: rds
+              secret:
+                secretName: uhc-acct-mngr-rds
+            - name: rds-readonly
+              secret:
+                secretName: uhc-acct-mngr-rds-readonly
+                optional: true
+            - name: service-templated
+              secret:
+                secretName: uhc-acct-mngr-templated
+            - name: authentication
+              configMap:
+                name: authentication
+            - name: subscription-skus
+              configMap:
+                name: subscription-skus
+            - name: sockets
+              emptyDir:
+                medium: Memory
+          initContainers:
+            - name: migration
+              image: ${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: service
+                  mountPath: /secrets/service
+                - name: rds
+                  mountPath: /secrets/rds
+              env:
+                - name: "AMS_ENV"
+                  value: "${ENVIRONMENT}"
+              command:
+                - /usr/local/bin/account-manager
+                - migrate
+                - --db-host-file=/secrets/rds/db.host
+                - --db-port-file=/secrets/rds/db.port
+                - --db-user-file=/secrets/rds/db.user
+                - --db-password-file=/secrets/rds/db.password
+                - --db-name-file=/secrets/rds/db.name
+                - --db-rootcert=/secrets/rds/db.ca_cert
+                - --db-sslmode=${DB_SSLMODE}
+                - --db-query-write-timeout=${DB_QUERY_MIGRATION_WRITE_TIMEOUT}
+                - --db-query-read-timeout=${DB_QUERY_MIGRATION_READ_TIMEOUT}
+                - --alsologtostderr
+                - -v=${GLOG_V}
+                - -u=${ULOG_V}
+          containers:
+            - name: envoy
+              image: ${ENVOY_IMAGE}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: tls-envoy
+                  mountPath: /secrets/tls
+                - name: envoy
+                  mountPath: /configs/envoy
+                - name: sockets
+                  mountPath: /sockets
+              command:
+                - envoy
+                - --config-path
+                - /configs/envoy/main.yaml
+              ports:
+                - name: api-envoy
+                  protocol: TCP
+                  containerPort: 9001
+                - name: metrics-envoy
+                  protocol: TCP
+                  containerPort: 9000
+              livenessProbe:
+                httpGet:
+                  path: /ready
+                  port: 9000
+                initialDelaySeconds: 10
+                timeoutSeconds: 1
+                periodSeconds: 10
+                successThreshold: 1
+                failureThreshold: 10
+              readinessProbe:
+                httpGet:
+                  path: /ready
+                  port: 9000
+                initialDelaySeconds: 10
+                timeoutSeconds: 1
+                periodSeconds: 10
+                successThreshold: 1
+                failureThreshold: 10
+              resources:
+                requests:
+                  memory: ${ENVOY_MEMORY_REQUEST}
+                  cpu: ${ENVOY_CPU_REQUEST}
+                limits:
+                  memory: ${ENVOY_MEMORY_LIMIT}
+                  cpu: ${ENVOY_CPU_LIMIT}
+            - name: service
+              image: ${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: tls
+                  mountPath: /secrets/tls
+                - name: service
+                  mountPath: /secrets/service
+                - name: rds
+                  mountPath: /secrets/rds
+                - name: rds-readonly
+                  mountPath: /secrets/rds-readonly
+                - name: authentication
+                  mountPath: /configs/authentication
+                - name: subscription-skus
+                  mountPath: /configs/subscription-skus
+                - name: service-templated
+                  mountPath: /secrets/templated
+                - name: sockets
+                  mountPath: /sockets
+              env:
+                - name: "AMS_ENV"
+                  value: "${ENVIRONMENT}"
+                - name: "GODEBUG"
+                  value: "${GODEBUG}"
+              command:
+                - /usr/local/bin/account-manager
+                - serve
+                - --authz-rules-file=/config/authz-rules.yaml
+                - --quota-cost-rules-file=/config/quota-cost-rules.csv
+                - --quota-sku-rules-file=/config/quota-sku-rules.csv
+                - --db-host-file=/secrets/rds/db.host
+                - --db-port-file=/secrets/rds/db.port
+                - --db-user-file=/secrets/rds/db.user
+                - --db-password-file=/secrets/rds/db.password
+                - --db-name-file=/secrets/rds/db.name
+                - --db-rootcert=/secrets/rds/db.ca_cert
+                - --db-sslmode=${DB_SSLMODE}
+                - --db-max-open-connections=${DB_MAX_OPEN_CONNS}
+                - --db-query-write-timeout=${DB_QUERY_WRITE_TIMEOUT_SERVER}
+                - --db-query-read-timeout=${DB_QUERY_READ_TIMEOUT_SERVER}
+                - --enable-terms-enforcement=${ENABLE_TERMS_ENFORCEMENT}
+                - --enable-terms-retry=${ENABLE_TERMS_RETRY}
+                - --enable-certificate-mock=${ENABLE_CERTIFICATE_MOCK}
+                - --certificate-mock-404-org-external-id=${CERTIFICATE_MOCK_404_ORG_EXTERNAL_ID}
+                - --mock-sca-crt-path=${MOCK_SCA_CRT_PATH}
+                - --mock-sca-key-path=${MOCK_SCA_KEY_PATH}
+                - --quay-auth-token-file=/secrets/service/quay.token
+                - --uhc-client-id-file=/secrets/service/ams-service.clientId
+                - --uhc-client-secret-file=/secrets/service/ams-service.clientSecret
+                - --uhc-scopes=${AMS_SERVICE_SCOPES}
+                - --uhc-insecure=${AMS_SERVICE_INSECURE}
+                - --uhc-base-url=${UHC_BASE_URL}
+                - --uhc-token-url=${UHC_TOKEN_URL}
+                - --uhc-debug=${UHC_DEBUG}
+                - --load-consumers=false
+                - --rhit-base-user-url=${RHIT_BASE_USER_URL}
+                - --rhit-base-subscription-url=${RHIT_BASE_SUBSCRIPTION_URL}
+                - --rhit-base-regnum-url=${RHIT_BASE_REGNUM_URL}
+                - --rhit-base-registry-url=${RHIT_BASE_REGISTRY_URL}
+                - --rhit-base-export-compliance-url=${RHIT_BASE_EXPORT_COMPLIANCE_URL}
+                - --rhit-base-terms-url=${RHIT_BASE_TERMS_URL}
+                - --rhit-base-tnc-url=${RHIT_BASE_TNC_URL}
+                - --rhit-base-entitlements-url=${RHIT_BASE_ENTITLEMENTS_URL}
+                - --rhit-client-crt-path=/secrets/service/rhsm.crt
+                - --rhit-client-key-path=/secrets/service/rhsm.key
+                - --rhit-root-ca-path=/secrets/service/rhsm-2015.ca,/secrets/service/rhsm-2022.ca
+                - --rhit-timeout=${RHIT_TIMEOUT}
+                - --rbac-base-url=${RBAC_BASE_URL}
+                - --rbac-proxy=${RBAC_PROXY}
+                - --rbac-client-crt-path=/secrets/service/rbac.crt
+                - --rbac-client-key-path=/secrets/service/rbac.key
+                - --rbac-root-ca-path=/secrets/service/rhsm-2015.ca,/secrets/service/rhsm-2022.ca
+                - --cluster-transfer-period=${CLUSTER_TRANSFER_PERIOD}
+                - --clean-screen-period=${CLEAN_SCREEN_PERIOD}
+                - --restricted-screen-period=${RESTRICTED_SCREEN_PERIOD}
+                - --restricted-screen-retry-period=${RESTRICTED_SCREEN_RETRY_PERIOD}
+                - --candlepin-base-url=${RHIT_BASE_CANDLEPIN_URL}
+                - --candlepin-client-crt-path=/secrets/service/rhsm.crt
+                - --candlepin-client-key-path=/secrets/service/rhsm.key
+                - --candlepin-root-ca-path=/secrets/service/rhsm-2015.ca,/secrets/service/rhsm-2022.ca
+                - --candlepin-username-file=/secrets/service/candlepin.username
+                - --candlepin-password-file=/secrets/service/candlepin.password
+                - --candlepin-use-basic-auth=${USE_CANDLEPIN_BASIC_AUTH}
+                - --options-cluster-registration-expiration-time=${CLUSTER_REG_EXPIRATION}
+                - --options-osd-trial-duration=${OSD_TRIAL_DURATION}
+                - --options-osd-pending-delete-duration=${OSD_PENDING_DELETE_DURATION}
+                - --options-org-max-registrations-per-hour=${ORG_CLUSTER_REG_RATE_LIMIT}
+                - --options-max-clusters-per-hour=${CLUSTER_REG_RATE_LIMIT}
+                - --quay-timeout=${QUAY_TIMEOUT}
+                - --https-cert-file=/secrets/tls/tls.crt
+                - --https-key-file=/secrets/tls/tls.key
+                - --acl-file=/configs/authentication/acl.yml
+                - --jwk-cert-file=/configs/authentication/jwks.json
+                - --user-info-url=${USERINFO_URL}
+                - --jwk-cert-url=${JWKS_URL}
+                - --enable-jwt=${ENABLE_JWT}
+                - --enable-https=${ENABLE_HTTPS}
+                - --automatic-ban=${AUTOMATIC_BAN}
+                - --block-osdtrial=${BLOCK_OSDTRIAL}
+                - --api-server-hostname=${API_SERVER_HOSTNAME}
+                - --api-server-bindaddress=${API_SERVER_BINDADDRESS}
+                - --metrics-server-bindaddress=${METRICS_SERVER_BINDADDRESS}
+                - --health-check-server-bindaddress=${HEALTH_CHECK_SERVER_BINDADDRESS}
+                - --pprof-server-bindaddress=${PPROF_SERVER_BINDADDRESS}
+                - --enable-health-check-https=${ENABLE_HTTPS}
+                - --enable-org-service-acct-email-validation=${ENABLE_ORG_SERVICE_ACCT_EMAIL_VALIDATION}
+                - --enable-claim-audit-logging=${ENABLE_CLAIM_AUDIT_LOGGING}
+                - --enable-authz=${ENABLE_AUTHZ}
+                - --enable-db-debug=${ENABLE_DB_DEBUG}
+                - --enable-metrics-https=${ENABLE_METRICS_HTTPS}
+                - --enable-quay-mock=${ENABLE_QUAY_MOCK}
+                - --enable-rbac-mock=${ENABLE_RBAC_MOCK}
+                - --enable-rhit-mock=${ENABLE_RHIT_MOCK}
+                - --enable-metrics-mock=${ENABLE_METRICS_MOCK}
+                - --enable-uhc-mock=${ENABLE_UHC_MOCK}
+                - --enable-candlepin-mock=${ENABLE_CANDLEPIN_MOCK}
+                - --enable-segment-mock=${ENABLE_SEGMENT_MOCK}
+                - --enable-unleash-mock=${ENABLE_UNLEASH_MOCK}
+                - --enable-sentry=${ENABLE_SENTRY}
+                - --enable-sentry-debug=${ENABLE_SENTRY_DEBUG}
+                - --enable-subscription-feature-rule-skus=${ENABLE_SUBSCRIPTION_FEATURE_RULE_SKUS}
+                - --sentry-url=${SENTRY_URL}
+                - --sentry-project=${SENTRY_PROJECT}
+                - --sentry-timeout=${SENTRY_TIMEOUT}
+                - --sentry-key-file=${SENTRY_KEY_FILE}
+                - --segment-key-file=/secrets/service/segment.key
+                - --unleash-url=${UNLEASH_URL}
+                - --unleash-token-file=/secrets/service/unleash.token
+                - --moa-sku=${MOA_SKU}
+                - --osd-marketplace-gcp-sku=${OSD_MARKETPLACE_GCP_SKU}
+                - --auto-entitlement-renew-duration=${AUTO_ENTITLEMENT_RENEW_DURATION}
+                - --http-read-timeout=${HTTP_READ_TIMEOUT}
+                - --http-write-timeout=${HTTP_WRITE_TIMEOUT}
+                - --api-server-shutdown-timeout=${API_SERVER_SHUTDOWN_TIMEOUT}
+                - --subscription-list-max-age=${SUBSCRIPTION_LIST_MAX_AGE}
+                - --permission-condition-cache=${PERMISSION_CONDITION_CACHE}
+                - --role-list-max-age=${ROLE_LIST_MAX_AGE}
+                - --sku-list-max-age=${SKU_LIST_MAX_AGE}
+                - --label-metrics-inclusion-duration=${LABEL_METRICS_INCLUSION_DURATION}
+                - --quay-registry-team-name=${QUAY_REGISTRY_TEAM_NAME}
+                - --quay-registry-org-name=${QUAY_REGISTRY_ORG_NAME}
+                - --hydra-base-url=${HYDRA_BASE_URL}
+                - --hydra-token-url=${HYDRA_TOKEN_URL}
+                - --hydra-client-id-file=/secrets/service/ams-service.clientId
+                - --hydra-client-secret-file=/secrets/service/ams-service.clientSecret
+                - --ocp-sku-list-file=${OCP_SKU_LIST_FILE}
+                - --rhm-sku-list-file=${RHM_SKU_LIST_FILE}
+                - --metrics-base-url=${METRICS_BASE_URL}
+                - --telemeter-base-url=${TELEMETER_URL}
+                - --telemeter-token-file=/secrets/templated/telemeter.bearer
+                - --telemeter-timeout=${TELEMETER_TIMEOUT}
+                - --deployment-name=${DEPLOYMENT_NAME}
+                - --deployment-ring=${DEPLOYMENT_RING}
+                - --alsologtostderr
+                - -v=${GLOG_V}
+                - -u=${ULOG_V}
+              resources:
+                requests:
+                  cpu: ${CPU_REQUEST}
+                  memory: ${MEMORY_REQUEST}
+                limits:
+                  cpu: ${CPU_LIMIT}
+                  memory: ${MEMORY_LIMIT}
+              livenessProbe:
+                httpGet:
+                  path: /api/accounts_mgmt
+                  port: 8000
+                  scheme: HTTPS
+                initialDelaySeconds: ${{API_LIVENESS_PROBE_INITIAL_DELAY_SECONDS}}
+                periodSeconds: ${{API_LIVENESS_PROBE_PERIOD_SECONDS}}
+              readinessProbe:
+                httpGet:
+                  path: /healthcheck
+                  port: 8083
+                  scheme: HTTPS
+                  httpHeaders:
+                    - name: User-Agent
+                      value: Probe
+                initialDelaySeconds: ${{API_READINESS_PROBE_INITIAL_DELAY_SECONDS}}
+                periodSeconds: ${{API_READINESS_PROBE_PERIOD_SECONDS}}
+
+
+  # ServiceMonitors exist in app-interface and are responsible for scraping metrics from AMS pods
+  #
+  # The monitors match on *service* labels, so all metrics services will require the same labels as the
+  # original "blue" deployment, while the new "green" deployments have pod labels for their own pod selector.
+
+  # https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/resources/observability/servicemonitors/ams-subscription-labels.servicemonitor.yaml#L21
+  # https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/resources/observability/servicemonitors/uhc-account-manager.servicemonitor.yaml
+  # https://gitlab.cee.redhat.com/service/app-interface/-/blob/master/resources/observability/servicemonitors/uhc-account-manager-envoy.servicemonitor.yaml
+
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: ${DEPLOYMENT_NAME}
+      labels:
+        app: uhc-acct-mngr
+        port: api
+      annotations:
+        description: Exposes and load balances the account manager pods
+        # this annotation causes the secret to be created in the namespace
+        service.alpha.openshift.io/serving-cert-secret-name: ${DEPLOYMENT_NAME}-tls
+        qontract.recycle: "true"
+        qontract.ignore_reconcile_time: "true"
+    spec:
+      selector:
+        app: ${DEPLOYMENT_NAME}
+      ports:
+        - port: 8000
+          targetPort: 8000
+          protocol: TCP
+
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: ${DEPLOYMENT_NAME}-envoy
+      labels:
+        app: uhc-acct-mngr
+        port: api-envoy
+      annotations:
+        description: Exposes and load balances the account manager Envoy
+        # this annotation causes the secret to be created in the namespace
+        service.alpha.openshift.io/serving-cert-secret-name: ${DEPLOYMENT_NAME}-tls-envoy
+        qontract.recycle: "true"
+        qontract.ignore_reconcile_time: "true"
+    spec:
+      selector:
+        app: ${DEPLOYMENT_NAME}
+      ports:
+        - port: 9001
+          targetPort: 9001
+          protocol: TCP
+      clusterIP: None
+
+  # Services for diagnostic ports (not part of main service because we
+  # don't want to expose them externally through same route).
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: ${DEPLOYMENT_NAME}-metrics
+      # these are service labels used by the monitor
+      labels:
+        app: uhc-acct-mngr
+        port: metrics
+      annotations:
+        description: Exposes and load balances the account manager pods metrics endpoint
+        service.alpha.openshift.io/serving-cert-secret-name: ${DEPLOYMENT_NAME}-metrics-tls
+        qontract.recycle: "true"
+        qontract.ignore_reconcile_time: "true"
+    spec:
+      # these labels match the pods fronted by this Service
+      selector:
+        app: ${DEPLOYMENT_NAME}
+      ports:
+        - port: 8080
+          targetPort: 8080
+          name: metrics
+
+
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: ${DEPLOYMENT_NAME}-metrics-envoy
+      labels:
+        app: uhc-acct-mngr
+        port: metrics-envoy
+      annotations:
+        description: Exposes and load balances the account manager Envoy metrics
+        qontract.recycle: "true"
+        qontract.ignore_reconcile_time: "true"
+    spec:
+      selector:
+        app: ${DEPLOYMENT_NAME}
+      ports:
+        - port: 9000
+          targetPort: 9000
+          name: metrics-envoy
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: ${DEPLOYMENT_NAME}-healthcheck
+      labels:
+        app: uhc-acct-mngr
+        port: healthcheck
+        qontract.recycle: "true"
+        qontract.ignore_reconcile_time: "true"
+    spec:
+      selector:
+        app: ${DEPLOYMENT_NAME}
+      ports:
+        - port: 8083
+          targetPort: 8083
