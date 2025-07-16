@@ -1,0 +1,10 @@
+apiVersion: regional.openshift.io/v1  
+kind: WorkerPool
+metadata:
+  name: compute
+spec:
+  instanceType: m5.large           # Using default, but explicit
+  replicas: 3                      # Using default, but explicit
+  scaling:
+    min: 1
+    max: 10

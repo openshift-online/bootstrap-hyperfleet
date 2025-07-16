@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regional-deployments-cluster-42
+  namespace: openshift-gitops
+spec:
+  destination:
+    server: 'https://cluster-42.rosa.mturansk-test.csu2.i3.devshift.org:6443'
+  project: default
+  source:
+    path: regional-deployments/overlays/cluster-42
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false

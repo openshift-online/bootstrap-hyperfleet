@@ -1,0 +1,18 @@
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: eks-prod
+  namespace: ap-southeast-1
+spec:
+  type: eks
+  region: ap-southeast-1
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Production compute configuration - larger instances
+  compute:
+    instanceType: m5.xlarge
+    replicas: 5
+    
+  # Kubernetes version for EKS
+  kubernetes:
+    version: "1.28"

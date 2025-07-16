@@ -1,0 +1,10 @@
+apiVersion: regional.openshift.io/v1  
+kind: WorkerPool
+metadata:
+  name: compute
+spec:
+  instanceType: m5.xlarge          # Production - larger instances
+  replicas: 5                      # Production - more replicas
+  scaling:
+    min: 2                         # Production - higher minimum
+    max: 20                        # Production - can scale higher
