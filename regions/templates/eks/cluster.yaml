@@ -1,0 +1,49 @@
+# EKS Cluster Template - CAPI Cluster + ManagedCluster
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - 192.168.0.0/16
+  infrastructureRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: AWSManagedControlPlane
+    name: ${CLUSTER_NAME}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: AWSManagedControlPlane
+    name: ${CLUSTER_NAME}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: AWSManagedControlPlane
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${CLUSTER_NAME}
+spec:
+  region: ${REGION}
+  sshKeyName: ""
+  version: v${K8S_VERSION}
+  baseDomain: ${BASE_DOMAIN}
+  vpc:
+    availabilityZoneUsageLimit: 2
+    availabilityZoneSelection: Ordered
+  logging:
+    enable: false
+  associateOIDCProvider: true
+  eksClusterName: ${CLUSTER_NAME}
+---
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  labels:
+    vendor: EKS
+    cloud: Amazon
+    region: ${REGION}
+    cluster.open-cluster-management.io/clusterset: global
+spec:
+  hubAcceptsClient: true

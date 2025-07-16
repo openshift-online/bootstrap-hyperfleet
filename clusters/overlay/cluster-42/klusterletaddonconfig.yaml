@@ -1,0 +1,20 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: cluster-42
+  namespace: cluster-42
+spec:
+  clusterName: cluster-42
+  clusterNamespace: cluster-42
+  clusterLabels:
+    vendor: EKS
+    cloud: Amazon
+    region: ap-southeast-1
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true

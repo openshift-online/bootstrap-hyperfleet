@@ -1,0 +1,11 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: cluster-42
+  labels:
+    vendor: EKS
+    cloud: Amazon
+    region: ap-southeast-1
+    cluster.open-cluster-management.io/clusterset: global
+spec:
+  hubAcceptsClient: true

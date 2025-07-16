@@ -27,17 +27,59 @@ The codebase is organized into several key components:
 
 ## Common Commands
 
-### Bootstrap Process
+### EKS Global Hub Connection
 ```bash
-# Initial cluster bootstrap (requires cluster-admin and kubeconfig)
-./bootstrap.sh
+# Connect to EKS hub cluster (acme-test-001)
+aws eks update-kubeconfig --region us-east-1 --name acme-test-001 --profile default
 
-# Check cluster status
-./status.sh applications.argoproj.io
+# Hub cluster details:
+# - Name: acme-test-001
+# - Region: us-east-1
+# - Endpoint: https://7CE7E6372FDBCCC16A73A03435D729C3.gr7.us-east-1.eks.amazonaws.com
+# - OIDC Provider: https://oidc.eks.us-east-1.amazonaws.com/id/7CE7E6372FDBCCC16A73A03435D729C3
+# - IAM Role: arn:aws:iam::765374464689:role/AmazonEKSAutoClusterRole
 
-# Wait for specific components
-./wait.kube.sh route openshift-gitops-server openshift-gitops {.kind} Route
+# Note: User must be added to aws-auth ConfigMap for cluster access
 ```
+
+## Current EKS Hub Status
+
+### **Session State (as of 2025-07-15)**
+- **EKS Cluster**: `acme-test-001` (us-east-1)
+- **Kubeconfig**: Generated at `/home/mturansk/projects/secrets/aks.kubeconfig`
+- **Status**: ❌ No cluster access - aws-auth ConfigMap needs to be created
+- **Tools Available**: eksctl v0.210.0 installed
+- **AWS Auth Issue**: Current user not in aws-auth ConfigMap
+
+### **Completed Work**
+1. ✅ **Regional Fleet Design**: Created REGIONALSPEC.md with simplified cluster specifications
+2. ✅ **Fleet Implementation**: Built cluster-41 (us-west-2) and cluster-42 (ap-southeast-1) 
+3. ✅ **New Structure**: Created `regions/` directory with templates and minimal specs
+4. ✅ **ArgoCD Applications**: Generated all GitOps applications for new clusters
+5. ✅ **Validation**: All configurations pass `kubectl kustomize` validation
+6. ✅ **Documentation**: Created `docs/eks-aws-auth-setup.md` with setup procedures
+
+### **Next Session Tasks**
+1. **Resolve AWS Auth**: Get aws-auth ConfigMap applied by cluster admin
+2. **Verify Cluster Access**: Test `kubectl get nodes` after auth is resolved
+3. **Install Prerequisites**: Deploy ACM, GitOps operators to EKS hub
+4. **Deploy Fleet**: Apply regional cluster applications via ArgoCD
+5. **Test Multi-Cluster**: Verify ACM can provision and manage EKS clusters
+
+### **Critical Files Created**
+- `regions/templates/eks/` - EKS cluster templates
+- `regions/us-west-2/eks-stage/` - cluster-41 specification  
+- `regions/ap-southeast-1/eks-prod/` - cluster-42 specification
+- `clusters/overlay/cluster-41/` - Traditional kustomize overlay
+- `clusters/overlay/cluster-42/` - Traditional kustomize overlay
+- `aws-auth-configmap.yaml` - Ready-to-apply ConfigMap for EKS access
+- `docs/eks-aws-auth-setup.md` - Complete aws-auth setup guide
+
+### **Fleet Summary**
+- **cluster-41**: EKS stage (us-west-2, m5.large, 1-10 nodes)
+- **cluster-42**: EKS prod (ap-southeast-1, m5.xlarge, 2-20 nodes)
+- **Regional approach**: Simplified from 200+ lines to 15 lines per cluster
+- **Ready for deployment**: All manifests validated and GitOps configured
 
 ### Development Commands
 ```bash

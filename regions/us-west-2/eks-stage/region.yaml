@@ -1,0 +1,18 @@
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: eks-stage
+  namespace: us-west-2
+spec:
+  type: eks
+  region: us-west-2
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Compute configuration
+  compute:
+    instanceType: m5.large
+    replicas: 3
+    
+  # Kubernetes version for EKS
+  kubernetes:
+    version: "1.28"
