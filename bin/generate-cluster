@@ -1,0 +1,202 @@
+#!/bin/bash
+set -e
+
+# Regional Cluster Generator Tool (Phase 2)
+# Generates complete Kustomize overlays from minimal regional specifications.
+
+usage() {
+    echo "Usage: $0 <regional-spec-dir> <output-dir>"
+    echo "Example: $0 regions/us-east-1/ocp-prod/ clusters/overlay/cluster-10/"
+    exit 1
+}
+
+if [ $# -ne 2 ]; then
+    usage
+fi
+
+SPEC_DIR="$1"
+OUTPUT_DIR="$2"
+SPEC_FILE="$SPEC_DIR/region.yaml"
+
+if [ ! -f "$SPEC_FILE" ]; then
+    echo "Error: Regional specification not found at $SPEC_FILE" >&2
+    exit 1
+fi
+
+# Parse regional specification
+CLUSTER_TYPE=$(grep "type:" "$SPEC_FILE" | awk '{print $2}')
+CLUSTER_NAME=$(grep "name:" "$SPEC_FILE" | head -1 | awk '{print $2}')
+REGION=$(grep "region:" "$SPEC_FILE" | awk '{print $2}')
+DOMAIN=$(grep "domain:" "$SPEC_FILE" | awk '{print $2}')
+INSTANCE_TYPE=$(grep "instanceType:" "$SPEC_FILE" | awk '{print $2}')
+REPLICAS=$(grep "replicas:" "$SPEC_FILE" | awk '{print $2}')
+
+# Extract cluster number and generate cluster-XX name
+CLUSTER_NUM=$(echo "$CLUSTER_NAME" | sed 's/.*-//')
+FULL_CLUSTER_NAME="cluster-$CLUSTER_NUM"
+
+# Defaults
+CLUSTER_TYPE=${CLUSTER_TYPE:-"eks"}
+REGION=${REGION:-"us-east-1"}
+DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
+REPLICAS=${REPLICAS:-3}
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR"
+
+echo "Generating $CLUSTER_TYPE cluster overlay for $FULL_CLUSTER_NAME in $OUTPUT_DIR"
+
+# Generate namespace.yaml
+cat > "$OUTPUT_DIR/namespace.yaml" << EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $FULL_CLUSTER_NAME
+  labels:
+    name: $FULL_CLUSTER_NAME
+EOF
+
+generate_eks_cluster() {
+    # Generate cluster.yaml (CAPI Cluster)
+    cat > "$OUTPUT_DIR/cluster.yaml" << EOF
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+  labels:
+    cloud: Amazon
+    region: $REGION
+    vendor: EKS
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 192.168.0.0/16
+  infrastructureRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: AWSManagedControlPlane
+    name: $FULL_CLUSTER_NAME
+  controlPlaneRef:
+    kind: AWSManagedControlPlane
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    name: $FULL_CLUSTER_NAME
+EOF
+
+    # Generate awsmanagedcontrolplane.yaml
+    cat > "$OUTPUT_DIR/awsmanagedcontrolplane.yaml" << EOF
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: AWSManagedControlPlane
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  region: $REGION
+  sshKeyName: ""
+  version: v1.28
+  baseDomain: $DOMAIN
+  vpc:
+    availabilityZoneUsageLimit: 2
+    availabilityZoneSelection: Ordered
+  logging:
+    enable: false
+  associateOIDCProvider: true
+  eksClusterName: $FULL_CLUSTER_NAME
+EOF
+
+    # Generate awsmanagedmachinepool.yaml
+    cat > "$OUTPUT_DIR/awsmanagedmachinepool.yaml" << EOF
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: AWSManagedMachinePool
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  instanceType: $INSTANCE_TYPE
+  scaling:
+    minSize: 1
+    maxSize: 10
+    desiredSize: $REPLICAS
+  diskSize: 20
+  amiType: AL2_x86_64
+EOF
+
+    # Generate managedcluster.yaml
+    cat > "$OUTPUT_DIR/managedcluster.yaml" << EOF
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+  labels:
+    name: $FULL_CLUSTER_NAME
+    cloud: Amazon
+    region: $REGION
+    vendor: EKS
+spec:
+  hubAcceptsClient: true
+EOF
+
+    # Generate klusterletaddonconfig.yaml
+    cat > "$OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  clusterName: $FULL_CLUSTER_NAME
+  clusterNamespace: $FULL_CLUSTER_NAME
+  clusterLabels:
+    name: $FULL_CLUSTER_NAME
+    cloud: Amazon
+    vendor: EKS
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+EOF
+
+    # Generate kustomization.yaml
+    cat > "$OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - cluster.yaml
+  - awsmanagedcontrolplane.yaml
+  - awsmanagedmachinepool.yaml
+  - managedcluster.yaml
+  - klusterletaddonconfig.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+EOF
+}
+
+generate_ocp_cluster() {
+    echo "OCP cluster generation not yet implemented in bash version"
+    exit 1
+}
+
+# Generate type-specific manifests
+if [ "$CLUSTER_TYPE" = "ocp" ]; then
+    generate_ocp_cluster
+elif [ "$CLUSTER_TYPE" = "eks" ]; then
+    generate_eks_cluster
+else
+    echo "Error: Unknown cluster type '$CLUSTER_TYPE'. Supported types: ocp, eks" >&2
+    exit 1
+fi
+
+echo "Generated $CLUSTER_TYPE cluster overlay successfully!"
+echo "Files created:"
+ls -la "$OUTPUT_DIR/"

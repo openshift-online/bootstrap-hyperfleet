@@ -1,0 +1,13 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: AWSManagedMachinePool
+metadata:
+  name: cluster-43
+  namespace: cluster-43
+spec:
+  instanceType: m5.xlarge
+  scaling:
+    minSize: 1
+    maxSize: 10
+    desiredSize: 3
+  diskSize: 20
+  amiType: AL2_x86_64

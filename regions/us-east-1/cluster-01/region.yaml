@@ -1,12 +1,12 @@
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
-  name: eks-43
-  namespace: us-west-2
+  name: ocp-10
+  namespace: us-east-1
 spec:
-  type: eks
-  region: us-west-2
+  type: ocp
+  region: us-east-1
   domain: rosa.mturansk-test.csu2.i3.devshift.org
   compute:
     instanceType: m5.xlarge
-    replicas: 3
+    replicas: 1

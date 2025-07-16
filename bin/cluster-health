@@ -1,0 +1,234 @@
+#!/bin/bash
+
+# Quick Cluster Health Check
+# Supports both CAPI clusters and OpenShift ClusterDeployments
+# Usage: ./bin/cluster-health [--summary] [--cluster=name]
+
+set -euo pipefail
+
+SUMMARY=false
+CLUSTER_FILTER=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --summary)
+            SUMMARY=true
+            shift
+            ;;
+        --cluster=*)
+            CLUSTER_FILTER="${1#*=}"
+            shift
+            ;;
+        --help)
+            echo "Quick Cluster Health Check"
+            echo "Monitors both CAPI clusters (EKS/AKS/GKE) and OpenShift ClusterDeployments"
+            echo ""
+            echo "Usage: $0 [--summary] [--cluster=name]"
+            echo ""
+            echo "Options:"
+            echo "  --summary    Show only summary counts"
+            echo "  --cluster    Check specific cluster only"
+            echo ""
+            echo "Status Types:"
+            echo "  ✓ Healthy      - Cluster fully provisioned and ready"
+            echo "  ⚠ Degraded     - Cluster exists but some components not ready"
+            echo "  🔄 Provisioning - CAPI cluster being created"
+            echo "  📦 Installing   - OpenShift cluster being installed"
+            echo "  ⏳ Pending      - Cluster created but installation not started"
+            echo "  😴 Hibernating  - Cluster powered down to save costs"
+            echo "  ❌ Failed       - Cluster provisioning or installation failed"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Counters
+healthy=0
+degraded=0
+failed=0
+provisioning=0
+pending=0
+installing=0
+hibernating=0
+
+# Get CAPI cluster status
+get_capi_status() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    local phase=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    local cp_ready=$(kubectl get awsmanagedcontrolplane "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    local mp_ready=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    local failure_msg=$(kubectl get awsmanagedcontrolplane "$cluster_name" -n "$namespace" -o jsonpath='{.status.failureMessage}' 2>/dev/null || echo "")
+    
+    if [[ -n "$failure_msg" || "$phase" == "Failed" ]]; then
+        echo "failed"
+        ((failed++))
+    elif [[ "$phase" == "Provisioned" && "$cp_ready" == "true" && "$mp_ready" == "true" ]]; then
+        echo "healthy"
+        ((healthy++))
+    elif [[ "$phase" == "Provisioning" ]]; then
+        echo "provisioning"
+        ((provisioning++))
+    else
+        echo "degraded"
+        ((degraded++))
+    fi
+}
+
+# Get OpenShift ClusterDeployment status
+get_ocp_status() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    # Check if cluster is installed
+    local installed=$(kubectl get clusterdeployment "$cluster_name" -n "$namespace" -o jsonpath='{.spec.installed}' 2>/dev/null || echo "false")
+    
+    # Get provisioning state
+    local provisioning_state=$(kubectl get clusterdeployment "$cluster_name" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="Provisioned")].reason}' 2>/dev/null || echo "Unknown")
+    
+    # Check if hibernating
+    local power_state=$(kubectl get clusterdeployment "$cluster_name" -n "$namespace" -o jsonpath='{.spec.powerState}' 2>/dev/null || echo "Running")
+    
+    # Get install job state
+    local install_failed=$(kubectl get clusterdeployment "$cluster_name" -n "$namespace" -o jsonpath='{.status.conditions[?(@.type=="ProvisionFailed")].status}' 2>/dev/null || echo "False")
+    
+    if [[ "$power_state" == "Hibernating" ]]; then
+        echo "hibernating"
+        ((hibernating++))
+    elif [[ "$install_failed" == "True" ]]; then
+        echo "failed"
+        ((failed++))
+    elif [[ "$installed" == "true" && "$provisioning_state" == "Provisioned" ]]; then
+        echo "healthy"
+        ((healthy++))
+    elif [[ "$provisioning_state" == "Provisioning" || "$provisioning_state" == "Installing" ]]; then
+        echo "installing"
+        ((installing++))
+    elif [[ "$installed" == "false" ]]; then
+        echo "pending"
+        ((pending++))
+    else
+        echo "degraded"
+        ((degraded++))
+    fi
+}
+
+# Check all clusters
+echo "Checking cluster health..."
+echo
+
+if [[ "$SUMMARY" == "false" ]]; then
+    printf "%-15s %-15s %-8s %-12s %s\n" "CLUSTER" "NAMESPACE" "TYPE" "STATUS" "DETAILS"
+    echo "─────────────────────────────────────────────────────────────────────────"
+fi
+
+# Check CAPI clusters
+while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+        local namespace=$(echo "$line" | awk '{print $1}')
+        local name=$(echo "$line" | awk '{print $2}')
+        
+        # Apply cluster filter
+        if [[ -n "$CLUSTER_FILTER" && "$name" != "$CLUSTER_FILTER" ]]; then
+            continue
+        fi
+        
+        local status=$(get_capi_status "$name" "$namespace")
+        local nodes=$(kubectl get awsmanagedmachinepool "$name" -n "$namespace" -o jsonpath='{.status.readyReplicas}/{.spec.scaling.desiredSize}' 2>/dev/null || echo "0/0")
+        local region=$(kubectl get awsmanagedcontrolplane "$name" -n "$namespace" -o jsonpath='{.spec.region}' 2>/dev/null || echo "unknown")
+        
+        if [[ "$SUMMARY" == "false" ]]; then
+            local color=""
+            case "$status" in
+                "healthy")   color=$GREEN ;;
+                "failed")    color=$RED ;;
+                "degraded")  color=$YELLOW ;;
+                "provisioning") color=$YELLOW ;;
+            esac
+            
+            printf "%-15s %-15s %-8s ${color}%-12s${NC} %s nodes, %s\n" "$name" "$namespace" "EKS" "$status" "$nodes" "$region"
+        fi
+    fi
+done < <(kubectl get clusters --all-namespaces --no-headers 2>/dev/null | grep -v "No resources found" || true)
+
+# Check OpenShift ClusterDeployments
+while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+        local namespace=$(echo "$line" | awk '{print $1}')
+        local name=$(echo "$line" | awk '{print $2}')
+        
+        # Apply cluster filter
+        if [[ -n "$CLUSTER_FILTER" && "$name" != "$CLUSTER_FILTER" ]]; then
+            continue
+        fi
+        
+        local status=$(get_ocp_status "$name" "$namespace")
+        
+        # Get cluster details
+        local platform=$(kubectl get clusterdeployment "$name" -n "$namespace" -o jsonpath='{.spec.platform.aws.region}' 2>/dev/null || echo "")
+        if [[ -z "$platform" ]]; then
+            platform=$(kubectl get clusterdeployment "$name" -n "$namespace" -o jsonpath='{.spec.platform.azure.region}' 2>/dev/null || echo "")
+        fi
+        if [[ -z "$platform" ]]; then
+            platform=$(kubectl get clusterdeployment "$name" -n "$namespace" -o jsonpath='{.spec.platform.gcp.region}' 2>/dev/null || echo "unknown")
+        fi
+        
+        # Get worker count
+        local workers=$(kubectl get machinepool -n "$namespace" -o jsonpath='{.items[?(@.spec.clusterDeploymentRef.name=="'$name'")].status.replicas}' 2>/dev/null || echo "0")
+        local desired_workers=$(kubectl get machinepool -n "$namespace" -o jsonpath='{.items[?(@.spec.clusterDeploymentRef.name=="'$name'")].spec.replicas}' 2>/dev/null || echo "0")
+        local nodes="${workers}/${desired_workers}"
+        
+        if [[ "$SUMMARY" == "false" ]]; then
+            local color=""
+            case "$status" in
+                "healthy")   color=$GREEN ;;
+                "failed")    color=$RED ;;
+                "degraded")  color=$YELLOW ;;
+                "installing") color=$YELLOW ;;
+                "pending")   color=$YELLOW ;;
+                "hibernating") color=$YELLOW ;;
+            esac
+            
+            printf "%-15s %-15s %-8s ${color}%-12s${NC} %s nodes, %s\n" "$name" "$namespace" "OCP" "$status" "$nodes" "$platform"
+        fi
+    fi
+done < <(kubectl get clusterdeployments --all-namespaces --no-headers 2>/dev/null | grep -v "No resources found" || true)
+
+# Summary
+echo
+echo "Summary:"
+echo -e "  ${GREEN}✓ Healthy:${NC}      $healthy"
+echo -e "  ${YELLOW}⚠ Degraded:${NC}     $degraded"
+echo -e "  ${YELLOW}🔄 Provisioning:${NC} $provisioning"
+echo -e "  ${YELLOW}📦 Installing:${NC}  $installing"
+echo -e "  ${YELLOW}⏳ Pending:${NC}      $pending"
+echo -e "  ${YELLOW}😴 Hibernating:${NC}  $hibernating"
+echo -e "  ${RED}❌ Failed:${NC}       $failed"
+
+total=$((healthy + degraded + provisioning + failed + pending + installing + hibernating))
+if [[ $total -eq 0 ]]; then
+    echo -e "  ${YELLOW}No clusters found${NC}"
+else
+    echo -e "  📊 Total:        $total"
+fi
+
+# Exit with appropriate code
+if [[ $failed -gt 0 ]]; then
+    exit 2
+elif [[ $degraded -gt 0 ]]; then
+    exit 1
+else
+    exit 0
+fi

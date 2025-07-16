@@ -1,0 +1,386 @@
+#!/bin/bash
+
+# CAPI Cluster Provisioning Status Dashboard
+# Usage: ./bin/capi-status [--format=dashboard|json|table] [--cluster=name] [--watch]
+
+set -euo pipefail
+
+# Default options
+FORMAT="table"
+CLUSTER_FILTER=""
+WATCH=false
+REFRESH_INTERVAL=5
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --format=*)
+            FORMAT="${1#*=}"
+            shift
+            ;;
+        --cluster=*)
+            CLUSTER_FILTER="${1#*=}"
+            shift
+            ;;
+        --watch)
+            WATCH=true
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [--format=dashboard|json|table] [--cluster=name] [--watch]"
+            echo "  --format    Output format (dashboard, json, table)"
+            echo "  --cluster   Filter by specific cluster name"
+            echo "  --watch     Continuously refresh output"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# Progress bar function
+progress_bar() {
+    local percentage=$1
+    local width=20
+    local filled=$((percentage * width / 100))
+    local empty=$((width - filled))
+    
+    printf "["
+    printf "%${filled}s" | tr ' ' '█'
+    printf "%${empty}s" | tr ' ' '░'
+    printf "] %d%%" "$percentage"
+}
+
+# Get cluster provisioning percentage based on conditions
+get_cluster_progress() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    # Check various conditions to determine progress
+    local infrastructure_ready=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.status.infrastructureReady}' 2>/dev/null || echo "false")
+    local control_plane_ready=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.status.controlPlaneReady}' 2>/dev/null || echo "false")
+    local cp_ready=$(kubectl get awsmanagedcontrolplane "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    local mp_ready=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    local phase=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    
+    # Calculate progress percentage
+    local progress=0
+    
+    case "$phase" in
+        "Provisioning")
+            progress=10
+            if [[ "$infrastructure_ready" == "true" ]]; then
+                progress=30
+            fi
+            if [[ "$cp_ready" == "true" ]]; then
+                progress=60
+            fi
+            if [[ "$control_plane_ready" == "true" ]]; then
+                progress=80
+            fi
+            if [[ "$mp_ready" == "true" ]]; then
+                progress=95
+            fi
+            ;;
+        "Provisioned")
+            progress=100
+            ;;
+        "Failed")
+            progress=-1
+            ;;
+        "Deleting")
+            progress=-2
+            ;;
+        *)
+            progress=0
+            ;;
+    esac
+    
+    echo "$progress"
+}
+
+# Get current status message
+get_status_message() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    local failure_msg=$(kubectl get awsmanagedcontrolplane "$cluster_name" -n "$namespace" -o jsonpath='{.status.failureMessage}' 2>/dev/null || echo "")
+    local phase=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    local cp_ready=$(kubectl get awsmanagedcontrolplane "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    local mp_ready=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+    
+    if [[ -n "$failure_msg" ]]; then
+        echo "Failed: $failure_msg"
+        return
+    fi
+    
+    case "$phase" in
+        "Provisioning")
+            if [[ "$cp_ready" == "false" ]]; then
+                echo "Creating control plane"
+            elif [[ "$mp_ready" == "false" ]]; then
+                echo "Provisioning worker nodes"
+            else
+                echo "Finalizing cluster setup"
+            fi
+            ;;
+        "Provisioned")
+            echo "Ready"
+            ;;
+        "Failed")
+            echo "Provisioning failed"
+            ;;
+        "Deleting")
+            echo "Deleting cluster"
+            ;;
+        *)
+            echo "Unknown state"
+            ;;
+    esac
+}
+
+# Get cluster age
+get_cluster_age() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    local creation_timestamp=$(kubectl get cluster "$cluster_name" -n "$namespace" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo "")
+    if [[ -n "$creation_timestamp" ]]; then
+        local age_seconds=$(( $(date +%s) - $(date -d "$creation_timestamp" +%s) ))
+        if [[ $age_seconds -lt 60 ]]; then
+            echo "${age_seconds}s"
+        elif [[ $age_seconds -lt 3600 ]]; then
+            echo "$((age_seconds / 60))m"
+        elif [[ $age_seconds -lt 86400 ]]; then
+            echo "$((age_seconds / 3600))h"
+        else
+            echo "$((age_seconds / 86400))d"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
+# Get node status
+get_node_status() {
+    local cluster_name=$1
+    local namespace=$2
+    
+    local desired=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.spec.scaling.desiredSize}' 2>/dev/null || echo "0")
+    local ready=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    local current=$(kubectl get awsmanagedmachinepool "$cluster_name" -n "$namespace" -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
+    
+    echo "${ready}/${desired}"
+}
+
+# Collect cluster data
+collect_cluster_data() {
+    local clusters=()
+    
+    # Get all CAPI clusters
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            local namespace=$(echo "$line" | awk '{print $1}')
+            local name=$(echo "$line" | awk '{print $2}')
+            
+            # Apply cluster filter if specified
+            if [[ -n "$CLUSTER_FILTER" && "$name" != "$CLUSTER_FILTER" ]]; then
+                continue
+            fi
+            
+            local progress=$(get_cluster_progress "$name" "$namespace")
+            local status_msg=$(get_status_message "$name" "$namespace")
+            local age=$(get_cluster_age "$name" "$namespace")
+            local nodes=$(get_node_status "$name" "$namespace")
+            local region=$(kubectl get awsmanagedcontrolplane "$name" -n "$namespace" -o jsonpath='{.spec.region}' 2>/dev/null || echo "unknown")
+            local instance_type=$(kubectl get awsmanagedmachinepool "$name" -n "$namespace" -o jsonpath='{.spec.instanceType}' 2>/dev/null || echo "unknown")
+            
+            clusters+=("$namespace|$name|$progress|$status_msg|$age|$nodes|$region|$instance_type")
+        fi
+    done < <(kubectl get clusters --all-namespaces --no-headers 2>/dev/null | grep -v "No resources found" || true)
+    
+    printf '%s\n' "${clusters[@]}"
+}
+
+# Display dashboard format
+display_dashboard() {
+    clear
+    echo -e "${BOLD}┌─ CAPI Cluster Provisioning Dashboard ────────────────────────────────────┐${NC}"
+    echo -e "${BOLD}│$(date +'%Y-%m-%d %H:%M:%S')                                                   │${NC}"
+    echo -e "${BOLD}└───────────────────────────────────────────────────────────────────────────┘${NC}"
+    echo
+    
+    local clusters
+    readarray -t clusters < <(collect_cluster_data)
+    
+    if [[ ${#clusters[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No CAPI clusters found${NC}"
+        return
+    fi
+    
+    for cluster_data in "${clusters[@]}"; do
+        IFS='|' read -r namespace name progress status_msg age nodes region instance_type <<< "$cluster_data"
+        
+        local color=""
+        local status_symbol=""
+        
+        case "$progress" in
+            100)
+                color=$GREEN
+                status_symbol="✓"
+                ;;
+            -1)
+                color=$RED
+                status_symbol="❌"
+                ;;
+            -2)
+                color=$YELLOW
+                status_symbol="🗑️"
+                ;;
+            *)
+                if [[ $progress -gt 0 ]]; then
+                    color=$BLUE
+                    status_symbol="🔄"
+                else
+                    color=$YELLOW
+                    status_symbol="⏳"
+                fi
+                ;;
+        esac
+        
+        echo -e "${color}${status_symbol} ${BOLD}${name}${NC} ${color}($namespace)${NC}"
+        
+        if [[ $progress -ge 0 && $progress -lt 100 ]]; then
+            echo -ne "  "
+            progress_bar "$progress"
+            echo -e " - ${color}${status_msg}${NC}"
+        elif [[ $progress -eq 100 ]]; then
+            echo -e "  ${GREEN}[██████████████████████] 100% - Ready${NC}"
+        elif [[ $progress -eq -1 ]]; then
+            echo -e "  ${RED}[XXXXXXXXXXXXXXXXXXXXXX] Failed - ${status_msg}${NC}"
+        else
+            echo -e "  ${YELLOW}[░░░░░░░░░░░░░░░░░░░░░░] Deleting${NC}"
+        fi
+        
+        echo -e "  📍 ${region} | 💻 ${instance_type} | 🕐 ${age} | 🖥️  ${nodes} nodes"
+        echo
+    done
+}
+
+# Display table format
+display_table() {
+    local clusters
+    readarray -t clusters < <(collect_cluster_data)
+    
+    echo -e "${BOLD}CLUSTER      NAMESPACE    PROGRESS  STATUS                 AGE   NODES  REGION       INSTANCE${NC}"
+    echo "────────────────────────────────────────────────────────────────────────────────────────"
+    
+    for cluster_data in "${clusters[@]}"; do
+        IFS='|' read -r namespace name progress status_msg age nodes region instance_type <<< "$cluster_data"
+        
+        local progress_display=""
+        if [[ $progress -eq 100 ]]; then
+            progress_display="${GREEN}100%${NC}     "
+        elif [[ $progress -eq -1 ]]; then
+            progress_display="${RED}Failed${NC}   "
+        elif [[ $progress -eq -2 ]]; then
+            progress_display="${YELLOW}Deleting${NC} "
+        elif [[ $progress -gt 0 ]]; then
+            progress_display="${BLUE}${progress}%${NC}      "
+        else
+            progress_display="${YELLOW}Pending${NC}  "
+        fi
+        
+        printf "%-12s %-12s %s %-22s %-5s %-6s %-12s %s\n" \
+            "$name" "$namespace" "$progress_display" "$status_msg" "$age" "$nodes" "$region" "$instance_type"
+    done
+}
+
+# Display JSON format
+display_json() {
+    local clusters
+    readarray -t clusters < <(collect_cluster_data)
+    
+    echo "{"
+    echo '  "timestamp": "'$(date -Iseconds)'",'
+    echo '  "clusters": ['
+    
+    local first=true
+    for cluster_data in "${clusters[@]}"; do
+        IFS='|' read -r namespace name progress status_msg age nodes region instance_type <<< "$cluster_data"
+        
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            echo ","
+        fi
+        
+        echo "    {"
+        echo '      "name": "'$name'",'
+        echo '      "namespace": "'$namespace'",'
+        echo '      "progress": '$progress','
+        echo '      "status": "'$status_msg'",'
+        echo '      "age": "'$age'",'
+        echo '      "nodes": "'$nodes'",'
+        echo '      "region": "'$region'",'
+        echo '      "instanceType": "'$instance_type'"'
+        echo -n "    }"
+    done
+    
+    echo
+    echo "  ]"
+    echo "}"
+}
+
+# Main execution
+main() {
+    if [[ "$WATCH" == "true" ]]; then
+        while true; do
+            case "$FORMAT" in
+                "dashboard")
+                    display_dashboard
+                    ;;
+                "table")
+                    clear
+                    display_table
+                    ;;
+                "json")
+                    display_json
+                    ;;
+                *)
+                    echo "Unknown format: $FORMAT"
+                    exit 1
+                    ;;
+            esac
+            sleep "$REFRESH_INTERVAL"
+        done
+    else
+        case "$FORMAT" in
+            "dashboard")
+                display_dashboard
+                ;;
+            "table")
+                display_table
+                ;;
+            "json")
+                display_json
+                ;;
+            *)
+                echo "Unknown format: $FORMAT"
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+main "$@"
