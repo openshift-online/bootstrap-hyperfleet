@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Test script for CAPI Dashboard functionality
+# Usage: ./bin/test-capi-dashboard
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "Testing CAPI Dashboard Components..."
+echo
+
+# Test 1: Check script permissions
+echo -n "Testing script permissions... "
+if [[ -x "./bin/capi-status" && -x "./bin/cluster-health" && -x "./bin/capi-dashboard" ]]; then
+    echo -e "${GREEN}✓${NC}"
+else
+    echo -e "${RED}✗${NC}"
+    echo "Some scripts are not executable. Run: chmod +x bin/capi-*"
+    exit 1
+fi
+
+# Test 2: Check kubectl connectivity
+echo -n "Testing kubectl connectivity... "
+if kubectl cluster-info &>/dev/null; then
+    echo -e "${GREEN}✓${NC}"
+else
+    echo -e "${RED}✗${NC}"
+    echo "Cannot connect to Kubernetes cluster. Check kubeconfig."
+    exit 1
+fi
+
+# Test 3: Check for CAPI resources
+echo -n "Testing CAPI resource access... "
+if kubectl get clusters --all-namespaces &>/dev/null; then
+    echo -e "${GREEN}✓${NC}"
+else
+    echo -e "${YELLOW}⚠${NC}"
+    echo "Warning: Cannot access CAPI Cluster resources. May need different cluster context."
+fi
+
+# Test 4: Test capi-status formats
+echo -n "Testing capi-status formats... "
+if ./bin/capi-status --format=json &>/dev/null && ./bin/capi-status --format=table &>/dev/null; then
+    echo -e "${GREEN}✓${NC}"
+else
+    echo -e "${RED}✗${NC}"
+    echo "capi-status format test failed"
+    exit 1
+fi
+
+# Test 5: Test cluster-health
+echo -n "Testing cluster-health... "
+if ./bin/cluster-health --summary &>/dev/null; then
+    echo -e "${GREEN}✓${NC}"
+else
+    echo -e "${RED}✗${NC}"
+    echo "cluster-health test failed"
+    exit 1
+fi
+
+echo
+echo "All tests passed! 🎉"
+echo
+echo "Try these commands:"
+echo "  ./bin/cluster-health --summary"
+echo "  ./bin/capi-status --format=table"
+echo "  ./bin/capi-dashboard --help"
+echo
+echo "For live dashboard (quit with 'q'):"
+echo "  ./bin/capi-dashboard"

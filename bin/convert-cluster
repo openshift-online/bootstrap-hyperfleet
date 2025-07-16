@@ -1,0 +1,138 @@
+#!/bin/bash
+set -e
+
+# Regional Cluster Converter Tool (Phase 1)
+# Converts existing complex Kustomize cluster overlays into minimal regional specifications.
+
+usage() {
+    echo "Usage: $0 <overlay-path>"
+    echo "Example: $0 clusters/overlay/cluster-10"
+    exit 1
+}
+
+if [ $# -ne 1 ]; then
+    usage
+fi
+
+OVERLAY_PATH="$1"
+
+if [ ! -d "$OVERLAY_PATH" ]; then
+    echo "Error: Overlay path $OVERLAY_PATH does not exist" >&2
+    exit 1
+fi
+
+# Detect cluster type
+if [ -f "$OVERLAY_PATH/install-config.yaml" ]; then
+    CLUSTER_TYPE="ocp"
+elif [ -f "$OVERLAY_PATH/awsmanagedcontrolplane.yaml" ]; then
+    CLUSTER_TYPE="eks"
+else
+    echo "Error: Cannot determine cluster type for $OVERLAY_PATH" >&2
+    echo "Expected either install-config.yaml (OCP) or awsmanagedcontrolplane.yaml (EKS)" >&2
+    exit 1
+fi
+
+# Extract cluster name from directory path
+CLUSTER_NAME=$(basename "$OVERLAY_PATH")
+
+convert_ocp_cluster() {
+    local install_config="$OVERLAY_PATH/install-config.yaml"
+    
+    # Extract region from install-config.yaml
+    local region=$(grep "region:" "$install_config" | head -1 | awk '{print $2}')
+    
+    # Extract base domain
+    local domain=$(grep "baseDomain:" "$install_config" | awk '{print $2}')
+    
+    # Extract compute instance type and replicas
+    local instance_type=$(grep -A 5 "compute:" "$install_config" | grep "type:" | awk '{print $2}')
+    local replicas=$(grep -A 5 "compute:" "$install_config" | grep "replicas:" | awk '{print $2}')
+    
+    # Default values if not found
+    region=${region:-"us-east-1"}
+    domain=${domain:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+    instance_type=${instance_type:-"m5.xlarge"}
+    replicas=${replicas:-3}
+    
+    # Generate simplified name
+    local simple_name="ocp-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
+    
+    cat << EOF
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $simple_name
+  namespace: $region
+spec:
+  type: ocp
+  region: $region
+  domain: $domain
+  compute:
+    instanceType: $instance_type
+    replicas: $replicas
+EOF
+}
+
+convert_eks_cluster() {
+    local control_plane="$OVERLAY_PATH/awsmanagedcontrolplane.yaml"
+    local machine_pool="$OVERLAY_PATH/awsmanagedmachinepool.yaml"
+    
+    # Extract region from control plane
+    local region=$(grep "region:" "$control_plane" | awk '{print $2}')
+    
+    # Extract version
+    local version=$(grep "version:" "$control_plane" | awk '{print $2}' | sed 's/v//')
+    
+    # Extract base domain
+    local domain=$(grep "baseDomain:" "$control_plane" | awk '{print $2}')
+    
+    # Extract compute from machine pool if it exists
+    local instance_type="m5.large"
+    local replicas=3
+    
+    if [ -f "$machine_pool" ]; then
+        instance_type=$(grep "instanceType:" "$machine_pool" | awk '{print $2}')
+        # Extract minSize from scaling section
+        replicas=$(grep -A 5 "scaling:" "$machine_pool" | grep "minSize:" | awk '{print $2}')
+    fi
+    
+    # Default values
+    region=${region:-"us-east-1"}
+    domain=${domain:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+    version=${version:-"1.28"}
+    instance_type=${instance_type:-"m5.large"}
+    replicas=${replicas:-3}
+    
+    # Generate simplified name
+    local simple_name="eks-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
+    
+    cat << EOF
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $simple_name
+  namespace: $region
+spec:
+  type: eks
+  region: $region
+  domain: $domain
+  compute:
+    instanceType: $instance_type
+    replicas: $replicas
+EOF
+
+    # Only include kubernetes version if not default
+    if [ "$version" != "1.28" ]; then
+        cat << EOF
+  kubernetes:
+    version: "$version"
+EOF
+    fi
+}
+
+# Convert based on cluster type
+if [ "$CLUSTER_TYPE" = "ocp" ]; then
+    convert_ocp_cluster
+elif [ "$CLUSTER_TYPE" = "eks" ]; then
+    convert_eks_cluster
+fi

@@ -162,6 +162,7 @@ The project uses pure Kustomize for generating cluster manifests:
 ## Claude Memories
 
 - Don't run `bootstrap.sh` from a Claude session
+- When provisioning or managing OpenShift, always use `oc` client
 
 ## Adding New Clusters
 
@@ -268,3 +269,4 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 - Test overlays before applying to clusters
 - Follow GitOps principles for all cluster modifications
 - Reference existing cluster overlays (cluster-10, region-02, region-03) as templates
+```
