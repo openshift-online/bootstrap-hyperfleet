@@ -10,6 +10,5 @@ commonAnnotations:
 
 resources:
   - ../../base
-
-patchesStrategicMerge:
   - cloud-infrastructure-provisioning.pipelinerun.yaml
+
