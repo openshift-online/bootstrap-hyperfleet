@@ -5,17 +5,17 @@ set -e
 # Generates complete Kustomize overlays from minimal regional specifications.
 
 usage() {
-    echo "Usage: $0 <regional-spec-dir> <output-dir>"
-    echo "Example: $0 regions/us-east-1/ocp-prod/ clusters/overlay/cluster-10/"
+    echo "Usage: $0 <regional-spec-dir>"
+    echo "Example: $0 regions/us-east-1/ocp-prod/"
+    echo "         $0 regions/us-east-1/eks-prod/"
     exit 1
 }
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 1 ]; then
     usage
 fi
 
 SPEC_DIR="$1"
-OUTPUT_DIR="$2"
 SPEC_FILE="$SPEC_DIR/region.yaml"
 
 if [ ! -f "$SPEC_FILE" ]; then
@@ -35,6 +35,12 @@ REPLICAS=$(grep "replicas:" "$SPEC_FILE" | awk '{print $2}')
 CLUSTER_NUM=$(echo "$CLUSTER_NAME" | sed 's/.*-//')
 FULL_CLUSTER_NAME="cluster-$CLUSTER_NUM"
 
+# Generate known output paths
+CLUSTER_OUTPUT_DIR="clusters/$FULL_CLUSTER_NAME"
+PIPELINES_OUTPUT_DIR="regional-pipelines/overlays/$FULL_CLUSTER_NAME"
+DEPLOYMENTS_OUTPUT_DIR="regional-deployments/overlays/$FULL_CLUSTER_NAME"
+GITOPS_OUTPUT_DIR="gitops-applications"
+
 # Defaults
 CLUSTER_TYPE=${CLUSTER_TYPE:-"eks"}
 REGION=${REGION:-"us-east-1"}
@@ -42,13 +48,19 @@ DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
 REPLICAS=${REPLICAS:-3}
 
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
+# Create output directories
+mkdir -p "$CLUSTER_OUTPUT_DIR"
+mkdir -p "$PIPELINES_OUTPUT_DIR"
+mkdir -p "$DEPLOYMENTS_OUTPUT_DIR"
 
-echo "Generating $CLUSTER_TYPE cluster overlay for $FULL_CLUSTER_NAME in $OUTPUT_DIR"
+echo "Generating $CLUSTER_TYPE cluster overlay for $FULL_CLUSTER_NAME"
+echo "  Cluster overlay: $CLUSTER_OUTPUT_DIR"
+echo "  Pipelines overlay: $PIPELINES_OUTPUT_DIR"
+echo "  Deployments overlay: $DEPLOYMENTS_OUTPUT_DIR"
+echo "  GitOps applications: $GITOPS_OUTPUT_DIR"
 
 # Generate namespace.yaml
-cat > "$OUTPUT_DIR/namespace.yaml" << EOF
+cat > "$CLUSTER_OUTPUT_DIR/namespace.yaml" << EOF
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -59,7 +71,7 @@ EOF
 
 generate_eks_cluster() {
     # Generate cluster.yaml (CAPI Cluster)
-    cat > "$OUTPUT_DIR/cluster.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/cluster.yaml" << EOF
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
@@ -85,7 +97,7 @@ spec:
 EOF
 
     # Generate awsmanagedcontrolplane.yaml
-    cat > "$OUTPUT_DIR/awsmanagedcontrolplane.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/awsmanagedcontrolplane.yaml" << EOF
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: AWSManagedControlPlane
 metadata:
@@ -106,7 +118,7 @@ spec:
 EOF
 
     # Generate awsmanagedmachinepool.yaml
-    cat > "$OUTPUT_DIR/awsmanagedmachinepool.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/awsmanagedmachinepool.yaml" << EOF
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: AWSManagedMachinePool
 metadata:
@@ -123,7 +135,7 @@ spec:
 EOF
 
     # Generate managedcluster.yaml
-    cat > "$OUTPUT_DIR/managedcluster.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/managedcluster.yaml" << EOF
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
@@ -139,7 +151,7 @@ spec:
 EOF
 
     # Generate klusterletaddonconfig.yaml
-    cat > "$OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
 apiVersion: agent.open-cluster-management.io/v1
 kind: KlusterletAddonConfig
 metadata:
@@ -165,7 +177,7 @@ spec:
 EOF
 
     # Generate kustomization.yaml
-    cat > "$OUTPUT_DIR/kustomization.yaml" << EOF
+    cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -183,8 +195,416 @@ EOF
 }
 
 generate_ocp_cluster() {
-    echo "OCP cluster generation not yet implemented in bash version"
-    exit 1
+    # Generate install-config.yaml for OpenShift
+    cat > "$CLUSTER_OUTPUT_DIR/install-config.yaml" << EOF
+apiVersion: v1
+metadata:
+  name: '$FULL_CLUSTER_NAME'
+baseDomain: $DOMAIN
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  replicas: 3
+  platform:
+    aws:
+      zones:
+        - ${REGION}a
+      rootVolume:
+        iops: 4000
+        size: 100
+        type: io1
+      type: $INSTANCE_TYPE
+compute:
+  - hyperthreading: Enabled
+    architecture: amd64
+    name: 'worker'
+    replicas: $REPLICAS
+    platform:
+      aws:
+        rootVolume:
+          iops: 2000
+          size: 100
+          type: io1
+        type: $INSTANCE_TYPE
+        zones:
+          - ${REGION}a
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+  serviceNetwork:
+    - 172.30.0.0/16
+platform:
+  aws:
+    region: $REGION
+pullSecret: "" # skip, hive will inject based on it's secrets
+EOF
+
+    # Generate klusterletaddonconfig.yaml
+    cat > "$CLUSTER_OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: Amazon
+    name: $FULL_CLUSTER_NAME
+    vendor: OpenShift
+    region: $REGION
+  clusterName: $FULL_CLUSTER_NAME
+  clusterNamespace: $FULL_CLUSTER_NAME
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+EOF
+
+    # Generate kustomization.yaml for OCP (uses base + patches)
+    cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - klusterletaddonconfig.yaml
+  - ../../base/clusters
+
+# This will disable name hashing for all generators in this file
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: install-config
+    namespace: $FULL_CLUSTER_NAME
+    files:
+      - install-config.yaml
+
+patches:
+  - target:
+      kind: ClusterDeployment
+      version: v1
+      group: hive.openshift.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterName
+        value: $FULL_CLUSTER_NAME
+  - target:
+      kind: ManagedCluster
+      version: v1
+      group: cluster.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/labels/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/labels/region
+        value: $REGION
+  - target:
+      kind: MachinePool
+      version: v1
+      group: hive.openshift.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterDeploymentRef/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/name
+        value: $FULL_CLUSTER_NAME-worker
+  - target:
+      kind: KlusterletAddonConfig
+      version: v1
+      group: agent.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterLabels/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterNamespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterName
+        value: $FULL_CLUSTER_NAME
+EOF
+}
+
+generate_regional_pipelines() {
+    # Generate regional pipelines overlay
+    cat > "$PIPELINES_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-$FULL_CLUSTER_NAME
+
+commonAnnotations:
+  cluster: $FULL_CLUSTER_NAME
+  cluster-type: $CLUSTER_TYPE
+  version: "v0.0.1"
+
+resources:
+  - ../../base
+EOF
+
+    if [ "$CLUSTER_TYPE" = "ocp" ]; then
+        # Add cluster-specific pipelinerun for OCP
+        cat >> "$PIPELINES_OUTPUT_DIR/kustomization.yaml" << EOF
+  - cloud-infrastructure-provisioning.pipelinerun.yaml
+
+patches:
+  - target:
+      kind: Subscription
+      name: openshift-pipelines-operator
+    patch: |-
+      - op: replace
+        path: /metadata/namespace
+        value: openshift-operators
+EOF
+
+        # Generate cluster-specific pipelinerun
+        cat > "$PIPELINES_OUTPUT_DIR/cloud-infrastructure-provisioning.pipelinerun.yaml" << EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-$FULL_CLUSTER_NAME
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning
+  params:
+    - name: cluster-name
+      value: $FULL_CLUSTER_NAME
+    - name: region
+      value: $REGION
+EOF
+
+    elif [ "$CLUSTER_TYPE" = "eks" ]; then
+        # Add EKS-specific pipelinerun
+        cat >> "$PIPELINES_OUTPUT_DIR/kustomization.yaml" << EOF
+  - cloud-infrastructure-provisioning.pipelinerun.yaml
+  - eks-cluster-provisioning.pipelinerun.yaml
+EOF
+
+        # Generate EKS-specific pipelineruns
+        cat > "$PIPELINES_OUTPUT_DIR/cloud-infrastructure-provisioning.pipelinerun.yaml" << EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-$FULL_CLUSTER_NAME
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning
+  params:
+    - name: cluster-name
+      value: $FULL_CLUSTER_NAME
+    - name: region
+      value: $REGION
+EOF
+
+        cat > "$PIPELINES_OUTPUT_DIR/eks-cluster-provisioning.pipelinerun.yaml" << EOF
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: eks-cluster-provisioning-run
+  namespace: ocm-$FULL_CLUSTER_NAME
+spec:
+  pipelineRef:
+    name: eks-cluster-provisioning
+  params:
+    - name: cluster-name
+      value: $FULL_CLUSTER_NAME
+    - name: region
+      value: $REGION
+EOF
+    fi
+}
+
+generate_regional_deployments() {
+    # Generate regional deployments overlay
+    cat > "$DEPLOYMENTS_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-$FULL_CLUSTER_NAME
+
+resources:
+  - ../../base/clusters
+  - namespace.yaml
+EOF
+
+    # Generate namespace.yaml for regional deployments
+    cat > "$DEPLOYMENTS_OUTPUT_DIR/namespace.yaml" << EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ocm-$FULL_CLUSTER_NAME
+  labels:
+    name: ocm-$FULL_CLUSTER_NAME
+EOF
+}
+
+generate_gitops_applications() {
+    # Generate cluster application
+    cat > "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.cluster.yaml" << EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    path: clusters/$FULL_CLUSTER_NAME
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false
+EOF
+
+    # Generate pipelines application
+    cat > "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.pipelines.yaml" << EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regional-pipelines-$FULL_CLUSTER_NAME
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    path: regional-pipelines/overlays/$FULL_CLUSTER_NAME
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false
+EOF
+
+    # Generate deployments application
+    cat > "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.deployments.yaml" << EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regional-deployments-$FULL_CLUSTER_NAME
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    path: regional-deployments/overlays/$FULL_CLUSTER_NAME
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false
+EOF
+
+    if [ "$CLUSTER_TYPE" = "ocp" ]; then
+        # Add OCP-specific destination for pipelines and deployments
+        cat >> "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.pipelines.yaml" << EOF
+  destination:
+    server: https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443
+EOF
+
+        cat >> "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.deployments.yaml" << EOF
+  destination:
+    server: https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443
+EOF
+
+    elif [ "$CLUSTER_TYPE" = "eks" ]; then
+        # Add EKS-specific destination for pipelines and deployments
+        cat >> "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.pipelines.yaml" << EOF
+  destination:
+    server: https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com
+EOF
+
+        cat >> "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.deployments.yaml" << EOF
+  destination:
+    server: https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com
+EOF
+    fi
+}
+
+update_gitops_kustomization() {
+    local kustomization_file="$GITOPS_OUTPUT_DIR/kustomization.yaml"
+    
+    # Check if the cluster applications are already in the kustomization
+    if ! grep -q "\\- \\./$FULL_CLUSTER_NAME\\.cluster\\.yaml" "$kustomization_file"; then
+        echo "Adding $FULL_CLUSTER_NAME applications to gitops-applications/kustomization.yaml"
+        
+        # Find the line number where cluster applications start (after eso.application.yaml)
+        local insert_line
+        insert_line=$(grep -n "eso.application.yaml" "$kustomization_file" | cut -d: -f1)
+        
+        if [ -z "$insert_line" ]; then
+            echo "Warning: Could not find eso.application.yaml in kustomization.yaml, appending to end"
+            cat >> "$kustomization_file" << EOF
+
+- ./$FULL_CLUSTER_NAME.cluster.yaml
+- ./$FULL_CLUSTER_NAME.pipelines.yaml
+- ./$FULL_CLUSTER_NAME.deployments.yaml
+EOF
+        else
+            # Insert after the eso.application.yaml line
+            local temp_file=$(mktemp)
+            {
+                head -n "$insert_line" "$kustomization_file"
+                echo ""
+                echo "- ./$FULL_CLUSTER_NAME.cluster.yaml"
+                echo "- ./$FULL_CLUSTER_NAME.pipelines.yaml"
+                echo "- ./$FULL_CLUSTER_NAME.deployments.yaml"
+                tail -n +$((insert_line + 1)) "$kustomization_file"
+            } > "$temp_file"
+            mv "$temp_file" "$kustomization_file"
+        fi
+    else
+        echo "$FULL_CLUSTER_NAME applications already exist in gitops-applications/kustomization.yaml"
+    fi
 }
 
 # Generate type-specific manifests
@@ -197,6 +617,24 @@ else
     exit 1
 fi
 
+# Generate regional pipelines and deployments
+generate_regional_pipelines
+generate_regional_deployments
+generate_gitops_applications
+update_gitops_kustomization
+
 echo "Generated $CLUSTER_TYPE cluster overlay successfully!"
 echo "Files created:"
-ls -la "$OUTPUT_DIR/"
+echo "Cluster files:"
+ls -la "$CLUSTER_OUTPUT_DIR/"
+echo ""
+echo "Pipelines files:"
+ls -la "$PIPELINES_OUTPUT_DIR/"
+echo ""
+echo "Deployments files:"
+ls -la "$DEPLOYMENTS_OUTPUT_DIR/"
+echo ""
+echo "GitOps applications:"
+ls -la "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME."*
+echo ""
+echo "Updated gitops-applications/kustomization.yaml"

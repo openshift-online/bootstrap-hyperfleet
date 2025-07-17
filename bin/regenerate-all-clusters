@@ -1,0 +1,101 @@
+#!/bin/bash
+set -e
+
+# Regenerate All Clusters from Regional Specifications
+# This script finds all regional specifications and regenerates cluster overlays
+
+echo "=== Regenerating All Clusters from Regional Specifications ==="
+
+# Find all region.yaml files
+region_specs=$(find regions/ -name "region.yaml" | sort)
+
+if [ -z "$region_specs" ]; then
+    echo "No regional specifications found in regions/"
+    exit 1
+fi
+
+echo "Found $(echo "$region_specs" | wc -l) regional specifications:"
+echo "$region_specs"
+echo ""
+
+# Process each regional specification
+for spec_file in $region_specs; do
+    spec_dir=$(dirname "$spec_file")
+    cluster_name=$(basename "$spec_dir")
+    
+    echo "Processing $spec_dir ($cluster_name)..."
+    
+    # Run generate-cluster for this specification
+    if ! ./bin/generate-cluster "$spec_dir"; then
+        echo "ERROR: Failed to generate cluster for $spec_dir"
+        continue
+    fi
+    
+    echo "✅ Generated cluster overlay for $cluster_name"
+    echo ""
+done
+
+echo "=== Regeneration Complete ==="
+echo ""
+echo "Validating generated overlays..."
+
+# Validate all generated overlays
+validation_failed=false
+
+echo "Validating cluster overlays..."
+for cluster in clusters/cluster-*; do
+    if [ -d "$cluster" ]; then
+        cluster_name=$(basename "$cluster")
+        echo -n "  $cluster_name: "
+        if oc apply --dry-run=client -k "$cluster/" >/dev/null 2>&1; then
+            echo "✅ Valid"
+        else
+            echo "❌ Invalid"
+            validation_failed=true
+        fi
+    fi
+done
+
+echo "Validating pipeline overlays..."
+for pipeline in regional-pipelines/overlays/cluster-*; do
+    if [ -d "$pipeline" ]; then
+        pipeline_name=$(basename "$pipeline")
+        echo -n "  $pipeline_name: "
+        if oc apply --dry-run=client -k "$pipeline/" >/dev/null 2>&1; then
+            echo "✅ Valid"
+        else
+            echo "❌ Invalid"
+            validation_failed=true
+        fi
+    fi
+done
+
+echo "Validating deployment overlays..."
+for deployment in regional-deployments/overlays/cluster-*; do
+    if [ -d "$deployment" ]; then
+        deployment_name=$(basename "$deployment")
+        echo -n "  $deployment_name: "
+        if oc apply --dry-run=client -k "$deployment/" >/dev/null 2>&1; then
+            echo "✅ Valid"
+        else
+            echo "❌ Invalid"
+            validation_failed=true
+        fi
+    fi
+done
+
+if [ "$validation_failed" = true ]; then
+    echo ""
+    echo "❌ Some validations failed. Please check the output above."
+    exit 1
+else
+    echo ""
+    echo "✅ All validations passed!"
+fi
+
+echo ""
+echo "=== Summary ==="
+echo "Clusters: $(ls -1d clusters/overlay/cluster-* 2>/dev/null | wc -l)"
+echo "Pipelines: $(ls -1d regional-pipelines/overlays/cluster-* 2>/dev/null | wc -l)"
+echo "Deployments: $(ls -1d regional-deployments/overlays/cluster-* 2>/dev/null | wc -l)"
+echo "GitOps Apps: $(ls -1 gitops-applications/cluster-*.yaml 2>/dev/null | wc -l)"

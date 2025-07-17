@@ -1,20 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cluster-10
+  name: regional-deployments-cluster-20
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
-  destination:
-    server: https://kubernetes.default.svc
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: clusters/cluster-10
+    path: regional-deployments/overlays/cluster-20
     targetRevision: main
   syncPolicy:
     automated:
       selfHeal: true
       allowEmpty: false
     prune: false
+  destination:
+    server: https://api.cluster-20.rosa.mturansk-test.csu2.i3.devshift.org:6443

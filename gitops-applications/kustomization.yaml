@@ -11,6 +11,12 @@ resources:
 - ./vault.application.yaml
 - ./eso.application.yaml
 
+
+- ./cluster-20.cluster.yaml
+- ./cluster-20.pipelines.yaml
+- ./cluster-20.deployments.yaml
+
+
 - ./cluster-10.cluster.yaml
 - ./cluster-10.pipelines.yaml
 - ./cluster-10.deployments.yaml
