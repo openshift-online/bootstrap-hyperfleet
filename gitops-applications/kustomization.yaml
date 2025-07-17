@@ -11,7 +11,6 @@ resources:
 - ./regional-clusters.cluster-10.application.yaml
 - ./regional-deployments.cluster-10.application.yaml
 - ./regional-pipelines.cluster-10.application.yaml
--
 #- ./regional-clusters.cluster-40.application.yaml
 #- ./regional-deployments.cluster-40.application.yaml
 #- ./regional-clusters.cluster-41.application.yaml
