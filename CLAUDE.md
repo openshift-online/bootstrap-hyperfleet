@@ -288,4 +288,18 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 - Test overlays before applying to clusters
 - Follow GitOps principles for all cluster modifications
 - Reference existing cluster overlays (cluster-10, region-02, region-03) as templates
+
+### Validation Commands
+
+```bash
+# Validate kustomization builds
+oc kustomize pipelines/overlays/cluster-10/
+oc kustomize clusters/overlay/cluster-10/
+oc kustomize regional-deployments/overlays/cluster-10/
+
+# Dry-run validation (recommended)
+oc --dry-run=client apply -k pipelines/overlays/cluster-10/
+oc --dry-run=client apply -k clusters/overlay/cluster-10/
+oc --dry-run=client apply -k regional-deployments/overlays/cluster-10/
+```
 ```
