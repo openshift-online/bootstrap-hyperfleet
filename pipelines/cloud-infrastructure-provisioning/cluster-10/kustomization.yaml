@@ -9,7 +9,6 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../../operators/openshift-pipelines/operator/overlays/pipelines-operator-only
   - cloud-infrastructure-provisioning.pipelinerun.yaml
 
 components:

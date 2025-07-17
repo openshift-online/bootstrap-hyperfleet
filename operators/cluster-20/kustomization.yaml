@@ -9,7 +9,5 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - cloud-infrastructure-provisioning.pipelinerun.yaml
-
-components:
-  - ../../../bases/pipelines/cloud-infrastructure-provisioning
+  - ../openshift-pipelines/operator/overlays/pipelines-operator-only
+  - namespace.yaml
