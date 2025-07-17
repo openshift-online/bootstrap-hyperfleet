@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: patch-argocd-tekton-exclusions
+  namespace: openshift-gitops
+spec:
+  template:
+    spec:
+      serviceAccountName: openshift-gitops-argocd-application-controller
+      restartPolicy: OnFailure
+      containers:
+      - name: patch
+        image: image-registry.openshift-image-registry.svc:5000/openshift/tools:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Wait for ArgoCD CR to exist
+          echo "Waiting for ArgoCD CR..."
+          while ! kubectl get argocd openshift-gitops -n openshift-gitops &>/dev/null; do
+            echo "ArgoCD CR not found, waiting..."
+            sleep 5
+          done
+          
+          # Apply the patch to allow Tekton resources except TaskRuns
+          echo "Patching ArgoCD CR to allow Tekton Pipelines and PipelineRuns..."
+          kubectl patch argocd openshift-gitops -n openshift-gitops --type merge -p '{
+            "spec": {
+              "resourceExclusions": "- apiGroups:\n  - tekton.dev\n  clusters:\n  - \"*\"\n  kinds:\n  - TaskRun"
+            }
+          }'
+          
+          echo "ArgoCD CR patched successfully"
+          
+          # Verify the ConfigMap was updated
+          sleep 5
+          echo "Verifying ConfigMap update..."
+          kubectl get configmap argocd-cm -n openshift-gitops -o jsonpath='{.data.resource\.exclusions}'
