@@ -238,6 +238,34 @@ Key configuration sections:
 - `overrides.components`: Configures all ACM components including hypershift
 - `availabilityConfig`: Set to High for production deployment
 
+## ArgoCD Architecture and Exclusions
+
+### ArgoCD Deployment Model
+- **Centralized GitOps**: Only the hub cluster runs ArgoCD (in `openshift-gitops` namespace)
+- **No ArgoCD on Managed Clusters**: Managed clusters don't have ArgoCD installed
+- **ApplicationManager**: ACM's ApplicationManager (via `KlusterletAddonConfig`) handles ArgoCD application deployment on managed clusters
+- **Single Source of Truth**: All GitOps operations are controlled from the hub cluster
+
+### ArgoCD Resource Exclusions
+ArgoCD exclusions are configured **only on the hub cluster** and apply to all managed cluster deployments:
+
+#### Current Exclusions (configured via `prereqs/argocd-tekton-exclusions.yaml`):
+- **Tekton TaskRuns**: Excluded to prevent ArgoCD from managing transient pipeline runs
+- **ACM-Managed Secrets**: Excluded to prevent ArgoCD from pruning ACM-created secrets
+- **Allowed Tekton Resources**: Pipeline and PipelineRun resources are allowed for deployment
+
+#### Exclusion Management:
+- **Configuration**: `prereqs/argocd-tekton-exclusions.yaml` - Job that patches ArgoCD CR during bootstrap
+- **Manual Script**: `bin/patch-argocd-tekton` - Manual patching script for ArgoCD CR
+- **Target**: ArgoCD CR (`openshift-gitops` resource in `openshift-gitops` namespace)
+- **Not ConfigMap**: ArgoCD operator manages ConfigMap based on CR spec - always patch the CR
+
+### Key Architecture Points:
+1. **Hub-Spoke Model**: Hub cluster ArgoCD deploys to all managed clusters
+2. **ACM Integration**: GitOpsCluster CR automatically registers managed clusters with ArgoCD
+3. **Unified Exclusions**: Single set of exclusions applies to all managed cluster deployments
+4. **No Local ArgoCD**: Managed clusters use ApplicationManager for ArgoCD integration without local ArgoCD instance
+
 ## NEWREGION.md Test Plan
 
 An interactive test plan is available at `NEWREGION.md` that guides through creating new regional deployments:
