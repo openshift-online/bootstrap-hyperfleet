@@ -8,12 +8,13 @@ resources:
 - ./openshift-pipelines-operator.application.yaml
 - ./acm-gitops-integration.application.yaml #imports new managed clusters into argo
 
+- ./vault.application.yaml
+- ./eso.application.yaml
+
 - ./cluster-10.cluster.yaml
 - ./cluster-10.pipelines.yaml
 - ./cluster-10.deployments.yaml
 
-#- ./vault.application.yaml
-#- ./eso.application.yaml
 #- ./regional-clusters.cluster-40.application.yaml
 #- ./regional-deployments.cluster-40.application.yaml
 #- ./regional-clusters.cluster-41.application.yaml
