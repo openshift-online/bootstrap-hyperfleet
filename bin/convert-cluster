@@ -42,6 +42,7 @@ write_regional_cluster() {
     local content="$3"
     
     # Create directory structure: regions/{region}/{cluster-name}/
+    # Use cluster name directly for directory structure
     local output_dir="regions/$region/$cluster_name"
     mkdir -p "$output_dir"
     
@@ -71,8 +72,8 @@ convert_ocp_cluster() {
     instance_type=${instance_type:-"m5.xlarge"}
     replicas=${replicas:-3}
     
-    # Generate simplified name
-    local simple_name="ocp-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
+    # Use cluster name as-is for consistency
+    local simple_name="$CLUSTER_NAME"
     
     # Generate region.yaml format (compatible with generate-cluster)
     local regional_spec
@@ -120,8 +121,8 @@ convert_eks_cluster() {
     instance_type=${instance_type:-"m5.large"}
     replicas=${replicas:-3}
     
-    # Generate simplified name
-    local simple_name="eks-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
+    # Use cluster name as-is for consistency
+    local simple_name="$CLUSTER_NAME"
     
     # Generate region.yaml format (compatible with generate-cluster)
     local regional_spec

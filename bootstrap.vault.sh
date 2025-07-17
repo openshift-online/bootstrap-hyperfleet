@@ -23,16 +23,21 @@ setup_cluster_secrets() {
 
   # 1. Create the namespace, ignoring errors if it already exists
   oc create namespace "${namespace}" 2>/dev/null || true
+  sleep 1
 
   # 2. Apply the secrets to the specified namespace
   echo "Applying secrets..."
   oc apply -f "$2" -n "${namespace}"
+  sleep 1
   oc apply -f "$3" -n "${namespace}"
+  sleep 1
 
   # 3. Wait for both secrets to exist in the cluster
   echo "Waiting for secrets to become available..."
   ./wait.kube.sh secret "aws-credentials" "${namespace}" '{.kind}' Secret
+  sleep 1
   ./wait.kube.sh secret "pull-secret" "${namespace}" '{.kind}' Secret
+  sleep 1
 
   echo "--- ✅ Setup complete for namespace: ${namespace} ---"
   echo "" # Add a blank line for readability
@@ -40,25 +45,14 @@ setup_cluster_secrets() {
 
 # === MAIN EXECUTION ===
 
-# Test AWS credentials before setting up secrets
-echo -e "${YELLOW}🔐 Validating AWS credentials before cluster setup...${NC}"
-if test_aws_credentials "secrets/aws-credentials.yaml" "us-east-1"; then
-    echo -e "${GREEN}✅ AWS credentials are valid, proceeding with cluster setup${NC}"
-else
-    echo -e "${RED}❌ AWS credentials validation failed${NC}"
-    echo -e "${RED}   Please fix AWS credentials before proceeding${NC}"
-    echo -e "${RED}   See the IAM user setup instructions below${NC}"
-    exit 1
-fi
-
 echo ""
 echo -e "${YELLOW}🚀 Setting up cluster secrets...${NC}"
 
 # Now you can replace the original repetitive blocks with clean function calls.
 # This handles the different file paths seen in your original script.
 
-setup_cluster_secrets "10" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
-#setup_cluster_secrets "20" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
+#setup_cluster_secrets "10" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
+setup_cluster_secrets "20" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 #setup_cluster_secrets "30" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 #setup_cluster_secrets "40" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 
