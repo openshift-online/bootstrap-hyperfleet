@@ -204,7 +204,7 @@ oc get csv -n openshift-operators | grep gitops
 oc describe clusterdeployment cluster-XX -n cluster-XX
 
 # Verify AWS credentials
-oc get secret aws-creds -n cluster-XX -o yaml
+oc get secret aws-credentials -n cluster-XX -o yaml
 
 # Check Hive controller logs
 oc logs -n hive deployment/hive-controllers

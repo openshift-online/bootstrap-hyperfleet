@@ -209,7 +209,7 @@ The project uses pure Kustomize for generating cluster manifests:
 Currently uses manual secret management (Vault integration planned):
 ```bash
 # Retrieve secrets from ACM for each cluster namespace
-oc get secret aws-creds -n $cluster_namespace -o yaml > secrets/aws-creds.yaml
+oc get secret aws-credentials -n $cluster_namespace -o yaml > secrets/aws-credentials.yaml
 oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
 ```
 

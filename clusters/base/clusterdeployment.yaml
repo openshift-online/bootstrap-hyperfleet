@@ -12,7 +12,7 @@ spec:
   platform:
     aws:
       credentialsSecretRef:
-        name: aws-creds
+        name: aws-credentials
       region: us-east-1
   provisioning:
     imageSetRef:

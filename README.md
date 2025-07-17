@@ -19,15 +19,15 @@ The rest of this document assumes you are `kubeadmin` with a KUBECONFIG.
 AWS accounts and image pull secrets are inputs into the provisioning process. They will be obtained by external
 processes, stored in predictable vault paths, and delivered to our clusters.
 
-Until there is Vault, we must create the `aws-creds` and `pull-secret` Secrets for each cluster provisioned.
+Until there is Vault, we must create the `aws-credentials` and `pull-secret` Secrets for each cluster provisioned.
 
 Currently, this project assumes the same credentials and pull secrets for all clusters.
 
-From ACM, retrieve the `aws-creds` and `pull-secret`, store them locally, and apply them to your cluster/namespace when needed.
+From ACM, retrieve the `aws-credentials` and `pull-secret`, store them locally, and apply them to your cluster/namespace when needed.
 
 ```
 # TODO: get the correct namespace for these secrets
-oc get secret aws-creds -n $cluster_namespace -o yaml > secrets/aws-creds.yaml
+oc get secret aws-credentials -n $cluster_namespace -o yaml > secrets/aws-credentials.yaml
 oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
 ```
 
