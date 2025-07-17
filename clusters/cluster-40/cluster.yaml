@@ -1,0 +1,22 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: cluster-40
+  namespace: cluster-40
+  labels:
+    cloud: Amazon
+    region: ap-southeast-1
+    vendor: EKS
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 192.168.0.0/16
+  infrastructureRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: AWSManagedControlPlane
+    name: cluster-40
+  controlPlaneRef:
+    kind: AWSManagedControlPlane
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    name: cluster-40
