@@ -1,15 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: regional-cluster-10
+  name: regional-deployments-cluster-10
   namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
-    name: in-cluster
+    server: https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443
   project: default
   source:
-    path: clusters/overlay/cluster-10
     repoURL: 'https://github.com/openshift-online/bootstrap'
+    path: regional-deployments/overlays/cluster-10
     targetRevision: main
   syncPolicy:
     automated:
