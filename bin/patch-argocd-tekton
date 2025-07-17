@@ -14,12 +14,13 @@ if ! kubectl get namespace openshift-gitops &>/dev/null; then
     exit 1
 fi
 
-# Patch the ArgoCD CR to exclude only TaskRuns
+# Patch the ArgoCD CR to exclude only TaskRuns and narrow ACM Secret exclusions
 # This allows Pipeline, PipelineRun, and Task resources to be managed by ArgoCD
+# Also allows ESO webhook secrets while excluding only ACM cluster application secrets
 # Note: The ArgoCD operator manages the argocd-cm ConfigMap based on this CR
 kubectl patch argocd openshift-gitops -n openshift-gitops --type merge -p '{
   "spec": {
-    "resourceExclusions": "- apiGroups:\n  - tekton.dev\n  clusters:\n  - \"*\"\n  kinds:\n  - TaskRun"
+    "resourceExclusions": "- apiGroups:\n  - tekton.dev\n  clusters:\n  - \"*\"\n  kinds:\n  - TaskRun\n- apiGroups:\n  - \"\"\n  clusters:\n  - \"*\"\n  kinds:\n  - Secret\n  jsonPointers:\n  - \"/metadata/labels/apps.open-cluster-management.io~1acm-cluster\"\n  name: \"*-application-manager-cluster-secret\""
   }
 }'
 
@@ -42,5 +43,10 @@ echo "  ✅ Pipeline (tekton.dev/Pipeline)"
 echo "  ✅ PipelineRun (tekton.dev/PipelineRun)"
 echo "  ✅ Task (tekton.dev/Task)"
 echo ""
+echo "Allowed Secrets:"
+echo "  ✅ ESO webhook secrets (eso-external-secrets-webhook)"
+echo "  ✅ All other non-ACM cluster secrets"
+echo ""
 echo "Still excluded:"
 echo "  ❌ TaskRun (tekton.dev/TaskRun) - runtime resources managed by Tekton"
+echo "  ❌ ACM cluster application secrets (*-application-manager-cluster-secret)"

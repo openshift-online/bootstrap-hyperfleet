@@ -4,5 +4,5 @@ kind: Kustomization
 namespace: ocm-cluster-10
 
 resources:
-  - ../../base
+  - ../../base/clusters
   - namespace.yaml

@@ -22,11 +22,11 @@ spec:
             sleep 5
           done
           
-          # Apply the patch to allow Tekton resources except TaskRuns
-          echo "Patching ArgoCD CR to allow Tekton Pipelines and PipelineRuns..."
+          # Apply the patch to allow Tekton resources except TaskRuns and narrow ACM Secret exclusions
+          echo "Patching ArgoCD CR to allow Tekton Pipelines and PipelineRuns, and narrow ACM Secret exclusions..."
           kubectl patch argocd openshift-gitops -n openshift-gitops --type merge -p '{
             "spec": {
-              "resourceExclusions": "- apiGroups:\n  - tekton.dev\n  clusters:\n  - \"*\"\n  kinds:\n  - TaskRun"
+              "resourceExclusions": "- apiGroups:\n  - tekton.dev\n  clusters:\n  - \"*\"\n  kinds:\n  - TaskRun\n- apiGroups:\n  - \"\"\n  clusters:\n  - \"*\"\n  kinds:\n  - Secret\n  jsonPointers:\n  - \"/metadata/labels/apps.open-cluster-management.io~1acm-cluster\"\n  name: \"*-application-manager-cluster-secret\""
             }
           }'
           

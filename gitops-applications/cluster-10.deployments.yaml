@@ -6,8 +6,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  destination:
-    server: https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
@@ -18,3 +16,5 @@ spec:
       selfHeal: true
       allowEmpty: false
     prune: false
+  destination:
+    server: https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443

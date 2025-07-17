@@ -35,6 +35,23 @@ fi
 # Extract cluster name from directory path
 CLUSTER_NAME=$(basename "$OVERLAY_PATH")
 
+# Function to write RegionalCluster to appropriate directory
+write_regional_cluster() {
+    local region="$1"
+    local cluster_name="$2"
+    local content="$3"
+    
+    # Create directory structure: regions/{region}/{cluster-name}/
+    local output_dir="regions/$region/$cluster_name"
+    mkdir -p "$output_dir"
+    
+    # Write region.yaml file
+    local output_file="$output_dir/region.yaml"
+    echo "$content" > "$output_file"
+    
+    echo "Created RegionalCluster specification at: $output_file"
+}
+
 convert_ocp_cluster() {
     local install_config="$OVERLAY_PATH/install-config.yaml"
     
@@ -57,20 +74,20 @@ convert_ocp_cluster() {
     # Generate simplified name
     local simple_name="ocp-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
     
-    cat << EOF
-apiVersion: regional.openshift.io/v1
-kind: RegionalCluster
-metadata:
-  name: $simple_name
-  namespace: $region
-spec:
-  type: ocp
-  region: $region
-  domain: $domain
-  compute:
-    instanceType: $instance_type
-    replicas: $replicas
+    # Generate region.yaml format (compatible with generate-cluster)
+    local regional_spec
+    regional_spec=$(cat << EOF
+type: ocp
+name: $simple_name
+region: $region
+domain: $domain
+instanceType: $instance_type
+replicas: $replicas
 EOF
+)
+    
+    # Write to appropriate directory
+    write_regional_cluster "$region" "$simple_name" "$regional_spec"
 }
 
 convert_eks_cluster() {
@@ -106,28 +123,25 @@ convert_eks_cluster() {
     # Generate simplified name
     local simple_name="eks-$(echo $CLUSTER_NAME | sed 's/cluster-//')"
     
-    cat << EOF
-apiVersion: regional.openshift.io/v1
-kind: RegionalCluster
-metadata:
-  name: $simple_name
-  namespace: $region
-spec:
-  type: eks
-  region: $region
-  domain: $domain
-  compute:
-    instanceType: $instance_type
-    replicas: $replicas
+    # Generate region.yaml format (compatible with generate-cluster)
+    local regional_spec
+    regional_spec=$(cat << EOF
+type: eks
+name: $simple_name
+region: $region
+domain: $domain
+instanceType: $instance_type
+replicas: $replicas
 EOF
-
+)
+    
     # Only include kubernetes version if not default
     if [ "$version" != "1.28" ]; then
-        cat << EOF
-  kubernetes:
-    version: "$version"
-EOF
+        regional_spec="$regional_spec"$'\n'"kubernetesVersion: \"$version\""
     fi
+    
+    # Write to appropriate directory
+    write_regional_cluster "$region" "$simple_name" "$regional_spec"
 }
 
 # Convert based on cluster type
