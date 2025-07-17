@@ -90,18 +90,18 @@ spec:
       cidrBlocks:
         - 192.168.0.0/16
   infrastructureRef:
-    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
     kind: AWSManagedControlPlane
     name: $FULL_CLUSTER_NAME
   controlPlaneRef:
     kind: AWSManagedControlPlane
-    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
     name: $FULL_CLUSTER_NAME
 EOF
 
     # Generate awsmanagedcontrolplane.yaml
     cat > "$CLUSTER_OUTPUT_DIR/awsmanagedcontrolplane.yaml" << EOF
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: AWSManagedControlPlane
 metadata:
   name: $FULL_CLUSTER_NAME
@@ -122,7 +122,7 @@ EOF
 
     # Generate awsmanagedmachinepool.yaml
     cat > "$CLUSTER_OUTPUT_DIR/awsmanagedmachinepool.yaml" << EOF
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: AWSManagedMachinePool
 metadata:
   name: $FULL_CLUSTER_NAME
@@ -377,7 +377,6 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../../operators/openshift-pipelines/operator/overlays/pipelines-operator-only
   - hello-world.pipelinerun.yaml
 
 components:
@@ -397,7 +396,6 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../../operators/openshift-pipelines/operator/overlays/pipelines-operator-only
   - cloud-infrastructure-provisioning.pipelinerun.yaml
 
 components:
@@ -469,6 +467,39 @@ metadata:
 EOF
 }
 
+generate_operators() {
+    # Create operators directory
+    OPERATORS_OUTPUT_DIR="operators/openshift-pipelines/$FULL_CLUSTER_NAME"
+    mkdir -p "$OPERATORS_OUTPUT_DIR"
+    
+    # Generate operators kustomization.yaml
+    cat > "$OPERATORS_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-$FULL_CLUSTER_NAME
+
+commonAnnotations:
+  cluster: $FULL_CLUSTER_NAME
+  cluster-type: $CLUSTER_TYPE
+  version: "v0.0.1"
+
+resources:
+  - ../operator/overlays/pipelines-operator-only
+  - namespace.yaml
+EOF
+
+    # Generate namespace.yaml for operators
+    cat > "$OPERATORS_OUTPUT_DIR/namespace.yaml" << EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ocm-$FULL_CLUSTER_NAME
+  labels:
+    name: ocm-$FULL_CLUSTER_NAME
+EOF
+}
+
 generate_gitops_applications() {
     # Generate ApplicationSet for cluster
     cat > "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.yaml" << EOF
@@ -485,18 +516,22 @@ spec:
         path: clusters/$FULL_CLUSTER_NAME
         destination: https://kubernetes.default.svc
         syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
+        destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
+        syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/$FULL_CLUSTER_NAME
         destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
-        syncWave: "2"
+        syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
         destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
-        syncWave: "2"
+        syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/$FULL_CLUSTER_NAME
         destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
-        syncWave: "3"
+        syncWave: "4"
   template:
     metadata:
       name: $FULL_CLUSTER_NAME-{{component}}
@@ -564,8 +599,9 @@ else
     exit 1
 fi
 
-# Generate regional pipelines and deployments
+# Generate regional pipelines, operators, and deployments
 generate_regional_pipelines
+generate_operators
 generate_regional_deployments
 generate_gitops_applications
 update_gitops_kustomization
@@ -574,6 +610,9 @@ echo "Generated $CLUSTER_TYPE cluster overlay successfully!"
 echo "Files created:"
 echo "Cluster files:"
 ls -la "$CLUSTER_OUTPUT_DIR/"
+echo ""
+echo "Operators files:"
+ls -la "operators/openshift-pipelines/$FULL_CLUSTER_NAME/"
 echo ""
 echo "Hello World pipeline files:"
 ls -la "$PIPELINES_HELLO_WORLD_DIR/"

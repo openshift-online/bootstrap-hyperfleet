@@ -12,7 +12,7 @@ spec:
         destination: https://kubernetes.default.svc
         syncWave: "1"
       - component: operators
-        path: operators/cluster-10
+        path: operators/openshift-pipelines/cluster-10
         destination: https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443
         syncWave: "2"
       - component: pipelines-hello-world
