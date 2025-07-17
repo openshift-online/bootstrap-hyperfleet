@@ -12,3 +12,12 @@ resources:
   - ../../base
   - cloud-infrastructure-provisioning.pipelinerun.yaml
 
+patches:
+  - target:
+      kind: Subscription
+      name: openshift-pipelines-operator
+    patch: |-
+      - op: replace
+        path: /metadata/namespace
+        value: openshift-operators
+

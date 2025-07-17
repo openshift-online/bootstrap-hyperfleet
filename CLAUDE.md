@@ -22,7 +22,7 @@ The codebase is organized into several key components:
 - `operators/`: Operator deployments (ACM, Pipelines, etc.)
 - `regional-deployments/`: Regional service configurations
 - `prereqs/`: Prerequisites for bootstrap process
-- `pipelines/`: Tekton pipeline configurations
+- `regional-pipelines/`: Tekton pipeline configurations deployed per region
 - `acm-gitops/`: ACM GitOps integration with automated ArgoCD cluster registration
 
 ## Common Commands
@@ -60,17 +60,24 @@ aws eks update-kubeconfig --region us-east-1 --name acme-test-001 --profile defa
 
 ### **Key Fixes Applied**
 - **ArgoCD Resource Exclusions**: Patch ArgoCD CR (not ConfigMap) to allow Tekton resources
-- **Tekton CRDs**: Added OpenShift Pipelines operator to regional-deployments/base
-- **GitOps Applications**: Created proper applications for cluster-20, cluster-30 pipeline deployment
+- **Pipeline API Version**: Updated from tekton.dev/v1beta1 to tekton.dev/v1 for compatibility
+- **Operator Deployment**: Moved OpenShift Pipelines operator from regional-deployments to regional-pipelines
+- **Resource Conflicts**: Created pipelines-operator-only overlay to eliminate SharedResourceWarning
 - **Sync Ordering**: Applied sync waves to ensure cluster provisioning before pipeline deployment
 - **Automation**: Created `bin/patch-argocd-tekton` script and `prereqs/argocd-tekton-exclusions.yaml`
 
 ### **Current Architecture**
 - **Hub Cluster**: Manages ArgoCD applications and cluster provisioning
 - **Spoke Clusters**: cluster-10, cluster-20, cluster-30 (OpenShift) + cluster-40+ (EKS)
-- **Pipeline Integration**: Tekton Pipelines deployed to all managed clusters
-- **Regional Deployments**: Operators and services deployed per cluster
+- **Pipeline Integration**: Tekton Pipelines deployed to all managed clusters via regional-pipelines
+- **Regional Deployments**: Database services and applications deployed per cluster
 - **GitOps Flow**: Hub → Cluster Provisioning → Pipeline Deployment → Service Deployment
+
+### **Pipeline Deployment Strategy**
+- **regional-pipelines**: Deploys OpenShift Pipelines operator + Pipeline/PipelineRun resources per cluster
+- **regional-deployments**: Deploys console plugin components and application services
+- **Operator Separation**: Uses pipelines-operator-only overlay to prevent resource conflicts
+- **Namespace Management**: Operator deployed to openshift-operators, pipelines to cluster namespace
 
 ### Development Commands
 ```bash
@@ -252,13 +259,19 @@ ArgoCD exclusions are configured **only on the hub cluster** and apply to all ma
 #### Current Exclusions (configured via `prereqs/argocd-tekton-exclusions.yaml`):
 - **Tekton TaskRuns**: Excluded to prevent ArgoCD from managing transient pipeline runs
 - **ACM-Managed Secrets**: Excluded to prevent ArgoCD from pruning ACM-created secrets
-- **Allowed Tekton Resources**: Pipeline and PipelineRun resources are allowed for deployment
+- **Allowed Tekton Resources**: Pipeline and PipelineRun resources are allowed for deployment (API version v1)
 
 #### Exclusion Management:
 - **Configuration**: `prereqs/argocd-tekton-exclusions.yaml` - Job that patches ArgoCD CR during bootstrap
 - **Manual Script**: `bin/patch-argocd-tekton` - Manual patching script for ArgoCD CR
 - **Target**: ArgoCD CR (`openshift-gitops` resource in `openshift-gitops` namespace)
 - **Not ConfigMap**: ArgoCD operator manages ConfigMap based on CR spec - always patch the CR
+
+#### Tekton Pipeline Deployment:
+- **API Version**: All Pipeline/PipelineRun resources use `tekton.dev/v1` (updated from v1beta1)
+- **Operator Installation**: OpenShift Pipelines operator deployed via `regional-pipelines/base`
+- **Resource Separation**: Operator and console plugin components deployed separately to avoid conflicts
+- **Namespace Strategy**: Operator in `openshift-operators`, pipelines in cluster-specific namespaces
 
 ### Key Architecture Points:
 1. **Hub-Spoke Model**: Hub cluster ArgoCD deploys to all managed clusters
@@ -293,12 +306,12 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 
 ```bash
 # Validate kustomization builds
-oc kustomize pipelines/overlays/cluster-10/
+oc kustomize regional-pipelines/overlays/cluster-10/
 oc kustomize clusters/overlay/cluster-10/
 oc kustomize regional-deployments/overlays/cluster-10/
 
 # Dry-run validation (recommended)
-oc --dry-run=client apply -k pipelines/overlays/cluster-10/
+oc --dry-run=client apply -k regional-pipelines/overlays/cluster-10/
 oc --dry-run=client apply -k clusters/overlay/cluster-10/
 oc --dry-run=client apply -k regional-deployments/overlays/cluster-10/
 ```
