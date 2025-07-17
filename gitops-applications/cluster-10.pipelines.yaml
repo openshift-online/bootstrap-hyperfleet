@@ -11,7 +11,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: pipelines/overlays/cluster-10
+    path: regional-pipelines/overlays/cluster-10
     targetRevision: main
   syncPolicy:
     automated:
