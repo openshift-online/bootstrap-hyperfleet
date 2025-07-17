@@ -54,7 +54,7 @@ echo -e "${YELLOW}🚀 Setting up cluster secrets...${NC}"
 setup_cluster_secrets "10" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 setup_cluster_secrets "20" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 setup_cluster_secrets "30" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
-#setup_cluster_secrets "40" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
+setup_cluster_secrets "40" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 
 echo -e "${GREEN}🎉 All cluster secrets setup complete!${NC}"
 

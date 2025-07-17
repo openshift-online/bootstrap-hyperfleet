@@ -11,18 +11,22 @@ spec:
         path: clusters/cluster-40
         destination: https://kubernetes.default.svc
         syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/cluster-40
+        destination: https://managed-cluster-40-ap-southeast-1.eks.amazonaws.com
+        syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/cluster-40
         destination: https://managed-cluster-40-ap-southeast-1.eks.amazonaws.com
-        syncWave: "2"
+        syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/cluster-40
         destination: https://managed-cluster-40-ap-southeast-1.eks.amazonaws.com
-        syncWave: "2"
+        syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/cluster-40
         destination: https://managed-cluster-40-ap-southeast-1.eks.amazonaws.com
-        syncWave: "3"
+        syncWave: "4"
   template:
     metadata:
       name: cluster-40-{{component}}

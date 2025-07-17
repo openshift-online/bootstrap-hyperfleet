@@ -18,12 +18,13 @@ The codebase is organized into several key components:
 
 ### Directory Structure
 - `clusters/`: Cluster deployment configurations (base + overlays)
-- `operators/`: Operator deployments (ACM, Pipelines, etc.)
+- `operators/`: Operator deployments organized by operator type
+  - `operators/advanced-cluster-management/`: ACM operator and configurations
+  - `operators/openshift-pipelines/cluster-*/`: Tekton Pipelines operator per cluster
 - `prereqs/`: Prerequisites for bootstrap process
 - `pipelines/`: Tekton pipeline configurations deployed per region
 - `deployments/`: Service deployments (OCM services) per cluster
 - `gitops-applications/`: ArgoCD applications for GitOps automation
-- `operators/advanced-cluster-management/gitops-integration/`: ACM GitOps integration with automated ArgoCD cluster registration
 
 ## Common Commands
 
