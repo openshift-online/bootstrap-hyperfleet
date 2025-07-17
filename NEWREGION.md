@@ -35,7 +35,7 @@ Before proceeding with the test plan, please provide the following information:
 - [ ] OpenShift pull secrets configured (if OCP cluster type)
 - [ ] ACM and GitOps operators installed
 - [ ] CAPI AWS provider installed
-- [ ] Secrets stored in `secrets/aws-creds.yaml` and `secrets/pull-secret.yaml`
+- [ ] Secrets stored in `secrets/aws-credentials.yaml` and `secrets/pull-secret.yaml`
 
 ## Test Scenarios
 

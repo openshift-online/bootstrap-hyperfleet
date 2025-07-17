@@ -319,7 +319,7 @@ The existing GitOps applications work with EKS by:
 ### Secrets Management
 ```bash
 # Create AWS credentials for cluster provisioning
-kubectl create secret generic aws-creds \
+kubectl create secret generic aws-credentials \
   --from-literal=AccessKeyID="$AWS_ACCESS_KEY_ID" \
   --from-literal=SecretAccessKey="$AWS_SECRET_ACCESS_KEY" \
   -n cluster-41
@@ -327,7 +327,7 @@ kubectl create secret generic aws-creds \
 # Apply to each cluster namespace
 for cluster in cluster-41 cluster-42; do
   kubectl create namespace $cluster
-  kubectl create secret generic aws-creds \
+  kubectl create secret generic aws-credentials \
     --from-literal=AccessKeyID="$AWS_ACCESS_KEY_ID" \
     --from-literal=SecretAccessKey="$AWS_SECRET_ACCESS_KEY" \
     -n $cluster
