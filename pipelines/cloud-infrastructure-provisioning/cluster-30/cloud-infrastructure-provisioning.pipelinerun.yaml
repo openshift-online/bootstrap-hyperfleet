@@ -2,17 +2,17 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   name: cloud-infrastructure-provisioning-run
-  namespace: ocm-cluster-10
+  namespace: ocm-cluster-30
 spec:
   pipelineRef:
     name: cloud-infrastructure-provisioning-pipeline
   params:
     - name: cluster-name
-      value: cluster-10
+      value: cluster-30
     - name: cloud-provider
       value: aws
     - name: region
-      value: us-east-1
+      value: us-west-2
     - name: instance-type
       value: m5.xlarge
     - name: node-count
