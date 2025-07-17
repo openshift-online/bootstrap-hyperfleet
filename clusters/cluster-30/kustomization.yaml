@@ -31,6 +31,9 @@ patches:
       - op: replace
         path: /spec/clusterName
         value: cluster-30
+      - op: replace
+        path: /spec/platform/aws/region
+        value: us-west-2
   - target:
       kind: ManagedCluster
       version: v1
