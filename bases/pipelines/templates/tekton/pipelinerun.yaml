@@ -1,0 +1,18 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: PIPELINE_NAME-run
+  annotations:
+    description: "Template for creating new Tekton pipeline runs"
+spec:
+  pipelineRef:
+    name: PIPELINE_NAME
+  params:
+    - name: example-param
+      value: "example-value"
+  workspaces:
+    - name: shared-workspace
+      emptyDir: {}
+  timeouts:
+    pipeline: "1h0m0s"
+    tasks: "0h30m0s"

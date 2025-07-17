@@ -57,7 +57,7 @@ for cluster in clusters/cluster-*; do
 done
 
 echo "Validating pipeline overlays..."
-for pipeline in regional-pipelines/overlays/cluster-*; do
+for pipeline in pipelines/cluster-*; do
     if [ -d "$pipeline" ]; then
         pipeline_name=$(basename "$pipeline")
         echo -n "  $pipeline_name: "
@@ -71,7 +71,7 @@ for pipeline in regional-pipelines/overlays/cluster-*; do
 done
 
 echo "Validating deployment overlays..."
-for deployment in regional-deployments/overlays/cluster-*; do
+for deployment in deployments/ocm/cluster-*; do
     if [ -d "$deployment" ]; then
         deployment_name=$(basename "$deployment")
         echo -n "  $deployment_name: "
@@ -96,6 +96,6 @@ fi
 echo ""
 echo "=== Summary ==="
 echo "Clusters: $(ls -1d clusters/overlay/cluster-* 2>/dev/null | wc -l)"
-echo "Pipelines: $(ls -1d regional-pipelines/overlays/cluster-* 2>/dev/null | wc -l)"
-echo "Deployments: $(ls -1d regional-deployments/overlays/cluster-* 2>/dev/null | wc -l)"
+echo "Pipelines: $(ls -1d pipelines/cluster-* 2>/dev/null | wc -l)"
+echo "Deployments: $(ls -1d deployments/ocm/cluster-* 2>/dev/null | wc -l)"
 echo "GitOps Apps: $(ls -1 gitops-applications/cluster-*.yaml 2>/dev/null | wc -l)"

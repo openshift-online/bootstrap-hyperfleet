@@ -1,6 +1,54 @@
 # Bootstrap
 
-This repository contains the scripting, configuration, GitOps content, and documentation necessary to bootstrap a region of a cloud service for Red Hat, based on OpenShift and the Red Hat products and supported community projects that we leverage in our reference architecture.  
+This repository contains the scripting, configuration, GitOps content, and documentation necessary to bootstrap a region of a cloud service for Red Hat, based on OpenShift and the Red Hat products and supported community projects that we leverage in our reference architecture.
+
+## Directory Structure
+
+This repository follows a consistent navigation pattern across all deployment types:
+
+### Base Templates
+- `bases/clusters/` → OpenShift cluster base templates (ClusterDeployment, MachinePool, ManagedCluster)
+- `bases/pipelines/` → Tekton pipeline base templates (Pipeline definitions)
+- `bases/ocm/` → OCM service base templates (database services, secrets)
+
+### Cluster-Specific Overlays
+- `clusters/cluster-XX/` → Cluster provisioning overlays (OCP via Hive, EKS via CAPI)
+- `pipelines/PIPELINE-NAME/cluster-XX/` → Pipeline deployment overlays (PipelineRuns per cluster per pipeline)
+- `deployments/ocm/cluster-XX/` → OCM service deployment overlays (per cluster)
+
+### Regional Specifications
+- `regions/us-east-1/ocp-XX/` → Regional cluster specifications for generation
+- `regions/us-east-1/eks-XX/` → Regional EKS cluster specifications
+
+### GitOps Applications
+- `gitops-applications/` → ArgoCD applications for automated deployment
+  - `cluster-XX.cluster.yaml` → Cluster provisioning applications
+  - `cluster-XX.pipelines.yaml` → Pipeline deployment applications
+  - `cluster-XX.deployments.yaml` → OCM service deployment applications
+
+**Navigation Pattern**: The repository uses a consistent hierarchy for intuitive navigation:
+
+```bash
+# Regional specifications (input for cluster generation)
+ls regions/                    # Shows available regions (us-east-1, us-west-2, etc.)
+ls regions/us-east-1/          # Shows cluster types (ocp-10, ocp-20, eks-40, etc.)
+
+# Cluster provisioning (generated from regional specs)
+ls clusters/                   # Shows all provisioned clusters (cluster-10, cluster-20, etc.)
+ls clusters/cluster-10/        # Shows cluster manifests (namespace.yaml, install-config.yaml, etc.)
+
+# Pipeline deployments (organized by pipeline type)
+ls pipelines/                           # Shows pipeline types (hello-world, cloud-infrastructure-provisioning, etc.)
+ls pipelines/hello-world/               # Shows clusters with hello-world pipelines (cluster-10, cluster-20, etc.)
+ls pipelines/hello-world/cluster-10/    # Shows pipeline resources (kustomization.yaml, *.pipelinerun.yaml)
+
+# Service deployments (organized by service type)
+ls deployments/                # Shows deployment categories (ocm)
+ls deployments/ocm/            # Shows clusters with OCM services (cluster-10, cluster-20, etc.)
+ls deployments/ocm/cluster-10/ # Shows OCM deployment manifests (kustomization.yaml, namespace.yaml)
+```
+
+This structure enables consistent navigation where each level shows the next available options, making it easy to discover and manage resources across the entire infrastructure.  
 
 # Install
 

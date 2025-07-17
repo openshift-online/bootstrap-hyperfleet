@@ -18,12 +18,12 @@ The codebase is organized into several key components:
 
 ### Directory Structure
 - `clusters/`: Cluster deployment configurations (base + overlays)
-- `gitops-applications/`: ArgoCD Application manifests
 - `operators/`: Operator deployments (ACM, Pipelines, etc.)
-- `regional-deployments/`: Regional service configurations
 - `prereqs/`: Prerequisites for bootstrap process
-- `regional-pipelines/`: Tekton pipeline configurations deployed per region
-- `acm-gitops/`: ACM GitOps integration with automated ArgoCD cluster registration
+- `pipelines/`: Tekton pipeline configurations deployed per region
+- `deployments/`: Service deployments (OCM services) per cluster
+- `gitops-applications/`: ArgoCD applications for GitOps automation
+- `operators/advanced-cluster-management/gitops-integration/`: ACM GitOps integration with automated ArgoCD cluster registration
 
 ## Common Commands
 
@@ -72,6 +72,7 @@ aws eks update-kubeconfig --region us-east-1 --name acme-test-001 --profile defa
 - **Pipeline Integration**: Tekton Pipelines deployed to all managed clusters via regional-pipelines
 - **Regional Deployments**: Database services and applications deployed per cluster
 - **GitOps Flow**: Hub → Cluster Provisioning → Pipeline Deployment → Service Deployment
+- **Applications**: ArgoCD applications managed in `gitops-applications/` directory
 
 ### **Pipeline Deployment Strategy**
 - **regional-pipelines**: Deploys OpenShift Pipelines operator + Pipeline/PipelineRun resources per cluster
@@ -106,7 +107,7 @@ make podman-run
    - **OCP Clusters**: Hive ClusterDeployments
    - **EKS Clusters**: CAPI with ACM infrastructure providers
 3. **Import**: ACM imports managed clusters for governance
-4. **Deploy**: ArgoCD deploys applications to target clusters
+4. **Deploy**: ArgoCD deploys applications from `gitops-applications/` directory to target clusters
 5. **Monitor**: Status monitoring via custom wait scripts
 
 ## Infrastructure Provider Integration
@@ -129,7 +130,7 @@ ACM is configured with infrastructure providers that automatically install and m
 
 ## Configuration Management
 
-- Base configurations in `clusters/base/`
+- Base configurations in `clusters/bases/`
 - Environment-specific overlays in `clusters/overlay/`
 - Regional configurations support multiple availability zones
 - Kustomize for YAML templating and patching
@@ -144,8 +145,8 @@ The project uses pure Kustomize for generating cluster manifests:
 
 ### Configuration Structure
 
-- **Base configurations**: Common templates in `clusters/base/`
-- **Overlays**: Environment-specific customizations in `clusters/overlay/`
+- **Base configurations**: Common templates in `bases/clusters/`
+- **Overlays**: Environment-specific customizations in `clusters/cluster-XX/`
 - **Patches**: Kustomize patches for region-specific modifications
 - **Generators**: ConfigMap and Secret generators for cluster-specific data
 
@@ -191,7 +192,7 @@ The project uses pure Kustomize for generating cluster manifests:
 6. **CRDs**: Automatically installed by ACM when infrastructure providers are enabled
 
 #### Common Steps:
-1. **Create regional deployment overlay**: Copy and update `./regional-deployments/overlays/`
+1. **Create regional deployment overlay**: Copy and update `./deployments/ocm/cluster-XX/`
 2. **Create ArgoCD applications**: Copy and update cluster + regional deployment apps
 3. **Update kustomization**: Add applications to `./gitops-applications/kustomization.yaml`
 4. **Deploy**: Run `./bootstrap.sh` to provision cluster (not from Claude session)
@@ -252,6 +253,7 @@ Key configuration sections:
 - **No ArgoCD on Managed Clusters**: Managed clusters don't have ArgoCD installed
 - **ApplicationManager**: ACM's ApplicationManager (via `KlusterletAddonConfig`) handles ArgoCD application deployment on managed clusters
 - **Single Source of Truth**: All GitOps operations are controlled from the hub cluster
+- **Applications Directory**: ArgoCD applications stored in `gitops-applications/` directory
 
 ### ArgoCD Resource Exclusions
 ArgoCD exclusions are configured **only on the hub cluster** and apply to all managed cluster deployments:
@@ -306,13 +308,15 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 
 ```bash
 # Validate kustomization builds
-oc kustomize regional-pipelines/overlays/cluster-10/
-oc kustomize clusters/overlay/cluster-10/
-oc kustomize regional-deployments/overlays/cluster-10/
+oc kustomize pipelines/hello-world/cluster-10/
+oc kustomize clusters/cluster-10/
+oc kustomize deployments/ocm/cluster-10/
+oc kustomize gitops-applications/
 
 # Dry-run validation (recommended)
-oc --dry-run=client apply -k regional-pipelines/overlays/cluster-10/
-oc --dry-run=client apply -k clusters/overlay/cluster-10/
-oc --dry-run=client apply -k regional-deployments/overlays/cluster-10/
+oc --dry-run=client apply -k pipelines/hello-world/cluster-10/
+oc --dry-run=client apply -k clusters/cluster-10/
+oc --dry-run=client apply -k deployments/ocm/cluster-10/
+oc --dry-run=client apply -k gitops-applications/
 ```
 ```

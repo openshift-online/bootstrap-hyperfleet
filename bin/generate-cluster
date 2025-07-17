@@ -37,8 +37,8 @@ FULL_CLUSTER_NAME="cluster-$CLUSTER_NUM"
 
 # Generate known output paths
 CLUSTER_OUTPUT_DIR="clusters/$FULL_CLUSTER_NAME"
-PIPELINES_OUTPUT_DIR="regional-pipelines/overlays/$FULL_CLUSTER_NAME"
-DEPLOYMENTS_OUTPUT_DIR="regional-deployments/overlays/$FULL_CLUSTER_NAME"
+PIPELINES_OUTPUT_DIR="pipelines/$FULL_CLUSTER_NAME"
+DEPLOYMENTS_OUTPUT_DIR="deployments/ocm/$FULL_CLUSTER_NAME"
 GITOPS_OUTPUT_DIR="gitops-applications"
 
 # Defaults
@@ -279,7 +279,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - klusterletaddonconfig.yaml
-  - ../../base/clusters
+  - ../../bases/clusters
 
 # This will disable name hashing for all generators in this file
 generatorOptions:
@@ -374,7 +374,7 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../base
+  - ../../bases/pipelines
 EOF
 
     if [ "$CLUSTER_TYPE" = "ocp" ]; then
@@ -460,7 +460,7 @@ kind: Kustomization
 namespace: ocm-$FULL_CLUSTER_NAME
 
 resources:
-  - ../../base/clusters
+  - ../../../bases/ocm
   - namespace.yaml
 EOF
 
@@ -505,7 +505,7 @@ EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: regional-pipelines-$FULL_CLUSTER_NAME
+  name: pipelines-$FULL_CLUSTER_NAME
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "2"
@@ -513,7 +513,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: regional-pipelines/overlays/$FULL_CLUSTER_NAME
+    path: pipelines/$FULL_CLUSTER_NAME
     targetRevision: main
   syncPolicy:
     automated:
@@ -527,7 +527,7 @@ EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: regional-deployments-$FULL_CLUSTER_NAME
+  name: deployments-ocm-$FULL_CLUSTER_NAME
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -535,7 +535,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/openshift-online/bootstrap'
-    path: regional-deployments/overlays/$FULL_CLUSTER_NAME
+    path: deployments/ocm/$FULL_CLUSTER_NAME
     targetRevision: main
   syncPolicy:
     automated:
