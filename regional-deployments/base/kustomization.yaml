@@ -5,7 +5,6 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../operators/openshift-pipelines/operator/overlays/pipelines-1.18
   - ams.db.yaml
   - cs.db.yaml
   - osl.db.yaml
