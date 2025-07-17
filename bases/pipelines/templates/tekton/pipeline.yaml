@@ -1,0 +1,39 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: PIPELINE_NAME
+  annotations:
+    description: "Template for creating new Tekton pipelines"
+spec:
+  description: >-
+    Template pipeline that can be customized for specific use cases.
+    Replace PIPELINE_NAME with the actual pipeline name.
+  params:
+    - name: example-param
+      type: string
+      description: "Example parameter"
+      default: "default-value"
+  workspaces:
+    - name: shared-workspace
+      description: "Shared workspace for pipeline artifacts"
+  tasks:
+    - name: example-task
+      taskSpec:
+        params:
+          - name: example-param
+        steps:
+          - name: example-step
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "Example task executing..."
+              echo "Parameter value: $(params.example-param)"
+              
+              # TODO: Implement actual task logic here
+              
+              echo "✅ Task completed successfully"
+      params:
+        - name: example-param
+          value: "$(params.example-param)"

@@ -3,28 +3,13 @@ kind: Kustomization
 namespace: openshift-gitops
 
 resources:
-- ./namespace.yaml
-- ./advanced-cluster-management.application.yaml
-- ./openshift-pipelines-operator.application.yaml
-- ./acm-gitops-integration.application.yaml #imports new managed clusters into argo
+- ./global/namespace.yaml
+- ./global/advanced-cluster-management.application.yaml
+- ./global/openshift-pipelines-operator.application.yaml
+- ./global/acm-gitops-integration.application.yaml #imports new managed clusters into argo
 
-- ./vault.application.yaml
-- ./eso.application.yaml
+- ./global/vault.application.yaml
+- ./global/eso.application.yaml
 
-
-- ./cluster-20.cluster.yaml
-- ./cluster-20.pipelines.yaml
-- ./cluster-20.deployments.yaml
-
-
-- ./cluster-10.cluster.yaml
-- ./cluster-10.pipelines.yaml
-- ./cluster-10.deployments.yaml
-
-#- ./regional-clusters.cluster-40.application.yaml
-#- ./regional-deployments.cluster-40.application.yaml
-#- ./regional-clusters.cluster-41.application.yaml
-#- ./regional-deployments.cluster-41.application.yaml
-#- ./regional-clusters.cluster-42.application.yaml
-#- ./regional-deployments.cluster-42.application.yaml
-
+- ./cluster-10.yaml
+- ./cluster-20.yaml

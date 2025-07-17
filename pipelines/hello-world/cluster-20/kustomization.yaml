@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-cluster-20
+
+commonAnnotations:
+  cluster: cluster-20
+  cluster-type: ocp
+  version: "v0.0.1"
+
+resources:
+  - ../../../operators/openshift-pipelines/operator/overlays/pipelines-operator-only
+  - hello-world.pipelinerun.yaml
+
+components:
+  - ../../../bases/pipelines/hello-world
+
+patches:
+  - target:
+      kind: Subscription
+      name: openshift-pipelines-operator
+    patch: |-
+      - op: replace
+        path: /metadata/namespace
+        value: openshift-operators

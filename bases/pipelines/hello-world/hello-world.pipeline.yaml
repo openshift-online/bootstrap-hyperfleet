@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hello-world-pipeline
+spec:
+  description: >-
+    A simple pipeline that prints a hello world message and
+    shows the details of the git revision that triggered it.
+  params:
+    - name: message
+      type: string
+  tasks:
+    - name: hello-world-task
+      taskSpec:
+        params:
+          - name: message
+        steps:
+          - name: say-hello
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "Hello World! 🌍"
+              echo "$(params.message)"
+      params:
+        - name: message
+          value: "hello world"

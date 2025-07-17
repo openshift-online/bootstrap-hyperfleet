@@ -4,7 +4,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - klusterletaddonconfig.yaml
-  - ../../base/clusters
+  - ../../bases/clusters
 
 # This will disable name hashing for all generators in this file
 generatorOptions:

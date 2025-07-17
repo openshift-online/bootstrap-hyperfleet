@@ -153,7 +153,7 @@ Based on the repository structure, these EKS clusters are ready for deployment:
 ### EKS Cluster Templates
 The repository includes EKS-specific templates in:
 ```
-regions/templates/eks/
+bases/clusters/eks/
 regions/us-west-2/eks-stage/
 regions/ap-southeast-1/eks-prod/
 clusters/overlay/cluster-41/
@@ -205,7 +205,7 @@ kubectl get awsmanagedmachinepool -A
 mkdir -p regions/eu-west-1/eks-prod
 
 # Copy from existing template
-cp -r regions/templates/eks/* regions/eu-west-1/eks-prod/
+cp -r bases/clusters/eks/* regions/eu-west-1/eks-prod/
 
 # Customize for region and environment
 vi regions/eu-west-1/eks-prod/cluster-spec.yaml
