@@ -9,5 +9,5 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../operator/overlays/pipelines-operator-only
+  - ../global/overlays/pipelines-operator-only
   - namespace.yaml

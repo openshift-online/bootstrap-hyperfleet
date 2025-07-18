@@ -1,3 +1,7 @@
 # Go module cache
 acme/pkg/mod/
 secrets/
+.idea/
+.claude/
+STATUS.md
+clusters_backup/

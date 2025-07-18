@@ -1,6 +1,6 @@
 # New Regional Deployment Test Plan
 
-This document outlines the test plan for defining and implementing a new regional deployment in the OpenShift bootstrap project.
+This document outlines the test plan for defining and implementing a new regional deployment in the OpenShift bootstrap project using the automated `bin/generate-cluster` tool.
 
 ## Rules
 
@@ -8,11 +8,13 @@ This document outlines the test plan for defining and implementing a new regiona
 
 ## Overview
 
-This test plan validates the process of creating a new regional deployment that includes:
-1. Cluster provisioning via CAPI (Cluster API)
+This test plan validates the automated process of creating a new regional deployment that includes:
+1. Cluster provisioning via CAPI (Cluster API) or Hive
 2. Regional service deployments
 3. GitOps integration with ArgoCD
 4. ACM multi-cluster management
+5. Pipeline deployments (Hello World and Cloud Infrastructure)
+6. Operator deployments (OpenShift Pipelines)
 
 ## Interactive Configuration
 
@@ -28,6 +30,8 @@ Before proceeding with the test plan, please provide the following information:
 
 4. **Cluster Name**: _________________ (e.g., cluster-40, cluster-50)
 
+5. **Node Count**: _________________ (e.g., 3, 5)
+
 ## Prerequisites
 
 - [ ] Bootstrap control plane cluster running with cluster-admin access
@@ -39,97 +43,105 @@ Before proceeding with the test plan, please provide the following information:
 
 ## Test Scenarios
 
-### Scenario 1: Create New Cluster Overlay
+### Scenario 1: Create Regional Specification
 
-**Objective**: Create a new cluster overlay configuration based on user input
+**Objective**: Create regional specification directory and configuration file
 
 **Steps**:
-
-#### For OCP Cluster Type:
-1. [ ] Copy existing OCP overlay: `cp -r ./clusters/overlay/cluster-20 ./clusters/overlay/[CLUSTER_NAME]`
-2. [ ] Update cluster references: Find/Replace 'cluster-20' with '[CLUSTER_NAME]' in all files
-3. [ ] Update AWS region in install-config.yaml to '[AWS_REGION]'
-4. [ ] Update compute instance type to '[COMPUTE_TYPE]' in install-config.yaml
-5. [ ] Verify ClusterDeployment and MachinePool patches reference correct cluster name
-6. [ ] Test kustomize build: `kustomize build clusters/overlay/[CLUSTER_NAME]`
-
-#### For EKS Cluster Type:
-1. [ ] Create new EKS overlay directory: `mkdir -p ./clusters/overlay/[CLUSTER_NAME]`
-2. [ ] Create base EKS manifests with AWSManagedControlPlane and AWSManagedMachinePool
-3. [ ] Configure AWS region '[AWS_REGION]' in AWSManagedControlPlane
-4. [ ] Set compute instance type '[COMPUTE_TYPE]' in AWSManagedMachinePool
-5. [ ] Create kustomization.yaml with EKS-specific patches
-6. [ ] Test kustomize build: `kustomize build clusters/overlay/[CLUSTER_NAME]`
+1. [ ] Create regional spec directory: `mkdir -p regions/[AWS_REGION]/[CLUSTER_NAME]/`
+2. [ ] Create region.yaml specification file:
+```yaml
+# regions/[AWS_REGION]/[CLUSTER_NAME]/region.yaml
+type: [CLUSTER_TYPE]  # "ocp" or "eks"
+name: [CLUSTER_NAME]
+region: [AWS_REGION]
+domain: rosa.mturansk-test.csu2.i3.devshift.org
+instanceType: [COMPUTE_TYPE]
+replicas: [NODE_COUNT]
+```
+3. [ ] Validate specification file syntax: `cat regions/[AWS_REGION]/[CLUSTER_NAME]/region.yaml`
 
 **Expected Results**:
-- [ ] New cluster overlay directory created
-- [ ] All cluster references updated correctly
-- [ ] AWS region and compute type configured
-- [ ] Kustomize build produces valid manifests without errors
+- [ ] Regional specification directory created
+- [ ] region.yaml contains correct cluster configuration
+- [ ] All required fields populated with user-provided values
+
+### Scenario 2: Generate Complete Cluster Overlay
+
+**Objective**: Use automated tool to generate all required overlays and GitOps resources
+
+**Steps**:
+1. [ ] Run cluster generator: `./bin/generate-cluster regions/[AWS_REGION]/[CLUSTER_NAME]/`
+2. [ ] Verify cluster overlay creation: `ls -la clusters/[CLUSTER_NAME]/`
+3. [ ] Verify pipeline overlays creation: 
+   - [ ] `ls -la pipelines/hello-world/[CLUSTER_NAME]/`
+   - [ ] `ls -la pipelines/cloud-infrastructure-provisioning/[CLUSTER_NAME]/`
+4. [ ] Verify operators overlay creation: `ls -la operators/openshift-pipelines/[CLUSTER_NAME]/`
+5. [ ] Verify deployments overlay creation: `ls -la deployments/ocm/[CLUSTER_NAME]/`
+6. [ ] Verify ApplicationSet creation: `ls -la gitops-applications/[CLUSTER_NAME].yaml`
+
+**Expected Results**:
+- [ ] All overlay directories created successfully
+- [ ] Cluster overlay contains type-appropriate resources (OCP: install-config.yaml + patches, EKS: CAPI resources)
+- [ ] Pipeline overlays contain PipelineRun resources with correct parameters
+- [ ] Operators overlay configured for OpenShift Pipelines deployment
+- [ ] Deployments overlay configured for OCM services in `ocm-[CLUSTER_NAME]` namespace
+- [ ] ApplicationSet contains all components with proper sync waves
+- [ ] GitOps kustomization.yaml updated with new ApplicationSet
+
+### Scenario 3: Validate Generated Manifests
+
+**Objective**: Ensure all generated Kustomize overlays build successfully
+
+**Steps**:
+1. [ ] Test cluster overlay build: `kustomize build clusters/[CLUSTER_NAME]/`
+2. [ ] Test hello-world pipeline build: `kustomize build pipelines/hello-world/[CLUSTER_NAME]/`
+3. [ ] Test cloud-infrastructure pipeline build: `kustomize build pipelines/cloud-infrastructure-provisioning/[CLUSTER_NAME]/`
+4. [ ] Test operators overlay build: `kustomize build operators/openshift-pipelines/[CLUSTER_NAME]/`
+5. [ ] Test deployments overlay build: `kustomize build deployments/ocm/[CLUSTER_NAME]/`
+6. [ ] Test GitOps applications build: `kustomize build gitops-applications/`
+7. [ ] Dry-run validation: `oc --dry-run=client apply -k clusters/[CLUSTER_NAME]/`
+
+**Expected Results**:
+- [ ] All kustomize builds succeed without errors
 - [ ] Generated manifests contain correct cluster name, region, and compute type
-
-### Scenario 2: Create Regional Deployment Overlay
-
-**Objective**: Create regional services overlay for the new cluster
-
-**Steps**:
-1. [ ] Copy existing regional overlay: `cp -r ./regional-deployments/overlays/region-01 ./regional-deployments/overlays/[CLUSTER_NAME]`
-2. [ ] Update namespace in kustomization.yaml to `ocm-[CLUSTER_NAME]`
-3. [ ] Update namespace.yaml to create `ocm-[CLUSTER_NAME]` namespace
-4. [ ] Test kustomize build: `kustomize build regional-deployments/overlays/[CLUSTER_NAME]`
-
-**Expected Results**:
-- [ ] New regional deployment overlay created
-- [ ] Namespace correctly set to `ocm-[CLUSTER_NAME]`
-- [ ] Kustomize build produces valid regional service manifests
-- [ ] AMS, CS, and OSL database configurations included
-
-### Scenario 3: Create ArgoCD Applications
-
-**Objective**: Create ArgoCD applications for cluster and regional deployments
-
-**Steps**:
-1. [ ] Copy and modify cluster application: `cp ./gitops-applications/regional-clusters.cluster-10.application.yaml ./gitops-applications/regional-clusters.[CLUSTER_NAME].application.yaml`
-2. [ ] Update application name to `regional-[CLUSTER_NAME]`
-3. [ ] Update source path to `clusters/overlay/[CLUSTER_NAME]`
-4. [ ] Copy and modify regional deployment application: `cp ./gitops-applications/regional-deployments.cluster-10.application.yaml ./gitops-applications/regional-deployments.[CLUSTER_NAME].application.yaml`
-5. [ ] Update application name to `regional-deployments-[CLUSTER_NAME]`
-6. [ ] Update destination server URL for [CLUSTER_NAME] (will be populated after cluster creation)
-7. [ ] Update source path to `regional-deployments/overlays/[CLUSTER_NAME]`
-8. [ ] Add new applications to `gitops-applications/kustomization.yaml`
-
-**Expected Results**:
-- [ ] Two new ArgoCD applications created
-- [ ] Applications reference correct source paths
-- [ ] Regional deployment targets correct cluster API endpoint
-- [ ] Applications included in main kustomization
+- [ ] Resource names and namespaces follow expected patterns
+- [ ] ApplicationSet sync waves configured correctly (1: cluster, 2: operators, 3: pipelines, 4: deployments)
+- [ ] Dry-run validation passes for all overlays
 
 ### Scenario 4: Test GitOps Integration
 
-**Objective**: Verify GitOps workflow deployment
+**Objective**: Verify GitOps workflow deployment using ApplicationSet
 
 **Steps**:
 1. [ ] Run bootstrap: `./bootstrap.sh`
-2. [ ] Check ArgoCD application status: `oc get applications -n openshift-gitops`
+2. [ ] Check ApplicationSet status: `oc get applicationset [CLUSTER_NAME]-applications -n openshift-gitops`
+3. [ ] Check generated applications: `oc get applications -n openshift-gitops | grep [CLUSTER_NAME]`
+4. [ ] Verify sync wave ordering:
+   - [ ] Wave 1 (cluster): `oc get application [CLUSTER_NAME]-cluster -n openshift-gitops`
+   - [ ] Wave 2 (operators): `oc get application [CLUSTER_NAME]-operators -n openshift-gitops`
+   - [ ] Wave 3 (pipelines): `oc get application [CLUSTER_NAME]-pipelines-* -n openshift-gitops`
+   - [ ] Wave 4 (deployments): `oc get application [CLUSTER_NAME]-deployments-ocm -n openshift-gitops`
 
 #### For OCP Cluster Type:
-3. [ ] Verify cluster provisioning: `oc get clusterdeployment [CLUSTER_NAME] -n [CLUSTER_NAME]`
-4. [ ] Check MachinePool status: `oc get machinepool [CLUSTER_NAME]-worker -n [CLUSTER_NAME]`
-5. [ ] Verify ACM import: `oc get klusterletaddonconfig [CLUSTER_NAME] -n [CLUSTER_NAME]`
+5. [ ] Verify cluster provisioning: `oc get clusterdeployment [CLUSTER_NAME] -n [CLUSTER_NAME]`
+6. [ ] Check MachinePool status: `oc get machinepool [CLUSTER_NAME]-worker -n [CLUSTER_NAME]`
+7. [ ] Verify ACM import: `oc get klusterletaddonconfig [CLUSTER_NAME] -n [CLUSTER_NAME]`
 
 #### For EKS Cluster Type:
-3. [ ] Verify cluster provisioning: `oc get awsmanagedcontrolplane [CLUSTER_NAME] -n [CLUSTER_NAME]`
-4. [ ] Check MachinePool status: `oc get awsmanagedmachinepool [CLUSTER_NAME]-worker -n [CLUSTER_NAME]`
-5. [ ] Verify ACM import: `oc get klusterletaddonconfig [CLUSTER_NAME] -n [CLUSTER_NAME]`
+5. [ ] Verify cluster provisioning: `oc get awsmanagedcontrolplane [CLUSTER_NAME] -n [CLUSTER_NAME]`
+6. [ ] Check MachinePool status: `oc get awsmanagedmachinepool [CLUSTER_NAME] -n [CLUSTER_NAME]`
+7. [ ] Verify ACM import: `oc get klusterletaddonconfig [CLUSTER_NAME] -n [CLUSTER_NAME]`
 
 **Common Steps**:
-6. [ ] Check ManagedCluster creation: `oc get managedcluster [CLUSTER_NAME]`
+8. [ ] Check ManagedCluster creation: `oc get managedcluster [CLUSTER_NAME]`
 
 **Expected Results**:
-- [ ] ArgoCD applications created and syncing
+- [ ] ApplicationSet creates all required applications with proper sync waves
 - [ ] Cluster resources in provisioning state (ClusterDeployment for OCP, AWSManagedControlPlane for EKS)
 - [ ] ManagedCluster resource created
 - [ ] KlusterletAddonConfig with applicationManager enabled
+- [ ] All applications syncing according to wave ordering
 - [ ] Cluster appears in ACM console
 
 ### Scenario 5: Test ACM GitOps Integration
@@ -148,21 +160,29 @@ Before proceeding with the test plan, please provide the following information:
 - [ ] ArgoCD cluster secret automatically created
 - [ ] [CLUSTER_NAME] visible in ArgoCD clusters list
 
-### Scenario 6: Test Regional Service Deployment
+### Scenario 6: Test Pipeline and Service Deployment
 
-**Objective**: Verify regional services deploy to new cluster
+**Objective**: Verify pipelines and regional services deploy to new cluster
 
 **Steps**:
 1. [ ] Wait for cluster provisioning completion
-2. [ ] Check regional deployment application sync: `oc get application regional-deployments-[CLUSTER_NAME] -n openshift-gitops`
-3. [ ] Verify services deployed: `oc get deployment -n ocm-[CLUSTER_NAME] --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
-4. [ ] Check database configurations: `oc get configmap -n ocm-[CLUSTER_NAME] --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
+2. [ ] Check operators deployment: `oc get application [CLUSTER_NAME]-operators -n openshift-gitops`
+3. [ ] Check pipeline deployments: 
+   - [ ] `oc get application [CLUSTER_NAME]-pipelines-hello-world -n openshift-gitops`
+   - [ ] `oc get application [CLUSTER_NAME]-pipelines-cloud-infrastructure-provisioning -n openshift-gitops`
+4. [ ] Check regional deployment application: `oc get application [CLUSTER_NAME]-deployments-ocm -n openshift-gitops`
+5. [ ] Verify OpenShift Pipelines operator: `oc get subscription openshift-pipelines-operator-rh -n openshift-operators --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
+6. [ ] Verify pipelines deployed: `oc get pipeline -n ocm-[CLUSTER_NAME] --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
+7. [ ] Verify services deployed: `oc get deployment -n ocm-[CLUSTER_NAME] --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
+8. [ ] Check database configurations: `oc get configmap -n ocm-[CLUSTER_NAME] --kubeconfig=/path/to/[CLUSTER_NAME]/kubeconfig`
 
 **Expected Results**:
-- [ ] Regional deployment application synced successfully
-- [ ] AMS, CS, and OSL services deployed
+- [ ] All ApplicationSet-generated applications synced successfully
+- [ ] OpenShift Pipelines operator installed and healthy
+- [ ] Hello World and Cloud Infrastructure pipelines deployed
+- [ ] AMS, CS, and OSL services deployed in ocm-[CLUSTER_NAME] namespace
 - [ ] Database configurations applied
-- [ ] Services healthy and running
+- [ ] All services healthy and running
 
 ### Scenario 7: Test Status Monitoring
 
@@ -191,14 +211,26 @@ Before proceeding with the test plan, please provide the following information:
 ### Rollback Scenario 1: Remove Failed Cluster
 
 **Steps**:
-1. [ ] Delete ArgoCD applications: `oc delete application regional-[CLUSTER_NAME] regional-deployments-[CLUSTER_NAME] -n openshift-gitops`
+1. [ ] Delete ApplicationSet and all generated applications: `oc delete applicationset [CLUSTER_NAME]-applications -n openshift-gitops`
 2. [ ] Delete cluster namespace: `oc delete namespace [CLUSTER_NAME]`
-3. [ ] Remove overlay directories: `rm -rf ./clusters/overlay/[CLUSTER_NAME] ./regional-deployments/overlays/[CLUSTER_NAME]`
-4. [ ] Remove application files: `rm ./gitops-applications/regional-*[CLUSTER_NAME].application.yaml`
-5. [ ] Update kustomization.yaml to remove references
+3. [ ] Remove overlay directories: 
+   - [ ] `rm -rf ./clusters/[CLUSTER_NAME]`
+   - [ ] `rm -rf ./pipelines/hello-world/[CLUSTER_NAME]`
+   - [ ] `rm -rf ./pipelines/cloud-infrastructure-provisioning/[CLUSTER_NAME]`
+   - [ ] `rm -rf ./operators/openshift-pipelines/[CLUSTER_NAME]`
+   - [ ] `rm -rf ./deployments/ocm/[CLUSTER_NAME]`
+4. [ ] Remove ApplicationSet file: `rm ./gitops-applications/[CLUSTER_NAME].yaml`
+5. [ ] Remove regional specification: `rm -rf ./regions/[AWS_REGION]/[CLUSTER_NAME]`
+6. [ ] Update gitops-applications/kustomization.yaml to remove ApplicationSet reference:
+   ```bash
+   # Remove line: - ./[CLUSTER_NAME].yaml
+   ```
 
 **Expected Results**:
 - [ ] All [CLUSTER_NAME] resources cleaned up
+- [ ] All generated overlay directories removed
+- [ ] ApplicationSet and generated applications deleted
+- [ ] Regional specification directory removed
 - [ ] No residual configurations remain
 - [ ] System returns to previous state
 
@@ -269,17 +301,44 @@ A new regional deployment is considered successful when:
 
 ## Notes
 
-- This test plan assumes AWS as the cloud provider
-- Replace [CLUSTER_NAME], [AWS_REGION], and [COMPUTE_TYPE] with actual values from Interactive Configuration
-- OCP clusters use Hive ClusterDeployment + MachinePool resources
-- EKS clusters use CAPI AWSManagedControlPlane + AWSManagedMachinePool resources
+- This test plan uses the automated `bin/generate-cluster` tool for consistent overlay generation
+- Replace [CLUSTER_NAME], [AWS_REGION], [COMPUTE_TYPE], and [NODE_COUNT] with actual values from Interactive Configuration
+- Regional specifications are stored in `regions/[AWS_REGION]/[CLUSTER_NAME]/region.yaml`
+- OCP clusters use Hive ClusterDeployment + MachinePool resources with Kustomize patches
+- EKS clusters use CAPI AWSManagedControlPlane + AWSManagedMachinePool resources (v1beta2)
+- ApplicationSets replace individual ArgoCD applications for better management
+- Sync waves ensure proper deployment ordering: cluster → operators → pipelines → deployments
+- All pipelines and services deploy to the `ocm-[CLUSTER_NAME]` namespace
 - Always test in non-production environment first
 - Keep backups of working configurations
 - Document any deviations from the plan
 
-## Example Overlay Creation Command
+## Example Usage
 
-Based on your configuration, the overlay creation command would be:
+Based on your Interactive Configuration, the complete process would be:
 
-**For OCP**: `cp -r ./clusters/overlay/cluster-20 ./clusters/overlay/[CLUSTER_NAME]`
-**For EKS**: `mkdir -p ./clusters/overlay/[CLUSTER_NAME]` (then create EKS-specific manifests)
+### Step 1: Create Regional Specification
+```bash
+# Example: EKS cluster in us-west-2
+mkdir -p regions/us-west-2/cluster-50/
+cat > regions/us-west-2/cluster-50/region.yaml << EOF
+type: eks
+name: cluster-50
+region: us-west-2
+domain: rosa.mturansk-test.csu2.i3.devshift.org
+instanceType: m5.large
+replicas: 3
+EOF
+```
+
+### Step 2: Generate All Overlays and GitOps Resources
+```bash
+./bin/generate-cluster regions/us-west-2/cluster-50/
+```
+
+### Step 3: Deploy via GitOps
+```bash
+./bootstrap.sh
+```
+
+This automated approach replaces all manual copying and updating steps, ensuring consistency and reducing errors.
