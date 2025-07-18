@@ -57,28 +57,3 @@ setup_cluster_secrets "30" "secrets/aws-credentials.yaml" "secrets/pull-secret.y
 setup_cluster_secrets "40" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 
 echo -e "${GREEN}🎉 All cluster secrets setup complete!${NC}"
-
-
-#oc create namespace cluster-10 2>/dev/null
-#oc apply -f secrets/aws-credentials.yaml -n cluster-10
-#oc apply -f secrets/pull-secret.yaml -n cluster-10
-#
-#./wait.kube.sh secret secrets/aws-credentials cluster-10 {.kind} Secret
-#./wait.kube.sh secret secrets/pull-secret cluster-10 {.kind} Secret
-#
-#oc create namespace cluster-20 2>/dev/null
-#oc apply -f aws-credentials.yaml -n cluster-20
-#oc apply -f pull-secret.yaml -n cluster-20
-#
-#./wait.kube.sh secret aws-credentials cluster-20 '{.kind}' Secret
-#./wait.kube.sh secret pull-secret cluster-20 '{.kind}' Secret
-##
-#oc create namespace cluster-30 2>/dev/null
-#oc apply -f secrets/aws-credentials.yaml -n cluster-30
-#oc apply -f secrets/pull-secret.yaml -n cluster-30
-#
-#./wait.kube.sh secret aws-credentials cluster-30 '{.kind}' Secret
-#./wait.kube.sh secret pull-secret cluster-30 '{.kind}' Secret
-#
-#
-#
