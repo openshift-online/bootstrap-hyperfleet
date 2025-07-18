@@ -38,7 +38,7 @@ spec:
       source:
         repoURL: 'https://github.com/openshift-online/bootstrap'
         path: '{{path}}'
-        targetRevision: OCM-16599/capi_poc
+        targetRevision: main
       syncPolicy:
         automated:
           selfHeal: true
