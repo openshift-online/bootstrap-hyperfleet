@@ -168,7 +168,7 @@ The project uses pure Kustomize for generating cluster manifests:
 
 ### Current Implementation: cluster-40 (EKS)
 **Status**: Implemented and ready for deployment
-- **Type**: EKS cluster using CAPI v1beta1 resources (via ACM infrastructure providers)
+- **Type**: EKS cluster using CAPI v1beta2 resources (via ACM infrastructure providers)
 - **Region**: ap-southeast-1
 - **Compute**: m5.large instances (3 nodes, scaling 1-10)
 - **Base Domain**: rosa.mturansk-test.csu2.i3.devshift.org
@@ -179,17 +179,17 @@ The project uses pure Kustomize for generating cluster manifests:
 ### General Process for Adding New Clusters
 
 #### For OCP Clusters (Hive-based):
-1. **Copy existing overlay**: Copy `./clusters/overlay/cluster-20` to `./clusters/overlay/cluster-XX`
+1. **Copy existing overlay**: Copy `./clusters/cluster-20` to `./clusters/cluster-XX`
 2. **Update cluster references**: Find/Replace cluster names in all files
 3. **Configure region and compute**: Update install-config.yaml for target region/instance type
 4. **Uses**: ClusterDeployment + MachinePool resources
 
 #### For EKS Clusters (CAPI-based):
-1. **Create overlay directory**: `mkdir -p ./clusters/overlay/cluster-XX`
+1. **Create overlay directory**: `mkdir -p ./clusters/cluster-XX`
 2. **Create CAPI resources**: AWSManagedControlPlane + AWSManagedMachinePool
 3. **Configure region and compute**: Set AWS region and instance type in CAPI resources
 4. **Set base domain**: Add baseDomain to AWSManagedControlPlane
-5. **Uses**: CAPI v1beta1 API versions (compatible with ACM infrastructure providers)
+5. **Uses**: CAPI v1beta2 API versions (compatible with ACM infrastructure providers)
 6. **CRDs**: Automatically installed by ACM when infrastructure providers are enabled
 
 #### Common Steps:
@@ -236,6 +236,23 @@ The project uses ACM's native GitOps integration with infrastructure providers f
 - **Multi-Provider Support**: Seamless management of OCP, EKS, AKS, GKE, and other cluster types
 - **Infrastructure Provider Lifecycle**: ACM manages CAPI controllers and CRDs automatically
 
+## Recent Session Fixes
+
+### cluster-20 Worker Node Fix
+- **Problem**: MachinePool zone mismatch (us-east-1c vs us-east-1a in install-config)
+- **Solution**: Created cluster-20-worker-fixed MachinePool in correct zone
+- **Result**: ✅ Worker nodes provisioned, router pods scheduled, console accessible
+
+### cluster-40 API Version Fix
+- **Problem**: CAPI resources using v1beta1 but cluster has v1beta2 installed
+- **Solution**: Updated AWSManagedControlPlane and AWSManagedMachinePool to v1beta2
+- **Status**: ✅ Code fixed in git, cluster provisioning pending
+
+### Operators Directory Migration
+- **Before**: operators/cluster-* (flat structure)
+- **After**: operators/openshift-pipelines/cluster-* (organized by operator type)
+- **Benefit**: Better scalability for multiple operator types
+
 ### ACM Configuration Location
 The ACM MultiClusterHub configuration is located at:
 ```
@@ -276,6 +293,15 @@ ArgoCD exclusions are configured **only on the hub cluster** and apply to all ma
 - **Resource Separation**: Operator and console plugin components deployed separately to avoid conflicts
 - **Namespace Strategy**: Operator in `openshift-operators`, pipelines in cluster-specific namespaces
 
+### Sync Wave Ordering
+Applications are deployed in the following order:
+1. **Wave 1**: Cluster provisioning (CAPI/Hive resources)
+2. **Wave 2**: Operators installation (OpenShift Pipelines)
+3. **Wave 3**: Pipeline deployment (Tekton resources)
+4. **Wave 4**: Service deployment (OCM services)
+
+This ordering ensures dependencies are met before dependent resources are deployed.
+
 ### Key Architecture Points:
 1. **Hub-Spoke Model**: Hub cluster ArgoCD deploys to all managed clusters
 2. **ACM Integration**: GitOpsCluster CR automatically registers managed clusters with ArgoCD
@@ -290,13 +316,17 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 - **Validation Steps**: Includes kustomize build testing and GitOps integration verification
 - **Rollback Procedures**: Instructions for cleaning up failed deployments
 
-## Current Cluster Status
+## Current Cluster Status (as of 2025-07-17 23:30 UTC)
 
 ### Deployed Clusters
-- **cluster-10**: OCP cluster (existing)
-- **cluster-20**: OCP cluster (existing) 
-- **cluster-30**: OCP cluster (existing)
-- **cluster-40**: EKS cluster (implemented, ready for deployment)
+- **cluster-10**: ✅ Available (OCP, us-east-1)
+- **cluster-20**: ✅ Available (OCP, us-east-1) - FIXED: worker node zone issue resolved
+- **cluster-30**: ❌ Unknown status (OCP) - needs investigation
+- **cluster-40**: ⏳ Provisioning (EKS, ap-southeast-1) - CAPI v1beta2 fix applied
+
+### Known Issues
+- **cluster-30**: ClusterDeployment exists but ManagedCluster status Unknown
+- **cluster-40**: Waiting for EKS cluster provisioning after API version fix
 
 ## Development Best Practices
 
@@ -304,6 +334,11 @@ An interactive test plan is available at `NEWREGION.md` that guides through crea
 - Test overlays before applying to clusters
 - Follow GitOps principles for all cluster modifications
 - Reference existing cluster overlays (cluster-10, region-02, region-03) as templates
+
+### generate-cluster Script Updates
+- Now generates operators in `operators/openshift-pipelines/cluster-*`
+- Uses CAPI v1beta2 for EKS clusters
+- Includes operators component in ApplicationSets with sync wave 2
 
 ### Validation Commands
 

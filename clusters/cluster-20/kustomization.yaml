@@ -62,6 +62,9 @@ patches:
       - op: replace
         path: /metadata/name
         value: cluster-20-worker
+      - op: replace
+        path: /spec/platform/aws/zones/0
+        value: us-east-1a
   - target:
       kind: KlusterletAddonConfig
       version: v1
