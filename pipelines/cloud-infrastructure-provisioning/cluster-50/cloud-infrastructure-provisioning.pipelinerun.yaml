@@ -1,0 +1,19 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-cluster-50
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning-pipeline
+  params:
+    - name: cluster-name
+      value: cluster-50
+    - name: cloud-provider
+      value: aws
+    - name: region
+      value: eu-west-1
+    - name: instance-type
+      value: m5.large
+    - name: node-count
+      value: "2"

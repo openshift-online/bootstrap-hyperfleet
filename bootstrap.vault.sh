@@ -55,5 +55,6 @@ setup_cluster_secrets "10" "secrets/aws-credentials.yaml" "secrets/pull-secret.y
 setup_cluster_secrets "20" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 setup_cluster_secrets "30" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 setup_cluster_secrets "40" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
+setup_cluster_secrets "50" "secrets/aws-credentials.yaml" "secrets/pull-secret.yaml"
 
 echo -e "${GREEN}🎉 All cluster secrets setup complete!${NC}"
