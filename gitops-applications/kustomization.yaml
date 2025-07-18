@@ -11,6 +11,8 @@ resources:
 - ./global/vault.application.yaml
 - ./global/eso.application.yaml
 
+- ./cluster-50.yaml
+
 - ./cluster-10.yaml
 - ./cluster-20.yaml
 - ./cluster-30.yaml
