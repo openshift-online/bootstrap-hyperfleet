@@ -8,7 +8,7 @@ spec:
     name: in-cluster
   project: default
   source:
-    path: operators/openshift-pipelines/operator/overlays/pipelines-1.18
+    path: operators/openshift-pipelines/global/overlays/pipelines-1.18
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
 

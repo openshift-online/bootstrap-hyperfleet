@@ -1,129 +1,207 @@
-# Bootstrap
+# OpenShift Bootstrap
 
-This repository contains the scripting, configuration, GitOps content, and documentation necessary to bootstrap a region of a cloud service for Red Hat, based on OpenShift and the Red Hat products and supported community projects that we leverage in our reference architecture.
+Multi-cluster OpenShift and EKS management using GitOps automation. This repository provides everything needed to bootstrap and manage regional cluster deployments with a centralized hub cluster approach.
 
-## Directory Structure
+## 🏗️ Architecture Overview
 
-This repository follows a consistent navigation pattern across all deployment types:
+**Hub-Spoke Model**: One OpenShift hub cluster manages multiple regional clusters (OpenShift or EKS) using GitOps automation.
 
-### Base Templates
-- `bases/clusters/` → OpenShift cluster base templates (ClusterDeployment, MachinePool, ManagedCluster)
-- `bases/pipelines/` → Tekton pipeline base templates (Pipeline definitions)
-- `bases/ocm/` → OCM service base templates (database services, secrets)
+- **Hub Cluster**: Runs ArgoCD, ACM, and all cluster management operators
+- **Managed Clusters**: Regional OpenShift (OCP) or EKS clusters provisioned and managed automatically
+- **Automated Provisioning**: Single command creates complete cluster overlays with proper GitOps integration
 
-### Cluster-Specific Overlays
-- `clusters/cluster-XX/` → Cluster provisioning overlays (OCP via Hive, EKS via CAPI)
-- `pipelines/PIPELINE-NAME/cluster-XX/` → Pipeline deployment overlays (PipelineRuns per cluster per pipeline)
-- `deployments/ocm/cluster-XX/` → OCM service deployment overlays (per cluster)
+## 📁 Directory Structure & Navigation
 
-### Regional Specifications
-- `regions/us-east-1/ocp-XX/` → Regional cluster specifications for generation
-- `regions/us-east-1/eks-XX/` → Regional EKS cluster specifications
+The repository is designed for **intuitive navigation** with each directory level showing your next options:
 
-### GitOps Applications
-- `gitops-applications/` → ArgoCD applications for automated deployment
-  - `cluster-XX.cluster.yaml` → Cluster provisioning applications
-  - `cluster-XX.pipelines.yaml` → Pipeline deployment applications
-  - `cluster-XX.deployments.yaml` → OCM service deployment applications
+### 🔧 Generation Input (where you start)
+```bash
+regions/                          # Available AWS regions
+├── us-east-1/                   # Region-specific clusters
+│   ├── cluster-10/              # Individual cluster specifications
+│   │   └── region.yaml          # ← START HERE: cluster configuration
+│   └── cluster-20/
+└── us-west-2/
+    └── cluster-40/
+```
 
-**Navigation Pattern**: The repository uses a consistent hierarchy for intuitive navigation:
+### 🏭 Base Templates (shared components)
+```bash
+bases/
+├── clusters/                    # Common cluster templates
+├── pipelines/                   # Reusable Tekton pipelines
+└── ocm/                        # OCM service templates
+```
+
+### 🎯 Generated Overlays (automated output)
+```bash
+clusters/                        # Cluster provisioning (auto-generated)
+├── cluster-10/                 # OCP cluster (Hive resources)
+├── cluster-20/                 # OCP cluster (Hive resources)  
+└── cluster-40/                 # EKS cluster (CAPI resources)
+
+pipelines/                       # Pipeline deployments (auto-generated)
+├── hello-world/
+│   ├── cluster-10/             # Pipeline runs for cluster-10
+│   └── cluster-20/             # Pipeline runs for cluster-20
+└── cloud-infrastructure-provisioning/
+    ├── cluster-10/
+    └── cluster-20/
+
+deployments/                     # Service deployments (auto-generated)
+└── ocm/
+    ├── cluster-10/             # OCM services for cluster-10
+    └── cluster-20/             # OCM services for cluster-20
+
+operators/                       # Operator deployments
+├── advanced-cluster-management/
+│   └── global/                 # ACM hub cluster deployment
+└── openshift-pipelines/
+    ├── global/                 # Pipelines hub cluster deployment
+    ├── cluster-10/             # Pipelines operator for cluster-10
+    ├── cluster-20/             # Pipelines operator for cluster-20
+    └── cluster-40/             # Pipelines operator for cluster-40
+```
+
+### 🚀 GitOps Applications (orchestration)
+```bash
+gitops-applications/             # ArgoCD ApplicationSets
+├── cluster-10.yaml            # ApplicationSet for cluster-10 (all components)
+├── cluster-20.yaml            # ApplicationSet for cluster-20 (all components)
+└── kustomization.yaml          # Main GitOps entry point
+```
+
+## 🧭 Navigation Pattern
+
+**Each level shows your next options** - making discovery and management intuitive:
 
 ```bash
-# Regional specifications (input for cluster generation)
-ls regions/                    # Shows available regions (us-east-1, us-west-2, etc.)
-ls regions/us-east-1/          # Shows cluster types (ocp-10, ocp-20, eks-40, etc.)
+# Start with regions to see what's available
+ls regions/                     # → us-east-1, us-west-2, eu-west-1
 
-# Cluster provisioning (generated from regional specs)
-ls clusters/                   # Shows all provisioned clusters (cluster-10, cluster-20, etc.)
-ls clusters/cluster-10/        # Shows cluster manifests (namespace.yaml, install-config.yaml, etc.)
+# Drill down to see clusters in a region  
+ls regions/us-east-1/          # → cluster-10, cluster-20, cluster-30
 
-# Pipeline deployments (organized by pipeline type)
-ls pipelines/                           # Shows pipeline types (hello-world, cloud-infrastructure-provisioning, etc.)
-ls pipelines/hello-world/               # Shows clusters with hello-world pipelines (cluster-10, cluster-20, etc.)
-ls pipelines/hello-world/cluster-10/    # Shows pipeline resources (kustomization.yaml, *.pipelinerun.yaml)
+# See what's deployed for any cluster
+ls clusters/                   # → cluster-10, cluster-20, cluster-40
+ls pipelines/hello-world/      # → cluster-10, cluster-20, cluster-40  
+ls deployments/ocm/           # → cluster-10, cluster-20, cluster-40
+ls operators/openshift-pipelines/ # → global, cluster-10, cluster-20, cluster-40
 
-# Service deployments (organized by service type)
-ls deployments/                # Shows deployment categories (ocm)
-ls deployments/ocm/            # Shows clusters with OCM services (cluster-10, cluster-20, etc.)
-ls deployments/ocm/cluster-10/ # Shows OCM deployment manifests (kustomization.yaml, namespace.yaml)
+# Check GitOps applications
+ls gitops-applications/       # → cluster-10.yaml, cluster-20.yaml, global/
 ```
 
-This structure enables consistent navigation where each level shows the next available options, making it easy to discover and manage resources across the entire infrastructure.  
+**🎯 Key Navigation Benefits:**
+- **Consistent pattern**: Every directory level follows the same structure
+- **Self-documenting**: Directory names clearly indicate their purpose  
+- **Easy discovery**: `ls` at any level shows your available options
+- **Logical grouping**: Related resources are co-located
+- **Global vs Regional**: Clear separation between hub cluster (`global/`) and managed cluster (`cluster-XX/`) deployments
 
-# Install
+## 🚀 Quick Start
 
-## OpenShift
+### Adding a New Cluster (3 simple steps)
 
-An initial OpenShift cluster is required to act as the bootstrap cluster and centralized/global control plane.
-
-Obtaining or provisioning the bootstrap cluster is beyond the scope of this document, but the [example install-config.yaml](./examples/install-config.yaml)
-was generated by the OpenShift installer to create an OCP cluster and is used as the basis for testing this project. 
-
-The rest of this document assumes you are `kubeadmin` with a KUBECONFIG.
-
-
-## Secrets
-
-AWS accounts and image pull secrets are inputs into the provisioning process. They will be obtained by external
-processes, stored in predictable vault paths, and delivered to our clusters.
-
-Until there is Vault, we must create the `aws-credentials` and `pull-secret` Secrets for each cluster provisioned.
-
-Currently, this project assumes the same credentials and pull secrets for all clusters.
-
-From ACM, retrieve the `aws-credentials` and `pull-secret`, store them locally, and apply them to your cluster/namespace when needed.
-
-```
-# TODO: get the correct namespace for these secrets
-oc get secret aws-credentials -n $cluster_namespace -o yaml > secrets/aws-credentials.yaml
-oc get secret pull-secret -n $cluster_namespace -o yaml > secrets/pull-secret.yaml
+1. **Create regional specification:**
+```bash
+mkdir -p regions/us-west-2/cluster-50/
+cat > regions/us-west-2/cluster-50/region.yaml << EOF
+type: eks                    # "ocp" or "eks"
+name: cluster-50
+region: us-west-2
+domain: rosa.mturansk-test.csu2.i3.devshift.org
+instanceType: m5.large
+replicas: 3
+EOF
 ```
 
-# Clusters
-
-Clusters are defined in this repository.  `cluster-10`, `region-02`, `region-02` are the examples.
-
-The process for adding `cluster-40` is currently manual. Improvements to workflows and tooling around adding new
-clusters is expected to continue.
-
-To add `cluster-40`, do the following:
-
-```
-1. Copy/paste ./clusters/overlay/region-02 as ./clusters/overlay/region-04
-2. Find/Replace 'cluster-10' with 'cluster-40' in the files in ./clusters/overlay/region-04
-3. Add the new cluster overlay to ./regional-clusters/kustomization.yaml
-4. Add the new cluster to the end of ./bootstrap.sh for observing status
-5. Create a Pull Request and submit to the repository.
-6. Run ./bootstrap.sh to wait for cluster-40 to be provisioned or watch the ACM console 
+2. **Generate complete cluster overlay:**
+```bash
+./bin/generate-cluster regions/us-west-2/cluster-50/
 ```
 
-See https://github.com/openshift-online/bootstrap/pull/48
+3. **Deploy via GitOps:**
+```bash
+./bootstrap.sh
+```
 
-Argo applies the new cluster as part of the [regional clusters](./gitops-applications/regional-clusters.application.yaml) gitops application.
+**That's it!** The system automatically:
+- ✅ Creates cluster provisioning resources (OCP via Hive, EKS via CAPI)
+- ✅ Generates pipeline deployments (Hello World, Cloud Infrastructure)
+- ✅ Sets up operator installations (OpenShift Pipelines)
+- ✅ Configures service deployments (OCM database services)
+- ✅ Creates ApplicationSet with proper sync wave ordering
+- ✅ Integrates with ACM for cluster management
 
+## 📖 Documentation
+
+- **[INSTALL.md](./INSTALL.md)** - Complete installation guide (hub setup + adding regions)
+- **[NEWREGION.md](./NEWREGION.md)** - Detailed test plan for new cluster deployment
+- **[CLAUDE.md](./CLAUDE.md)** - Project overview and development guidance  
+
+## 🏛️ Architecture & Components
+
+### Hub Cluster Components
+- **OpenShift GitOps (ArgoCD)**: Manages all cluster deployments via ApplicationSets
+- **Red Hat Advanced Cluster Management (ACM)**: Multi-cluster lifecycle and governance
+- **Cluster API (CAPI)**: EKS cluster provisioning with AWS infrastructure provider
+- **Hive**: OpenShift cluster provisioning operator
+- **OpenShift Pipelines (Tekton)**: CI/CD automation across all clusters
+
+### Deployment Flow with Sync Waves
+ApplicationSets deploy resources in ordered waves to ensure proper dependencies:
+
+1. **Wave 1**: Cluster provisioning (Hive ClusterDeployment or CAPI resources)
+2. **Wave 2**: Operator installation (OpenShift Pipelines operator)
+3. **Wave 3**: Pipeline deployment (Tekton Pipeline and PipelineRun resources)
+4. **Wave 4**: Service deployment (OCM database services and applications)
+
+### GitOps Integration
+- **Automated cluster registration**: ACM automatically registers managed clusters with ArgoCD
+- **ApplicationSet pattern**: Single ApplicationSet generates all required applications per cluster
+- **Resource exclusions**: ArgoCD excludes transient resources like TaskRuns but allows Pipeline/PipelineRun
+- **Multi-platform support**: Seamlessly manages both OpenShift and EKS clusters
+
+
+## 🔄 Workflow Diagram
 
 ```mermaid
 sequenceDiagram
-   actor Admin
-   actor Installer
-   actor OCP
-   actor Argo
-   actor Git
-   actor Tekton
+   participant Admin
+   participant Generator as bin/generate-cluster
+   participant Git as Git Repository
+   participant Hub as Hub Cluster
+   participant ArgoCD
+   participant ACM
+   participant Target as Managed Cluster
    
-   Admin->>Installer: Provision/Get Cluster
-   Installer->>Admin: obtain KubeConfig
+   Admin->>Generator: ./bin/generate-cluster regions/us-west-2/cluster-50/
+   Generator->>Git: Create overlays + ApplicationSet
    
-   Admin->>OCP: run ./bootstrap.sh
-   OCP->>Admin: RHCP (ACM, Argo, Pipelines) is installed
-      
-   Argo->>Git: Get desired state
-   Git->>Argo: Regional OCM YAML
+   Admin->>Hub: ./bootstrap.sh
+   Hub->>ArgoCD: Deploy ApplicationSet
    
-   Argo->>OCP: Argo applies YAML
-   OCP->>Argo: Deployment status
+   ArgoCD->>Git: Sync Wave 1 (cluster)
+   Git->>ArgoCD: Cluster resources
+   ArgoCD->>ACM: Deploy cluster (Hive/CAPI)
+   ACM->>Target: Provision cluster
    
-   Admin->>OCP: oc get pods 
-   OCP->>Admin: Regional OCM is green 
-    
+   Target->>ACM: Cluster ready
+   ACM->>ArgoCD: Register cluster
+   
+   ArgoCD->>Git: Sync Wave 2-4 (operators→pipelines→services)
+   Git->>ArgoCD: Application resources
+   ArgoCD->>Target: Deploy applications
+   
+   Target->>Admin: Multi-cluster environment ready
 ```
+
+## 🛠️ Development & Troubleshooting
+
+- **Validation**: All overlays include `kustomize build` validation and dry-run checks
+- **Monitoring**: Built-in status monitoring scripts for cluster provisioning
+- **Rollback**: Clean rollback procedures for failed deployments
+- **Extensibility**: Base template system allows easy addition of new services and pipelines
+
+**For detailed installation and troubleshooting guidance, see [INSTALL.md](./INSTALL.md)**

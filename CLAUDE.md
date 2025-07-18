@@ -19,12 +19,13 @@ The codebase is organized into several key components:
 ### Directory Structure
 - `clusters/`: Cluster deployment configurations (base + overlays)
 - `operators/`: Operator deployments organized by operator type
-  - `operators/advanced-cluster-management/`: ACM operator and configurations
-  - `operators/openshift-pipelines/cluster-*/`: Tekton Pipelines operator per cluster
+  - `operators/advanced-cluster-management/global/`: ACM hub cluster deployment
+  - `operators/openshift-pipelines/global/`: Pipelines hub cluster deployment  
+  - `operators/openshift-pipelines/cluster-*/`: Tekton Pipelines operator per managed cluster
 - `prereqs/`: Prerequisites for bootstrap process
 - `pipelines/`: Tekton pipeline configurations deployed per region
 - `deployments/`: Service deployments (OCM services) per cluster
-- `gitops-applications/`: ArgoCD applications for GitOps automation
+- `gitops-applications/`: ArgoCD ApplicationSets for GitOps automation
 
 ## Common Commands
 
@@ -256,13 +257,19 @@ The project uses ACM's native GitOps integration with infrastructure providers f
 ### ACM Configuration Location
 The ACM MultiClusterHub configuration is located at:
 ```
-operators/advanced-cluster-management/instance/base/multiclusterhub.yaml
+operators/advanced-cluster-management/global/instance/base/multiclusterhub.yaml
 ```
 
 Key configuration sections:
 - `infrastructureProviders`: Enables AWS, Azure, GCP, vSphere, OpenStack, BareMetal
 - `overrides.components`: Configures all ACM components including hypershift
 - `availabilityConfig`: Set to High for production deployment
+
+**Updated Directory Structure**:
+- **operators/advanced-cluster-management/global/**: All ACM hub cluster components
+  - `operator/`: ACM operator installation
+  - `instance/`: MultiClusterHub instance configuration
+  - `gitops-integration/`: GitOps integration setup
 
 ## ArgoCD Architecture and Exclusions
 
