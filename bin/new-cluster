@@ -1,0 +1,202 @@
+#!/bin/bash
+set -e
+
+# Interactive CLI tool for generating new regional cluster specs
+# This tool gathers input from the user and generates a complete cluster configuration
+
+echo "OpenShift Regional Cluster Generator"
+echo "==================================="
+echo ""
+
+# Function to prompt for input with default value
+prompt_with_default() {
+    local prompt="$1"
+    local default="$2"
+    local var_name="$3"
+    
+    if [ -n "$default" ]; then
+        read -p "$prompt [$default]: " input
+        if [ -z "$input" ]; then
+            input="$default"
+        fi
+    else
+        read -p "$prompt: " input
+        while [ -z "$input" ]; do
+            echo "This field is required."
+            read -p "$prompt: " input
+        done
+    fi
+    
+    eval "$var_name=\"$input\""
+}
+
+# Function to validate cluster type
+validate_cluster_type() {
+    local type="$1"
+    if [ "$type" != "ocp" ] && [ "$type" != "eks" ]; then
+        echo "Error: Cluster type must be 'ocp' or 'eks'" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Function to validate cluster name uniqueness
+validate_cluster_name() {
+    local name="$1"
+    
+    # Check if cluster directory already exists
+    if [ -d "clusters/$name" ]; then
+        echo "Error: Cluster '$name' already exists in clusters/" >&2
+        return 1
+    fi
+    
+    # Check if gitops application already exists
+    if [ -f "gitops-applications/$name.yaml" ]; then
+        echo "Error: GitOps application for cluster '$name' already exists" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+# Gather input from user
+echo "Please provide the following information for your new cluster:"
+echo ""
+
+# 1. Cluster Name
+while true; do
+    prompt_with_default "Cluster Name" "" "CLUSTER_NAME"
+    if validate_cluster_name "$CLUSTER_NAME"; then
+        break
+    fi
+done
+
+# 2. Cluster Type
+while true; do
+    prompt_with_default "Cluster Type (ocp/eks)" "ocp" "CLUSTER_TYPE"
+    if validate_cluster_type "$CLUSTER_TYPE"; then
+        break
+    fi
+done
+
+# 3. Region
+prompt_with_default "Region" "us-west-2" "REGION"
+
+# 4. Domain
+prompt_with_default "Base Domain" "rosa.mturansk-test.csu2.i3.devshift.org" "DOMAIN"
+
+# 5. Instance Type
+prompt_with_default "Instance Type" "m5.2xlarge" "INSTANCE_TYPE"
+
+# 6. Replicas
+prompt_with_default "Number of Replicas" "2" "REPLICAS"
+
+echo ""
+echo "Configuration Summary:"
+echo "====================="
+echo "Cluster Name: $CLUSTER_NAME"
+echo "Type: $CLUSTER_TYPE"
+echo "Region: $REGION"
+echo "Domain: $DOMAIN"
+echo "Instance Type: $INSTANCE_TYPE"
+echo "Replicas: $REPLICAS"
+echo ""
+
+# Confirm before proceeding
+read -p "Proceed with cluster generation? (y/N): " confirm
+if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+    echo "Cluster generation cancelled."
+    exit 0
+fi
+
+# Create regional specification directory
+SPEC_DIR="regions/$REGION/$CLUSTER_NAME"
+mkdir -p "$SPEC_DIR"
+
+# Generate region.yaml
+cat > "$SPEC_DIR/region.yaml" << EOF
+name: $CLUSTER_NAME
+type: $CLUSTER_TYPE
+region: $REGION
+domain: $DOMAIN
+instanceType: $INSTANCE_TYPE
+replicas: $REPLICAS
+EOF
+
+echo ""
+echo "Generated regional specification at: $SPEC_DIR/region.yaml"
+echo ""
+
+# Run generate-cluster to create the cluster configuration
+echo "Running bin/generate-cluster to create cluster configuration..."
+echo ""
+
+if ! ./bin/generate-cluster "$SPEC_DIR"; then
+    echo "Error: Failed to generate cluster configuration" >&2
+    exit 1
+fi
+
+echo ""
+echo "🎉 Cluster generation completed successfully!"
+echo ""
+
+# Validate the generated configuration
+echo "Validating generated configuration..."
+echo ""
+
+validation_failed=false
+
+# Validate cluster configuration
+echo "Validating cluster configuration..."
+if oc kustomize "clusters/$CLUSTER_NAME/" > /dev/null 2>&1; then
+    echo "✅ Cluster configuration is valid"
+else
+    echo "❌ Cluster configuration validation failed"
+    validation_failed=true
+fi
+
+# Validate deployments configuration
+echo "Validating deployments configuration..."
+if oc kustomize "deployments/ocm/$CLUSTER_NAME/" > /dev/null 2>&1; then
+    echo "✅ Deployments configuration is valid"
+else
+    echo "❌ Deployments configuration validation failed"
+    validation_failed=true
+fi
+
+# Validate gitops applications
+echo "Validating GitOps applications..."
+if oc kustomize "gitops-applications/" > /dev/null 2>&1; then
+    echo "✅ GitOps applications configuration is valid"
+else
+    echo "❌ GitOps applications configuration validation failed"
+    validation_failed=true
+fi
+
+echo ""
+
+if [ "$validation_failed" = true ]; then
+    echo "⚠️  Some validation checks failed. Please review the configuration before proceeding."
+    echo ""
+    echo "To debug validation issues, run:"
+    echo "  oc kustomize clusters/$CLUSTER_NAME/"
+    echo "  oc kustomize deployments/ocm/$CLUSTER_NAME/"
+    echo "  oc kustomize gitops-applications/"
+else
+    echo "✅ All validation checks passed!"
+fi
+
+echo ""
+echo "Next steps:"
+echo "1. Review the generated configuration files"
+echo "2. Commit the changes to git"
+echo "3. Run ./bootstrap.sh to deploy the cluster (not from Claude session)"
+echo ""
+echo "Generated files:"
+echo "- Regional spec: $SPEC_DIR/region.yaml"
+echo "- Cluster config: clusters/$CLUSTER_NAME/"
+echo "- Operators: operators/openshift-pipelines/$CLUSTER_NAME/"
+echo "- Pipelines: pipelines/hello-world/$CLUSTER_NAME/"
+echo "- Pipelines: pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME/"
+echo "- Deployments: deployments/ocm/$CLUSTER_NAME/"
+echo "- GitOps: gitops-applications/$CLUSTER_NAME.yaml"
