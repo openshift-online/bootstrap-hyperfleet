@@ -4,6 +4,7 @@ kind: Component
 resources:
   - cluster.yaml
   - workers.yaml
+  - external-secrets.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

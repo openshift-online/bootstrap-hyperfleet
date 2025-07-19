@@ -21,3 +21,4 @@ spec:
       name: install-config
   pullSecretRef:
     name: pull-secret
+  
