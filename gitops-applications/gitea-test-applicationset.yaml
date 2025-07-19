@@ -11,13 +11,9 @@ spec:
   - list:
       elements:
       - component: cluster
-        path: clusters/eks-04-gitea-test
+        path: clusters/eks-05-gitea-final
         destination: https://kubernetes.default.svc
         syncWave: "1"
-      - component: operators
-        path: operators/openshift-pipelines/eks-04-gitea-test
-        destination: https://managed-eks-04-gitea-test-us-east-2.eks.amazonaws.com
-        syncWave: "2"
   template:
     metadata:
       name: gitea-test-{{component}}

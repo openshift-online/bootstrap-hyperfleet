@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: eks-05-gitea-final-applications
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/eks-05-gitea-final
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/eks-05-gitea-final
+        destination: https://managed-eks-05-gitea-final-us-east-2.eks.amazonaws.com
+        syncWave: "2"
+      - component: pipelines-hello-world
+        path: pipelines/hello-world/eks-05-gitea-final
+        destination: https://managed-eks-05-gitea-final-us-east-2.eks.amazonaws.com
+        syncWave: "3"
+      - component: pipelines-cloud-infrastructure-provisioning
+        path: pipelines/cloud-infrastructure-provisioning/eks-05-gitea-final
+        destination: https://managed-eks-05-gitea-final-us-east-2.eks.amazonaws.com
+        syncWave: "3"
+      - component: deployments-ocm
+        path: deployments/ocm/eks-05-gitea-final
+        destination: https://managed-eks-05-gitea-final-us-east-2.eks.amazonaws.com
+        syncWave: "4"
+  template:
+    metadata:
+      name: eks-05-gitea-final-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false

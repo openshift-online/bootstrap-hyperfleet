@@ -289,24 +289,8 @@ spec:
       property: .dockerconfigjson
 EOF
 
-    # Generate klusterlet-crd.yaml (Required for ACM integration)
-    if [ -f ".secrets/klusterlet-crd.yaml" ]; then
-        cp .secrets/klusterlet-crd.yaml "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml"
-        echo "Using existing Klusterlet CRD from .secrets/"
-    else
-        echo "Warning: klusterlet-crd.yaml not found in .secrets/, generating placeholder"
-        cat > "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml" << EOF
-# Placeholder - Replace with actual Klusterlet CRD from hub cluster
-# Run: oc get crd klusterlets.operator.open-cluster-management.io -o yaml > .secrets/klusterlet-crd.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: klusterlet-crd-placeholder
-  namespace: $FULL_CLUSTER_NAME
-data:
-  note: "Please replace this with actual Klusterlet CRD from hub cluster"
-EOF
-    fi
+    # Note: Klusterlet CRD should already exist from ACM hub deployment
+    # Including it causes "AlreadyExists" conflicts during import
 
     # Generate kustomization.yaml
     cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
@@ -322,7 +306,6 @@ resources:
   - managedcluster.yaml
   - klusterletaddonconfig.yaml
   - external-secrets.yaml
-  - klusterlet-crd.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -935,8 +918,8 @@ push_to_gitea() {
     
     # Gitea configuration
     local GITEA_URL="http://gitea.gitea-system.svc.cluster.local:3000"
-    local GITEA_REPO_URL="http://admin:bootstrap123@gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git"
-    local GITEA_USER="admin"
+    local GITEA_REPO_URL="http://bootstrap:bootstrap123@gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git"
+    local GITEA_USER="bootstrap"
     local GITEA_PASS="bootstrap123"
     
     # Create a temporary job to push to Gitea from inside the cluster
