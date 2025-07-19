@@ -9,10 +9,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Function to set up a namespace and apply Vault-managed secrets
-# @param {string} cluster_id - The ID of the cluster (e.g., 10, 20)
+# @param {string} cluster_name - The semantic name of the cluster (e.g., ocp-01, eks-02, hcp-01-test)
 setup_cluster_vault_secrets() {
-  local cluster_id="$1"
-  local namespace="cluster-${cluster_id}"
+  local cluster_name="$1"
+  local namespace="${cluster_name}"
 
   echo "--- 🚀 Starting Vault integration for namespace: ${namespace} ---"
 
@@ -39,30 +39,18 @@ EOF
 
   # 4. Apply ExternalSecrets for this namespace
   echo "Applying ExternalSecrets for ${namespace}..."
-  sed "s/CLUSTER_NAMESPACE/${namespace}/g" vault/external-secrets-template.yaml | oc apply -f -
+  sed "s/CLUSTER_NAMESPACE/${namespace}/g" bases/ocm/external-secrets-template.yaml | oc apply -f -
   sleep .2
 
-  # 5. Wait for secrets to be created by ESO
-  echo "Waiting for Vault-managed secrets to become available..."
-  echo "Note: If this fails, check ExternalSecret status with: oc describe externalsecret -n ${namespace}"
-  
-  # Wait with timeout for secrets to appear
-  for i in {1..30}; do
-    if oc get secret aws-credentials -n "${namespace}" >/dev/null 2>&1 && \
-       oc get secret pull-secret -n "${namespace}" >/dev/null 2>&1; then
-      echo "✅ Vault-managed secrets ready in ${namespace}"
-      break
-    fi
-    
-    if [ $i -eq 30 ]; then
-      echo "⚠️  Timeout waiting for secrets in ${namespace}. Check ExternalSecret status manually."
-      echo "    Troubleshooting: oc get externalsecret -n ${namespace}"
-      echo "    Debug: oc describe externalsecret aws-credentials -n ${namespace}"
-    else
-      echo "Waiting for secrets... ($i/30)"
-      sleep 2
-    fi
-  done
+  # 5. ExternalSecrets created - secrets will sync when ESO is ready and cluster namespace exists
+  echo "✅ ExternalSecrets configured for ${namespace}"
+  echo "    Secrets will be synced automatically by ESO when:"
+  echo "    - External Secret Operator is running on hub cluster"
+  echo "    - ClusterSecretStore vault-cluster-store is configured" 
+  echo "    - Cluster namespace ${namespace} exists (after cluster provisioning)"
+  echo ""
+  echo "    Monitor secret sync status: oc get externalsecret -n ${namespace}"
+  echo "    Debug if needed: oc describe externalsecret aws-credentials -n ${namespace}"
 
   echo "--- ✅ Vault setup complete for namespace: ${namespace} ---"
   echo ""
@@ -103,13 +91,34 @@ fi
 
 echo -e "${GREEN}✅ Vault prerequisites verified${NC}"
 
-# Set up Vault-managed secrets for all cluster namespaces
-# Note: Update this list based on your cluster configuration
-setup_cluster_vault_secrets "10"
-setup_cluster_vault_secrets "20" 
-setup_cluster_vault_secrets "30"
-setup_cluster_vault_secrets "40"
-setup_cluster_vault_secrets "50"
+# Dynamically discover all cluster configurations and set up Vault-managed secrets
+echo "🔍 Discovering cluster configurations..."
+
+# Find all cluster directories and extract cluster names
+cluster_names=()
+if [ -d "clusters" ]; then
+  for cluster_dir in clusters/*/; do
+    if [ -d "$cluster_dir" ]; then
+      cluster_name=$(basename "$cluster_dir")
+      cluster_names+=("$cluster_name")
+      echo "  Found cluster: $cluster_name"
+    fi
+  done
+fi
+
+if [ ${#cluster_names[@]} -eq 0 ]; then
+  echo -e "${YELLOW}⚠️  No cluster configurations found in clusters/ directory${NC}"
+  echo "This is expected if no clusters have been configured yet."
+  exit 0
+fi
+
+echo "📋 Setting up Vault secrets for ${#cluster_names[@]} cluster(s)..."
+echo ""
+
+# Set up Vault-managed secrets for all discovered clusters
+for cluster_name in "${cluster_names[@]}"; do
+  setup_cluster_vault_secrets "$cluster_name"
+done
 
 echo -e "${GREEN}🎉 All Vault-based cluster secrets setup complete!${NC}"
 echo ""

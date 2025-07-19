@@ -264,6 +264,30 @@ data:
   id_rsa.pub: ""
 EOF
 
+    # Generate ExternalSecrets for HCP cluster
+    cat > "$CLUSTER_OUTPUT_DIR/external-secrets.yaml" << EOF
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: pull-secret
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: pull-secret
+    creationPolicy: Owner
+    type: kubernetes.io/dockerconfigjson
+  data:
+  - secretKey: .dockerconfigjson
+    remoteRef:
+      key: pull-secret
+      property: .dockerconfigjson
+EOF
+
     # Generate klusterletaddonconfig.yaml
     cat > "$CLUSTER_OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
 apiVersion: agent.open-cluster-management.io/v1
@@ -301,6 +325,7 @@ resources:
   - hostedcluster.yaml
   - klusterletaddonconfig.yaml
   - ssh-key-secret.yaml
+  - external-secrets.yaml
 
 # This will disable name hashing for all generators in this file
 generatorOptions:

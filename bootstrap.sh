@@ -15,9 +15,6 @@ oc apply -k ./prereqs
 
 ./status.sh applications.argoproj.io
 
-echo "Fake Vault here -- create some necessary secrets"
-./bootstrap.vault.sh
-
 # Apply the GitOps Applications to complete bootstrap
 echo "Applying the GitOps Applications to complete bootstrap"
 oc apply -k ./gitops-applications
@@ -31,8 +28,16 @@ echo "Waiting for ACM to complete"
 echo "Control plane is ready: $(oc whoami --show-console)"
 
 echo "Waiting for regional clusters to provision"
-#./wait.kube.sh cd cluster-10 cluster-10 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
-#
-#./wait.kube.sh cd cluster-20 cluster-20 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
-#
-#./wait.kube.sh cd cluster-30 cluster-30 '{.status.conditions[?(@.type=="Provisioned")].message}' "Cluster is provisioned"
+# Note: Cluster provisioning is handled by GitOps - clusters will be created automatically
+# Wait times depend on cluster type: EKS (~15min), OCP via Hive (~45min), HCP (~10min)
+
+echo "GitOps has begun cluster provisioning. You can monitor progress with:"
+echo "  oc get applications -n openshift-gitops"
+echo "  oc get clusterdeployments -A  # For OCP clusters"
+echo "  oc get clusters -A            # For EKS clusters" 
+echo "  oc get hostedclusters -A      # For HCP clusters"
+echo ""
+
+echo "Setting up Vault-based secret management for provisioned cluster namespaces"
+echo "Note: ExternalSecrets will be created but won't sync until clusters are fully provisioned"
+./bootstrap.vault-integration.sh

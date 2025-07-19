@@ -8,5 +8,6 @@ resources:
   - clusterdeployment.yaml
   - managedcluster.yaml
   - machinepool.yaml
+  - external-secrets.yaml
 
 
