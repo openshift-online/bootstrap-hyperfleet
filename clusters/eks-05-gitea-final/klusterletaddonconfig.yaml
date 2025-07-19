@@ -1,0 +1,22 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: eks-05-gitea-final
+  namespace: eks-05-gitea-final
+spec:
+  clusterName: eks-05-gitea-final
+  clusterNamespace: eks-05-gitea-final
+  clusterLabels:
+    name: eks-05-gitea-final
+    cloud: Amazon
+    vendor: EKS
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true

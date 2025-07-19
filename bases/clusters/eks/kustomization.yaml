@@ -6,7 +6,6 @@ resources:
   - workers.yaml
   - machinepool.yaml
   - external-secrets.yaml
-  - klusterlet-crd.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
