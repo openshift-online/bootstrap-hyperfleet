@@ -33,11 +33,63 @@ prompt_with_default() {
 # Function to validate cluster type
 validate_cluster_type() {
     local type="$1"
-    if [ "$type" != "ocp" ] && [ "$type" != "eks" ]; then
-        echo "Error: Cluster type must be 'ocp' or 'eks'" >&2
+    if [ "$type" != "ocp" ] && [ "$type" != "eks" ] && [ "$type" != "hcp" ]; then
+        echo "Error: Cluster type must be 'ocp', 'eks', or 'hcp'" >&2
         return 1
     fi
     return 0
+}
+
+# Function to generate next available cluster name with semantic naming
+generate_cluster_name() {
+    local type="$1"
+    local max_num=0
+    
+    # Check existing clusters directories
+    if [ -d "clusters" ]; then
+        for cluster_dir in clusters/${type}-*; do
+            if [ -d "$cluster_dir" ]; then
+                # Extract number from cluster name (e.g., ocp-01 -> 01)
+                local cluster_name=$(basename "$cluster_dir")
+                local num=$(echo "$cluster_name" | sed "s/${type}-//")
+                if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -gt "$max_num" ]; then
+                    max_num=$num
+                fi
+            fi
+        done
+    fi
+    
+    # Check existing regions directories
+    if [ -d "regions" ]; then
+        for region_dir in regions/*/${type}-*; do
+            if [ -d "$region_dir" ]; then
+                # Extract number from cluster name (e.g., ocp-01 -> 01)
+                local cluster_name=$(basename "$region_dir")
+                local num=$(echo "$cluster_name" | sed "s/${type}-//")
+                if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -gt "$max_num" ]; then
+                    max_num=$num
+                fi
+            fi
+        done
+    fi
+    
+    # Check existing GitOps applications
+    if [ -d "gitops-applications" ]; then
+        for app_file in gitops-applications/${type}-*.yaml; do
+            if [ -f "$app_file" ]; then
+                # Extract number from application name (e.g., ocp-01.yaml -> 01)
+                local app_name=$(basename "$app_file" .yaml)
+                local num=$(echo "$app_name" | sed "s/${type}-//")
+                if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -gt "$max_num" ]; then
+                    max_num=$num
+                fi
+            fi
+        done
+    fi
+    
+    # Generate next number with zero padding
+    local next_num=$((max_num + 1))
+    printf "${type}-%02d" "$next_num"
 }
 
 # Function to validate cluster name uniqueness
@@ -47,6 +99,12 @@ validate_cluster_name() {
     # Check if cluster directory already exists
     if [ -d "clusters/$name" ]; then
         echo "Error: Cluster '$name' already exists in clusters/" >&2
+        return 1
+    fi
+    
+    # Check if regional spec already exists
+    if find regions -name "$name" -type d 2>/dev/null | grep -q .; then
+        echo "Error: Regional specification for cluster '$name' already exists" >&2
         return 1
     fi
     
@@ -63,38 +121,38 @@ validate_cluster_name() {
 echo "Please provide the following information for your new cluster:"
 echo ""
 
-# 1. Cluster Name
+# Get cluster type first (required for name generation)
 while true; do
-    prompt_with_default "Cluster Name" "" "CLUSTER_NAME"
-    if validate_cluster_name "$CLUSTER_NAME"; then
-        break
-    fi
-done
-
-# 2. Cluster Type
-while true; do
-    prompt_with_default "Cluster Type (ocp/eks)" "ocp" "CLUSTER_TYPE"
+    prompt_with_default "Cluster Type (ocp/eks/hcp)" "ocp" "CLUSTER_TYPE"
     if validate_cluster_type "$CLUSTER_TYPE"; then
         break
     fi
 done
 
-# 3. Region
+# Generate cluster name automatically
+echo ""
+echo "Generating cluster name..."
+CLUSTER_NAME=$(generate_cluster_name "$CLUSTER_TYPE")
+echo "Next available cluster name: $CLUSTER_NAME"
+echo ""
+
+# Validate generated name
+if ! validate_cluster_name "$CLUSTER_NAME"; then
+    echo "Error: Generated cluster name '$CLUSTER_NAME' conflicts with existing resources" >&2
+    exit 1
+fi
+
+# Get other cluster configuration
 prompt_with_default "Region" "us-west-2" "REGION"
-
-# 4. Domain
 prompt_with_default "Base Domain" "rosa.mturansk-test.csu2.i3.devshift.org" "DOMAIN"
-
-# 5. Instance Type
 prompt_with_default "Instance Type" "m5.2xlarge" "INSTANCE_TYPE"
-
-# 6. Replicas
 prompt_with_default "Number of Replicas" "2" "REPLICAS"
 
+# Show configuration summary
 echo ""
 echo "Configuration Summary:"
 echo "====================="
-echo "Cluster Name: $CLUSTER_NAME"
+echo "Cluster Name: $CLUSTER_NAME (auto-generated)"
 echo "Type: $CLUSTER_TYPE"
 echo "Region: $REGION"
 echo "Domain: $DOMAIN"
@@ -105,7 +163,7 @@ echo ""
 # Confirm before proceeding
 read -p "Proceed with cluster generation? (y/N): " confirm
 if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-    echo "Cluster generation cancelled."
+    echo "Cancelled."
     exit 0
 fi
 
@@ -113,26 +171,62 @@ fi
 SPEC_DIR="regions/$REGION/$CLUSTER_NAME"
 mkdir -p "$SPEC_DIR"
 
-# Generate region.yaml
+# Generate regional specification
 cat > "$SPEC_DIR/region.yaml" << EOF
-name: $CLUSTER_NAME
-type: $CLUSTER_TYPE
-region: $REGION
-domain: $DOMAIN
-instanceType: $INSTANCE_TYPE
-replicas: $REPLICAS
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $CLUSTER_NAME
+  namespace: $REGION
+spec:
+  type: $CLUSTER_TYPE
+  region: $REGION
+  domain: $DOMAIN
+  
+  # Minimal compute config
+  compute:
+    instanceType: $INSTANCE_TYPE
+    replicas: $REPLICAS
 EOF
+
+# Add type-specific configuration
+if [ "$CLUSTER_TYPE" = "ocp" ]; then
+    cat >> "$SPEC_DIR/region.yaml" << EOF
+    
+  # Type-specific configuration
+  openshift:
+    version: "4.15"
+    channel: stable
+EOF
+elif [ "$CLUSTER_TYPE" = "eks" ]; then
+    cat >> "$SPEC_DIR/region.yaml" << EOF
+    
+  # Type-specific configuration
+  kubernetes:
+    version: "1.28"
+EOF
+elif [ "$CLUSTER_TYPE" = "hcp" ]; then
+    cat >> "$SPEC_DIR/region.yaml" << EOF
+    
+  # HyperShift specific configuration
+  hypershift:
+    release: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
+    infrastructureAvailabilityPolicy: SingleReplica
+    platform: None
+EOF
+fi
 
 echo ""
 echo "Generated regional specification at: $SPEC_DIR/region.yaml"
-echo ""
 
-# Run generate-cluster to create the cluster configuration
+# Run generate-cluster to create full cluster configuration
 echo "Running bin/generate-cluster to create cluster configuration..."
 echo ""
 
 if ! ./bin/generate-cluster "$SPEC_DIR"; then
     echo "Error: Failed to generate cluster configuration" >&2
+    echo "Cleaning up regional specification..."
+    rm -rf "$SPEC_DIR"
     exit 1
 fi
 
@@ -140,7 +234,7 @@ echo ""
 echo "🎉 Cluster generation completed successfully!"
 echo ""
 
-# Validate the generated configuration
+# Run validation checks
 echo "Validating generated configuration..."
 echo ""
 
@@ -152,6 +246,7 @@ if oc kustomize "clusters/$CLUSTER_NAME/" > /dev/null 2>&1; then
     echo "✅ Cluster configuration is valid"
 else
     echo "❌ Cluster configuration validation failed"
+    echo "Debug: oc kustomize clusters/$CLUSTER_NAME/"
     validation_failed=true
 fi
 
@@ -161,42 +256,82 @@ if oc kustomize "deployments/ocm/$CLUSTER_NAME/" > /dev/null 2>&1; then
     echo "✅ Deployments configuration is valid"
 else
     echo "❌ Deployments configuration validation failed"
+    echo "Debug: oc kustomize deployments/ocm/$CLUSTER_NAME/"
     validation_failed=true
 fi
 
-# Validate gitops applications
+# Validate GitOps applications
 echo "Validating GitOps applications..."
 if oc kustomize "gitops-applications/" > /dev/null 2>&1; then
     echo "✅ GitOps applications configuration is valid"
 else
-    echo "❌ GitOps applications configuration validation failed"
+    echo "❌ GitOps applications validation failed"
+    echo "Debug: oc kustomize gitops-applications/"
     validation_failed=true
 fi
 
 echo ""
-
 if [ "$validation_failed" = true ]; then
-    echo "⚠️  Some validation checks failed. Please review the configuration before proceeding."
+    echo "⚠️  Some validation checks failed. Please review the debug commands above."
     echo ""
-    echo "To debug validation issues, run:"
-    echo "  oc kustomize clusters/$CLUSTER_NAME/"
-    echo "  oc kustomize deployments/ocm/$CLUSTER_NAME/"
-    echo "  oc kustomize gitops-applications/"
 else
     echo "✅ All validation checks passed!"
+    echo ""
 fi
 
-echo ""
-echo "Next steps:"
-echo "1. Review the generated configuration files"
-echo "2. Commit the changes to git"
-echo "3. Run ./bootstrap.sh to deploy the cluster (not from Claude session)"
-echo ""
+# List generated files
 echo "Generated files:"
-echo "- Regional spec: $SPEC_DIR/region.yaml"
-echo "- Cluster config: clusters/$CLUSTER_NAME/"
-echo "- Operators: operators/openshift-pipelines/$CLUSTER_NAME/"
-echo "- Pipelines: pipelines/hello-world/$CLUSTER_NAME/"
-echo "- Pipelines: pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME/"
-echo "- Deployments: deployments/ocm/$CLUSTER_NAME/"
-echo "- GitOps: gitops-applications/$CLUSTER_NAME.yaml"
+echo "=================="
+echo "Regional specification:"
+echo "  $SPEC_DIR/region.yaml"
+echo ""
+echo "Cluster files:"
+if [ -d "clusters/$CLUSTER_NAME" ]; then
+    ls -la "clusters/$CLUSTER_NAME/"
+else
+    echo "  (Not generated - check errors above)"
+fi
+echo ""
+echo "Operators files:"
+if [ -d "operators/openshift-pipelines/$CLUSTER_NAME" ]; then
+    ls -la "operators/openshift-pipelines/$CLUSTER_NAME/"
+else
+    echo "  (Not generated - check errors above)"
+fi
+echo ""
+echo "Pipeline files:"
+if [ -d "pipelines/hello-world/$CLUSTER_NAME" ]; then
+    echo "Hello World pipeline:"
+    ls -la "pipelines/hello-world/$CLUSTER_NAME/"
+    echo ""
+fi
+if [ -d "pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME" ]; then
+    echo "Cloud Infrastructure pipeline:"
+    ls -la "pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME/"
+    echo ""
+fi
+echo "Deployments files:"
+if [ -d "deployments/ocm/$CLUSTER_NAME" ]; then
+    ls -la "deployments/ocm/$CLUSTER_NAME/"
+else
+    echo "  (Not generated - check errors above)"
+fi
+echo ""
+echo "GitOps ApplicationSet:"
+if [ -f "gitops-applications/$CLUSTER_NAME.yaml" ]; then
+    ls -la "gitops-applications/$CLUSTER_NAME.yaml"
+else
+    echo "  (Not generated - check errors above)"
+fi
+echo ""
+echo "Updated gitops-applications/kustomization.yaml"
+echo ""
+
+# Next steps
+echo "Next steps:"
+echo "==========="
+echo "1. Review generated configuration files"
+echo "2. Commit changes: git add . && git commit -m 'Add $CLUSTER_NAME cluster configuration'"
+echo "3. Deploy cluster: ./bootstrap.sh"
+echo ""
+echo "Configuration complete! ✨"

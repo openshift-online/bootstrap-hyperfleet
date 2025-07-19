@@ -14,10 +14,10 @@
 │  │ │Applications │ │    │ │Infrastructur│ │    │ │   Global    │ │                 │
 │  │ │    ets      │ │    │ │  Providers  │ │    │ │  Operators  │ │                 │
 │  │ │             │ │    │ │             │ │    │ │             │ │                 │
-│  │ │• cluster-10 │ │    │ │• AWS (EKS)  │ │    │ │• Pipelines  │ │                 │
-│  │ │• cluster-20 │ │    │ │• Azure(AKS) │ │    │ │  Operator   │ │                 │
-│  │ │• cluster-30 │ │    │ │• GCP (GKE)  │ │    │ │             │ │                 │
-│  │ │• cluster-40 │ │    │ │• vSphere    │ │    │ │             │ │                 │
+│  │ │• ocp-02 │ │    │ │• AWS (EKS)  │ │    │ │• Pipelines  │ │                 │
+│  │ │• ocp-03 │ │    │ │• Azure(AKS) │ │    │ │  Operator   │ │                 │
+│  │ │• ocp-04 │ │    │ │• GCP (GKE)  │ │    │ │             │ │                 │
+│  │ │• eks-02 │ │    │ │• vSphere    │ │    │ │             │ │                 │
 │  │ └─────────────┘ │    │ │• OpenStack  │ │    │ └─────────────┘ │                 │
 │  └─────────────────┘    │ │• BareMetal  │ │    └─────────────────┘                 │
 │                         │ └─────────────┘ │                                        │
@@ -45,7 +45,7 @@
 │   us-east-1     │              │   us-west-2     │              │ ap-southeast-1  │
 │                 │              │                 │              │                 │
 │  ┌───────────┐  │              │  ┌───────────┐  │              │  ┌───────────┐  │
-│  │cluster-10 │  │              │  │cluster-30 │  │              │  │cluster-40 │  │
+│  │ocp-02 │  │              │  │ocp-04 │  │              │  │eks-02 │  │
 │  │   (OCP)   │  │              │  │   (OCP)   │  │              │  │   (EKS)   │  │
 │  │           │  │              │  │           │  │              │  │           │  │
 │  │┌─────────┐│  │              │  │┌─────────┐│  │              │  │┌─────────┐│  │
@@ -65,7 +65,7 @@
 │  └───────────┘  │              │  └───────────┘  │              │  └───────────┘  │
 │                 │              │                 │              │                 │
 │  ┌───────────┐  │              │                 │              │                 │
-│  │cluster-20 │  │              │                 │              │                 │
+│  │ocp-03 │  │              │                 │              │                 │
 │  │   (OCP)   │  │              │                 │              │                 │
 │  │           │  │              │                 │              │                 │
 │  │┌─────────┐│  │              │                 │              │                 │
@@ -126,30 +126,30 @@ GitOps Sync Wave Flow:
 Repository Structure:
 ├── regions/                     # Regional specifications
 │   ├── us-east-1/
-│   │   ├── cluster-10/         # region.yaml (type: ocp)
-│   │   └── cluster-20/         # region.yaml (type: ocp)
+│   │   ├── ocp-02/         # region.yaml (type: ocp)
+│   │   └── ocp-03/         # region.yaml (type: ocp)
 │   ├── us-west-2/
-│   │   └── cluster-30/         # region.yaml (type: ocp)
+│   │   └── ocp-04/         # region.yaml (type: ocp)
 │   └── ap-southeast-1/
-│       └── cluster-40/         # region.yaml (type: eks)
+│       └── eks-02/         # region.yaml (type: eks)
 ├── clusters/                   # Generated cluster configs
-│   ├── cluster-10/            # OCP: Hive resources
-│   ├── cluster-20/            # OCP: Hive resources  
-│   ├── cluster-30/            # OCP: Hive resources
-│   └── cluster-40/            # EKS: CAPI resources
+│   ├── ocp-02/            # OCP: Hive resources
+│   ├── ocp-03/            # OCP: Hive resources  
+│   ├── ocp-04/            # OCP: Hive resources
+│   └── eks-02/            # EKS: CAPI resources
 ├── pipelines/                 # Tekton pipelines per cluster
 │   ├── hello-world/
 │   └── cloud-infrastructure-provisioning/
 ├── deployments/ocm/           # Service deployments per cluster
 ├── gitops-applications/       # ArgoCD ApplicationSets
-│   ├── cluster-10.yaml
-│   ├── cluster-20.yaml
-│   ├── cluster-30.yaml
-│   └── cluster-40.yaml
+│   ├── ocp-02.yaml
+│   ├── ocp-03.yaml
+│   ├── ocp-04.yaml
+│   └── eks-02.yaml
 └── operators/                 # Operator installations per cluster
-    ├── cluster-10/
-    ├── cluster-20/
-    ├── cluster-30/
+    ├── ocp-02/
+    ├── ocp-03/
+    ├── ocp-04/
     └── openshift-pipelines/
 ```
 

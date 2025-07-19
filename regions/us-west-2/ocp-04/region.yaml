@@ -1,0 +1,6 @@
+type: ocp
+name: ocp-04
+region: us-west-2
+domain: rosa.mturansk-test.csu2.i3.devshift.org
+instanceType: m5.xlarge
+replicas: 1

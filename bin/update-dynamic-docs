@@ -1,0 +1,507 @@
+#!/bin/bash
+# Dynamic Documentation Update Tool
+# Automatically updates documentation with current cluster state and configurations
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+DOCS_DIR="$ROOT_DIR/docs"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if we can connect to cluster
+check_cluster_access() {
+    if ! command -v oc >/dev/null 2>&1; then
+        log_warning "oc command not found, skipping live cluster updates"
+        return 1
+    fi
+    
+    if ! oc auth can-i get managedcluster >/dev/null 2>&1; then
+        log_warning "Cannot access cluster resources, skipping live cluster updates"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Update STATUS.md with current cluster state
+update_status_md() {
+    log_info "Updating STATUS.md with current cluster state..."
+    
+    local status_file="$ROOT_DIR/STATUS.md"
+    local temp_file="$(mktemp)"
+    
+    # Create updated STATUS.md
+    cat > "$temp_file" << 'EOF'
+# Current System Status
+
+**Auto-generated status report**
+
+*Last updated: $(date)*
+
+## Hub Cluster Status
+
+EOF
+    
+    if check_cluster_access; then
+        # Add live cluster information
+        echo "### ArgoCD Applications" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get applications -n openshift-gitops -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,CLUSTER:.spec.destination.name 2>/dev/null | head -20 >> "$temp_file" || echo "No applications found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        echo "\n### Managed Clusters" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get managedcluster -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.version.kubernetes,CREATED:.metadata.creationTimestamp 2>/dev/null >> "$temp_file" || echo "No managed clusters found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        echo "\n### Cluster Provisioning Status" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        echo "OpenShift Clusters (Hive):" >> "$temp_file"
+        oc get clusterdeployment -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STATUS:.status.conditions[-1].type,CREATED:.metadata.creationTimestamp 2>/dev/null | head -10 >> "$temp_file" || echo "No OCP clusters found" >> "$temp_file"
+        
+        echo "\nEKS Clusters (CAPI):" >> "$temp_file"
+        oc get awsmanagedcontrolplane -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.ready,VERSION:.spec.version,CREATED:.metadata.creationTimestamp 2>/dev/null | head -10 >> "$temp_file" || echo "No EKS clusters found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        echo "\n### ApplicationSet Status" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get applicationset -n openshift-gitops -o custom-columns=NAME:.metadata.name,GENERATORS:.spec.generators[0].clusters,CREATED:.metadata.creationTimestamp 2>/dev/null >> "$temp_file" || echo "No ApplicationSets found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        # Add quick health summary
+        echo "\n### Quick Health Summary" >> "$temp_file"
+        
+        local failed_apps
+        failed_apps=$(oc get applications -n openshift-gitops -o json 2>/dev/null | jq -r '.items[] | select(.status.sync.status != "Synced" or .status.health.status != "Healthy") | .metadata.name' | wc -l)
+        
+        local unavailable_clusters
+        unavailable_clusters=$(oc get managedcluster -o json 2>/dev/null | jq -r '.items[] | select(.status.conditions[] | select(.type == "ManagedClusterConditionAvailable" and .status != "True")) | .metadata.name' | wc -l)
+        
+        if [[ $failed_apps -eq 0 ]] && [[ $unavailable_clusters -eq 0 ]]; then
+            echo "✅ **All systems operational**" >> "$temp_file"
+        else
+            echo "⚠️ **Issues detected:**" >> "$temp_file"
+            [[ $failed_apps -gt 0 ]] && echo "- $failed_apps applications not healthy" >> "$temp_file"
+            [[ $unavailable_clusters -gt 0 ]] && echo "- $unavailable_clusters clusters unavailable" >> "$temp_file"
+        fi
+    else
+        echo "\n*Cluster access not available - run with cluster context for live status*" >> "$temp_file"
+    fi
+    
+    # Add static configuration information
+    cat >> "$temp_file" << 'EOF'
+
+## Repository Configuration
+
+### Configured Clusters
+EOF
+    
+    echo '```' >> "$temp_file"
+    echo "$(find "$ROOT_DIR/clusters" -maxdepth 1 -type d -not -path "$ROOT_DIR/clusters" -exec basename {} \; 2>/dev/null | wc -l) clusters configured:" >> "$temp_file"
+    find "$ROOT_DIR/clusters" -maxdepth 1 -type d -not -path "$ROOT_DIR/clusters" -exec basename {} \; 2>/dev/null | sort >> "$temp_file" || echo "No cluster configurations found" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    
+    cat >> "$temp_file" << 'EOF'
+
+### Regional Distribution
+EOF
+    
+    echo '```' >> "$temp_file"
+    if [[ -d "$ROOT_DIR/regions" ]]; then
+        find "$ROOT_DIR/regions" -maxdepth 1 -type d -not -path "$ROOT_DIR/regions" -exec basename {} \; 2>/dev/null | while read -r region; do
+            local cluster_count
+            cluster_count=$(find "$ROOT_DIR/regions/$region" -maxdepth 1 -type d -not -path "$ROOT_DIR/regions/$region" 2>/dev/null | wc -l)
+            echo "$region: $cluster_count clusters" >> "$temp_file"
+        done
+    else
+        echo "No regional configurations found" >> "$temp_file"
+    fi
+    echo '```' >> "$temp_file"
+    
+    cat >> "$temp_file" << 'EOF'
+
+## Common Operations
+
+### Health Check
+```bash
+# Run comprehensive health check
+./bin/health-check
+
+# Quick status overview
+oc get managedcluster
+oc get applications -n openshift-gitops
+```
+
+### Update This Status
+```bash
+# Auto-refresh this document
+./bin/update-dynamic-docs
+
+# Manual health check update
+./bin/health-check > STATUS-current.md
+```
+
+## Related Documentation
+
+- **[Monitoring Guide](./guides/monitoring.md)** - Detailed health monitoring
+- **[Troubleshooting Guide](./docs/operations/troubleshooting.md)** - Issue resolution
+- **[Command Reference](./docs/reference/commands.md)** - Quick command lookup
+
+---
+
+*This file is auto-generated. Do not edit manually.*
+EOF
+    
+    # Replace the STATUS.md file
+    mv "$temp_file" "$status_file"
+    log_success "Updated STATUS.md"
+}
+
+# Update cluster inventory in docs/reference/
+update_cluster_inventory() {
+    log_info "Updating cluster inventory documentation..."
+    
+    mkdir -p "$DOCS_DIR/reference"
+    local inventory_file="$DOCS_DIR/reference/cluster-inventory.md"
+    local temp_file="$(mktemp)"
+    
+    cat > "$temp_file" << 'EOF'
+# Cluster Inventory
+
+**Auto-generated cluster inventory from live system and repository configuration**
+
+*Last updated: $(date)*
+
+EOF
+    
+    if check_cluster_access; then
+        echo "## Live Cluster Status" >> "$temp_file"
+        echo "\n### Managed Clusters" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get managedcluster -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.version.kubernetes,CREATED:.metadata.creationTimestamp 2>/dev/null >> "$temp_file" || echo "No clusters found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        echo "\n### Cluster Types" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        echo "OpenShift Clusters:" >> "$temp_file"
+        oc get clusterdeployment -A --no-headers 2>/dev/null | wc -l >> "$temp_file" || echo "0" >> "$temp_file"
+        echo "EKS Clusters:" >> "$temp_file"
+        oc get awsmanagedcontrolplane -A --no-headers 2>/dev/null | wc -l >> "$temp_file" || echo "0" >> "$temp_file"
+        echo '```' >> "$temp_file"
+    fi
+    
+    echo "\n## Repository Configuration" >> "$temp_file"
+    echo "\n### Configured Clusters" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    find "$ROOT_DIR/clusters" -maxdepth 1 -type d -not -path "$ROOT_DIR/clusters" -exec basename {} \; 2>/dev/null | sort >> "$temp_file" || echo "No cluster configurations found" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    
+    echo "\n### Regional Distribution" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    if [[ -d "$ROOT_DIR/regions" ]]; then
+        find "$ROOT_DIR/regions" -maxdepth 1 -type d -not -path "$ROOT_DIR/regions" -exec basename {} \; 2>/dev/null | while read -r region; do
+            echo "Region: $region" >> "$temp_file"
+            find "$ROOT_DIR/regions/$region" -maxdepth 1 -type d -not -path "$ROOT_DIR/regions/$region" -exec basename {} \; 2>/dev/null | sed 's/^/  - /' >> "$temp_file"
+        done
+    else
+        echo "No regional configurations found" >> "$temp_file"
+    fi
+    echo '```' >> "$temp_file"
+    
+    echo "\n### Deployment Configuration" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    echo "GitOps Applications:" >> "$temp_file"
+    find "$ROOT_DIR/gitops-applications" -name "*.yaml" -not -name "kustomization.yaml" -exec basename {} .yaml \; 2>/dev/null | wc -l >> "$temp_file" || echo "0" >> "$temp_file"
+    
+    echo "\nOperator Deployments:" >> "$temp_file"
+    find "$ROOT_DIR/operators" -name "kustomization.yaml" -exec dirname {} \; 2>/dev/null | wc -l >> "$temp_file" || echo "0" >> "$temp_file"
+    
+    echo "\nPipeline Configurations:" >> "$temp_file"
+    find "$ROOT_DIR/pipelines" -name "*.yaml" 2>/dev/null | wc -l >> "$temp_file" || echo "0" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    
+    echo "\n---\n*This file is auto-generated. Do not edit manually.*" >> "$temp_file"
+    
+    mv "$temp_file" "$inventory_file"
+    log_success "Updated cluster inventory documentation"
+}
+
+# Update application inventory
+update_application_inventory() {
+    log_info "Updating application inventory documentation..."
+    
+    mkdir -p "$DOCS_DIR/reference"
+    local app_inventory_file="$DOCS_DIR/reference/application-inventory.md"
+    local temp_file="$(mktemp)"
+    
+    cat > "$temp_file" << 'EOF'
+# Application Inventory
+
+**Auto-generated application inventory from GitOps configurations and live system**
+
+*Last updated: $(date)*
+
+EOF
+    
+    if check_cluster_access; then
+        echo "## Live Application Status" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get applications -n openshift-gitops -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,CLUSTER:.spec.destination.name 2>/dev/null >> "$temp_file" || echo "No applications found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        
+        echo "\n### ApplicationSets" >> "$temp_file"
+        echo '```' >> "$temp_file"
+        oc get applicationset -n openshift-gitops -o custom-columns=NAME:.metadata.name,GENERATORS:.spec.generators[0].clusters,CREATED:.metadata.creationTimestamp 2>/dev/null >> "$temp_file" || echo "No ApplicationSets found" >> "$temp_file"
+        echo '```' >> "$temp_file"
+    fi
+    
+    echo "\n## Configured Applications" >> "$temp_file"
+    echo "\n### GitOps Application Definitions" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    find "$ROOT_DIR/gitops-applications" -name "*.yaml" -not -name "kustomization.yaml" -exec basename {} .yaml \; 2>/dev/null | sort >> "$temp_file" || echo "No application configurations found" >> "$temp_file"
+    echo '```' >> "$temp_file"
+    
+    echo "\n### Service Deployments by Cluster" >> "$temp_file"
+    if [[ -d "$ROOT_DIR/deployments" ]]; then
+        find "$ROOT_DIR/deployments" -maxdepth 1 -type d -not -path "$ROOT_DIR/deployments" -exec basename {} \; 2>/dev/null | while read -r service; do
+            echo "\n#### $service" >> "$temp_file"
+            echo '```' >> "$temp_file"
+            find "$ROOT_DIR/deployments/$service" -maxdepth 1 -type d -not -path "$ROOT_DIR/deployments/$service" -exec basename {} \; 2>/dev/null | sort >> "$temp_file" || echo "No deployments found" >> "$temp_file"
+            echo '```' >> "$temp_file"
+        done
+    fi
+    
+    echo "\n---\n*This file is auto-generated. Do not edit manually.*" >> "$temp_file"
+    
+    mv "$temp_file" "$app_inventory_file"
+    log_success "Updated application inventory documentation"
+}
+
+# Update documentation timestamps
+update_timestamps() {
+    log_info "Updating documentation timestamps..."
+    
+    # Update INDEX.md timestamp
+    if [[ -f "$DOCS_DIR/INDEX.md" ]]; then
+        sed -i "s/\*Last updated:.*\*/\*Last updated: $(date)\*/ " "$DOCS_DIR/INDEX.md" 2>/dev/null || true
+    fi
+    
+    # Update main README timestamp if it has one
+    if [[ -f "$ROOT_DIR/README.md" ]] && grep -q "Last updated:" "$ROOT_DIR/README.md"; then
+        sed -i "s/\*Last updated:.*\*/\*Last updated: $(date)\*/ " "$ROOT_DIR/README.md" 2>/dev/null || true
+    fi
+    
+    log_success "Updated documentation timestamps"
+}
+
+# Update architecture diagrams if mermaid-cli is available
+update_architecture_diagrams() {
+    if ! command -v mmdc >/dev/null 2>&1; then
+        log_info "mermaid-cli not available, skipping diagram generation"
+        return
+    fi
+    
+    log_info "Updating architecture diagrams..."
+    
+    # Find all markdown files with mermaid diagrams
+    local files_with_mermaid
+    files_with_mermaid=$(grep -l "```mermaid" "$ROOT_DIR"/**/*.md 2>/dev/null || true)
+    
+    if [[ -n "$files_with_mermaid" ]]; then
+        echo "$files_with_mermaid" | while IFS= read -r file; do
+            log_info "Processing mermaid diagrams in: $file"
+            # This would require more complex processing to extract and render diagrams
+            # For now, just log that we found them
+        done
+    fi
+    
+    log_success "Architecture diagram update check completed"
+}
+
+# Generate documentation metrics
+generate_metrics() {
+    log_info "Generating documentation metrics..."
+    
+    mkdir -p "$DOCS_DIR/reference"
+    local metrics_file="$DOCS_DIR/reference/documentation-metrics.md"
+    
+    cat > "$metrics_file" << 'EOF'
+# Documentation Metrics
+
+**Auto-generated documentation statistics**
+
+*Last updated: $(date)*
+
+## File Statistics
+
+EOF
+    
+    local total_md_files
+    total_md_files=$(find "$ROOT_DIR" -name "*.md" -type f | wc -l)
+    
+    local total_lines
+    total_lines=$(find "$ROOT_DIR" -name "*.md" -type f -exec cat {} \; | wc -l)
+    
+    local total_words
+    total_words=$(find "$ROOT_DIR" -name "*.md" -type f -exec cat {} \; | wc -w)
+    
+    echo "- **Total Markdown Files**: $total_md_files" >> "$metrics_file"
+    echo "- **Total Lines**: $total_lines" >> "$metrics_file"
+    echo "- **Total Words**: $total_words" >> "$metrics_file"
+    echo "- **Average Words per File**: $((total_words / total_md_files))" >> "$metrics_file"
+    
+    echo "\n## Documentation Coverage" >> "$metrics_file"
+    
+    local cluster_configs
+    cluster_configs=$(find "$ROOT_DIR/clusters" -maxdepth 1 -type d -not -path "$ROOT_DIR/clusters" 2>/dev/null | wc -l)
+    
+    local documented_clusters
+    documented_clusters=$(find "$ROOT_DIR" -name "*.md" -exec grep -l "cluster-" {} \; 2>/dev/null | wc -l)
+    
+    echo "- **Cluster Configurations**: $cluster_configs" >> "$metrics_file"
+    echo "- **Clusters Mentioned in Docs**: $documented_clusters" >> "$metrics_file"
+    
+    if [[ $cluster_configs -gt 0 ]]; then
+        local coverage_percent
+        coverage_percent=$(( (documented_clusters * 100) / cluster_configs ))
+        echo "- **Documentation Coverage**: ${coverage_percent}%" >> "$metrics_file"
+    fi
+    
+    echo "\n## File Size Distribution" >> "$metrics_file"
+    echo '```' >> "$metrics_file"
+    find "$ROOT_DIR" -name "*.md" -type f -exec wc -l {} + | sort -nr | head -10 | awk '{print $2 ": " $1 " lines"}' >> "$metrics_file"
+    echo '```' >> "$metrics_file"
+    
+    echo "\n---\n*This file is auto-generated. Do not edit manually.*" >> "$metrics_file"
+    
+    log_success "Generated documentation metrics"
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Automatically update dynamic content in documentation.
+
+OPTIONS:
+    -h, --help         Show this help message
+    --status-only      Update only STATUS.md
+    --inventory-only   Update only inventory files
+    --metrics-only     Generate only documentation metrics
+    --no-timestamps    Skip timestamp updates
+    --offline          Skip live cluster data collection
+
+EXAMPLES:
+    $(basename "$0")                    # Update all dynamic content
+    $(basename "$0") --status-only      # Update only STATUS.md
+    $(basename "$0") --offline          # Update without cluster access
+
+EOF
+}
+
+# Main execution
+main() {
+    local status_only=false
+    local inventory_only=false
+    local metrics_only=false
+    local update_timestamps_flag=true
+    local offline_mode=false
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            --status-only)
+                status_only=true
+                ;;
+            --inventory-only)
+                inventory_only=true
+                ;;
+            --metrics-only)
+                metrics_only=true
+                ;;
+            --no-timestamps)
+                update_timestamps_flag=false
+                ;;
+            --offline)
+                offline_mode=true
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+        shift
+    done
+    
+    log_info "Starting dynamic documentation updates..."
+    
+    # Disable cluster access in offline mode
+    if [[ "$offline_mode" == "true" ]]; then
+        log_info "Running in offline mode"
+        # Override check_cluster_access function
+        check_cluster_access() { return 1; }
+    fi
+    
+    # Execute requested updates
+    if [[ "$status_only" == "true" ]]; then
+        update_status_md
+    elif [[ "$inventory_only" == "true" ]]; then
+        update_cluster_inventory
+        update_application_inventory
+    elif [[ "$metrics_only" == "true" ]]; then
+        generate_metrics
+    else
+        # Update all dynamic content
+        update_status_md
+        update_cluster_inventory
+        update_application_inventory
+        generate_metrics
+        update_architecture_diagrams
+    fi
+    
+    # Update timestamps
+    if [[ "$update_timestamps_flag" == "true" ]]; then
+        update_timestamps
+    fi
+    
+    log_success "Dynamic documentation update completed!"
+    
+    # Show what was updated
+    echo "\nUpdated files:"
+    echo "  - STATUS.md"
+    echo "  - docs/reference/cluster-inventory.md"
+    echo "  - docs/reference/application-inventory.md"
+    echo "  - docs/reference/documentation-metrics.md"
+}
+
+# Run main function
+main "$@"

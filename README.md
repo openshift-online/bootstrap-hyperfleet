@@ -1,5 +1,10 @@
 # OpenShift Bootstrap
 
+**Audience**: All users  
+**Complexity**: Beginner to Intermediate  
+**Estimated Time**: 15 minutes to understand, 2 hours to implement  
+**Prerequisites**: Basic Kubernetes/OpenShift knowledge, AWS account access
+
 Multi-cluster OpenShift and EKS management using GitOps automation. This repository provides everything needed to bootstrap and manage regional cluster deployments with a centralized hub cluster approach.
 
 ## 🏗️ Architecture Overview
@@ -18,11 +23,11 @@ The repository is designed for **intuitive navigation** with each directory leve
 ```bash
 regions/                          # Available AWS regions
 ├── us-east-1/                   # Region-specific clusters
-│   ├── cluster-10/              # Individual cluster specifications
+│   ├── ocp-02/              # Individual cluster specifications
 │   │   └── region.yaml          # ← START HERE: cluster configuration
-│   └── cluster-20/
+│   └── ocp-03/
 └── us-west-2/
-    └── cluster-40/
+    └── eks-02/
 ```
 
 ### 🏭 Base Templates (shared components)
@@ -36,38 +41,38 @@ bases/
 ### 🎯 Generated Overlays (automated output)
 ```bash
 clusters/                        # Cluster provisioning (auto-generated)
-├── cluster-10/                 # OCP cluster (Hive resources)
-├── cluster-20/                 # OCP cluster (Hive resources)  
-└── cluster-40/                 # EKS cluster (CAPI resources)
+├── ocp-02/                 # OCP cluster (Hive resources)
+├── ocp-03/                 # OCP cluster (Hive resources)  
+└── eks-02/                 # EKS cluster (CAPI resources)
 
 pipelines/                       # Pipeline deployments (auto-generated)
 ├── hello-world/
-│   ├── cluster-10/             # Pipeline runs for cluster-10
-│   └── cluster-20/             # Pipeline runs for cluster-20
+│   ├── ocp-02/             # Pipeline runs for ocp-02
+│   └── ocp-03/             # Pipeline runs for ocp-03
 └── cloud-infrastructure-provisioning/
-    ├── cluster-10/
-    └── cluster-20/
+    ├── ocp-02/
+    └── ocp-03/
 
 deployments/                     # Service deployments (auto-generated)
 └── ocm/
-    ├── cluster-10/             # OCM services for cluster-10
-    └── cluster-20/             # OCM services for cluster-20
+    ├── ocp-02/             # OCM services for ocp-02
+    └── ocp-03/             # OCM services for ocp-03
 
 operators/                       # Operator deployments
 ├── advanced-cluster-management/
 │   └── global/                 # ACM hub cluster deployment
 └── openshift-pipelines/
     ├── global/                 # Pipelines hub cluster deployment
-    ├── cluster-10/             # Pipelines operator for cluster-10
-    ├── cluster-20/             # Pipelines operator for cluster-20
-    └── cluster-40/             # Pipelines operator for cluster-40
+    ├── ocp-02/             # Pipelines operator for ocp-02
+    ├── ocp-03/             # Pipelines operator for ocp-03
+    └── eks-02/             # Pipelines operator for eks-02
 ```
 
 ### 🚀 GitOps Applications (orchestration)
 ```bash
 gitops-applications/             # ArgoCD ApplicationSets
-├── cluster-10.yaml            # ApplicationSet for cluster-10 (all components)
-├── cluster-20.yaml            # ApplicationSet for cluster-20 (all components)
+├── ocp-02.yaml            # ApplicationSet for ocp-02 (all components)
+├── ocp-03.yaml            # ApplicationSet for ocp-03 (all components)
 └── kustomization.yaml          # Main GitOps entry point
 ```
 
@@ -80,16 +85,16 @@ gitops-applications/             # ArgoCD ApplicationSets
 ls regions/                     # → us-east-1, us-west-2, eu-west-1
 
 # Drill down to see clusters in a region  
-ls regions/us-east-1/          # → cluster-10, cluster-20, cluster-30
+ls regions/us-east-1/          # → ocp-02, ocp-03, ocp-04
 
 # See what's deployed for any cluster
-ls clusters/                   # → cluster-10, cluster-20, cluster-40
-ls pipelines/hello-world/      # → cluster-10, cluster-20, cluster-40  
-ls deployments/ocm/           # → cluster-10, cluster-20, cluster-40
-ls operators/openshift-pipelines/ # → global, cluster-10, cluster-20, cluster-40
+ls clusters/                   # → ocp-02, ocp-03, eks-02
+ls pipelines/hello-world/      # → ocp-02, ocp-03, eks-02  
+ls deployments/ocm/           # → ocp-02, ocp-03, eks-02
+ls operators/openshift-pipelines/ # → global, ocp-02, ocp-03, eks-02
 
 # Check GitOps applications
-ls gitops-applications/       # → cluster-10.yaml, cluster-20.yaml, global/
+ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
 ```
 
 **🎯 Key Navigation Benefits:**
@@ -111,7 +116,7 @@ ls gitops-applications/       # → cluster-10.yaml, cluster-20.yaml, global/
 2. **Generate complete cluster overlay:**
 ```bash
 # Automatically called by new-cluster, but can be run manually:
-./bin/generate-cluster regions/us-west-2/cluster-50/
+./bin/generate-cluster regions/us-west-2/ocp-05/
 ```
 
 3. **Deploy via GitOps:**
@@ -169,7 +174,7 @@ sequenceDiagram
    participant ACM
    participant Target as Managed Cluster
    
-   Admin->>Generator: ./bin/generate-cluster regions/us-west-2/cluster-50/
+   Admin->>Generator: ./bin/generate-cluster regions/us-west-2/ocp-05/
    Generator->>Git: Create overlays + ApplicationSet
    
    Admin->>Hub: ./bootstrap.sh

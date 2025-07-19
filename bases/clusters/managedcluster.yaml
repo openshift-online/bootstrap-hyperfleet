@@ -1,9 +1,9 @@
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
-  name: cluster-01
+  name: ocp-01
   labels:
-    name: cluster-01
+    name: ocp-01
     cloud: Amazon
     vendor: OpenShift
     cluster.open-cluster-management.io/clusterset: default

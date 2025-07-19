@@ -1,0 +1,23 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: ocp-05
+  namespace: ocp-05
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: Amazon
+    name: ocp-05
+    vendor: OpenShift
+    region: eu-west-1
+  clusterName: ocp-05
+  clusterNamespace: ocp-05
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true

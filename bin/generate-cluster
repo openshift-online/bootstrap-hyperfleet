@@ -6,8 +6,11 @@ set -e
 
 usage() {
     echo "Usage: $0 <regional-spec-dir>"
-    echo "Example: $0 regions/us-east-1/ocp-prod/"
-    echo "         $0 regions/us-east-1/eks-prod/"
+    echo "Example: $0 regions/us-east-1/ocp-01/"
+    echo "         $0 regions/us-east-1/eks-01/"
+    echo "         $0 regions/us-east-1/hcp-01/"
+    echo ""
+    echo "Supported cluster types: ocp (OpenShift), eks (EKS), hcp (HostedControlPlane)"
     exit 1
 }
 
@@ -43,7 +46,7 @@ DEPLOYMENTS_OUTPUT_DIR="deployments/ocm/$FULL_CLUSTER_NAME"
 GITOPS_OUTPUT_DIR="gitops-applications"
 
 # Defaults
-CLUSTER_TYPE=${CLUSTER_TYPE:-"eks"}
+CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
 REGION=${REGION:-"us-east-1"}
 DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
@@ -194,6 +197,136 @@ resources:
 
 generatorOptions:
   disableNameSuffixHash: true
+EOF
+}
+
+generate_hcp_cluster() {
+    # Generate hostedcluster.yaml for HyperShift
+    cat > "$CLUSTER_OUTPUT_DIR/hostedcluster.yaml" << EOF
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+  annotations:
+    hypershift.openshift.io/pod-security-admission-label-override: privileged
+spec:
+  release:
+    image: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
+  pullSecret:
+    name: pull-secret
+  sshKey:
+    name: "$FULL_CLUSTER_NAME-ssh-key"
+  infrastructureAvailabilityPolicy: SingleReplica
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  platform:
+    type: None
+  infraID: $FULL_CLUSTER_NAME
+  dns:
+    baseDomain: $DOMAIN
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: api.$FULL_CLUSTER_NAME.$DOMAIN
+  - service: OIDC
+    servicePublishingStrategy:
+      type: None
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: Ignition
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: api.$FULL_CLUSTER_NAME.$DOMAIN
+EOF
+
+    # Generate SSH key secret
+    cat > "$CLUSTER_OUTPUT_DIR/ssh-key-secret.yaml" << EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: $FULL_CLUSTER_NAME-ssh-key
+  namespace: $FULL_CLUSTER_NAME
+type: Opaque
+data:
+  # TODO: Replace with actual base64-encoded SSH public key
+  id_rsa.pub: ""
+EOF
+
+    # Generate klusterletaddonconfig.yaml
+    cat > "$CLUSTER_OUTPUT_DIR/klusterletaddonconfig.yaml" << EOF
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: None
+    name: $FULL_CLUSTER_NAME
+    vendor: OpenShift
+    region: hypershift
+  clusterName: $FULL_CLUSTER_NAME
+  clusterNamespace: $FULL_CLUSTER_NAME
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+EOF
+
+    # Generate kustomization.yaml for HCP
+    cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - hostedcluster.yaml
+  - klusterletaddonconfig.yaml
+  - ssh-key-secret.yaml
+
+# This will disable name hashing for all generators in this file
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: KlusterletAddonConfig
+      version: v1
+      group: agent.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /metadata/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterLabels/name
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterNamespace
+        value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/clusterName
+        value: $FULL_CLUSTER_NAME
 EOF
 }
 
@@ -594,8 +727,10 @@ if [ "$CLUSTER_TYPE" = "ocp" ]; then
     generate_ocp_cluster
 elif [ "$CLUSTER_TYPE" = "eks" ]; then
     generate_eks_cluster
+elif [ "$CLUSTER_TYPE" = "hcp" ]; then
+    generate_hcp_cluster
 else
-    echo "Error: Unknown cluster type '$CLUSTER_TYPE'. Supported types: ocp, eks" >&2
+    echo "Error: Unknown cluster type '$CLUSTER_TYPE'. Supported types: ocp, eks, hcp" >&2
     exit 1
 fi
 

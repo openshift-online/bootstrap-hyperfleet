@@ -1,0 +1,14 @@
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: trex
+  labels:
+    app: trex
+spec:
+  to:
+    kind: Service
+    name: trex
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect

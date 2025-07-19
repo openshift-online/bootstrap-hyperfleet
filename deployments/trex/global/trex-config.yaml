@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trex
+spec:
+  template:
+    spec:
+      containers:
+      - name: service
+        env:
+        - name: TREX_DB_HOST
+          value: "postgres.trex-global.svc.cluster.local"
+        - name: TREX_DB_NAME
+          value: "trex"
+        - name: TREX_LOG_LEVEL
+          value: "info"
+        - name: TREX_ENABLE_HTTPS
+          value: "true"
+        - name: ENVIRONMENT
+          value: "global"

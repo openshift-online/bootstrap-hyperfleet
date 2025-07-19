@@ -1,0 +1,19 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-ocp-04
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning-pipeline
+  params:
+    - name: cluster-name
+      value: ocp-04
+    - name: cloud-provider
+      value: aws
+    - name: region
+      value: us-west-2
+    - name: instance-type
+      value: m5.xlarge
+    - name: node-count
+      value: "1"
