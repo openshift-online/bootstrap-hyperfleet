@@ -1,0 +1,23 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: hcp-01-mturansk-test
+  namespace: hcp-01-mturansk-test
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: None
+    name: hcp-01-mturansk-test
+    vendor: OpenShift
+    region: hypershift
+  clusterName: hcp-01-mturansk-test
+  clusterNamespace: hcp-01-mturansk-test
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true

@@ -9,18 +9,20 @@ The `bin/new-cluster` tool is an interactive CLI that generates complete OpenShi
 ## Requirements
 
 ### Semantic Naming Requirements
-- **MANDATORY**: All cluster names MUST use semantic naming format: `{type}-{number}`
+- **MANDATORY**: All cluster names MUST use semantic naming format: `{type}-{number}` or `{type}-{number}-{suffix}`
 - **MANDATORY**: Do NOT prompt user for cluster name - generate automatically
 - **MANDATORY**: Support three cluster types: `ocp`, `eks`, `hcp`
 - **MANDATORY**: Use zero-padded numbering: `01`, `02`, `03`, etc.
 - **MANDATORY**: Find next available number for the specified type
+- **OPTIONAL**: Allow name suffix for differentiation (e.g., `hcp-01-mytest`, `ocp-02-dev`)
 
 ### Cluster Name Generation Logic
-1. **Input**: User selects cluster type (`ocp`, `eks`, or `hcp`)
+1. **Input**: User selects cluster type (`ocp`, `eks`, or `hcp`) and optional name suffix (defaults to empty)
 2. **Scan**: Check existing clusters and regions for pattern `{type}-XX`
 3. **Generate**: Find next available number in sequence
-4. **Validate**: Ensure generated name doesn't conflict with existing clusters
-5. **Output**: Use generated name throughout configuration
+4. **Suffix**: Append optional suffix if provided (e.g., `-mturansk-test`)
+5. **Validate**: Ensure generated name doesn't conflict with existing clusters
+6. **Output**: Use generated name throughout configuration
 
 ### Examples
 - First OCP cluster: `ocp-01`

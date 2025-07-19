@@ -1,0 +1,18 @@
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: eks-01-mturansk-test
+  namespace: us-east-2
+spec:
+  type: eks
+  region: us-east-2
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Minimal compute config
+  compute:
+    instanceType: m5.large
+    replicas: 3
+    
+  # Type-specific configuration
+  kubernetes:
+    version: "1.28"

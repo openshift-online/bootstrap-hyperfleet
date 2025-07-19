@@ -129,11 +129,20 @@ while true; do
     fi
 done
 
+# Get optional name suffix
+prompt_with_default "Name Suffix (optional, e.g., -mytest)" "" "NAME_SUFFIX"
+
 # Generate cluster name automatically
 echo ""
 echo "Generating cluster name..."
-CLUSTER_NAME=$(generate_cluster_name "$CLUSTER_TYPE")
-echo "Next available cluster name: $CLUSTER_NAME"
+BASE_CLUSTER_NAME=$(generate_cluster_name "$CLUSTER_TYPE")
+if [ -n "$NAME_SUFFIX" ]; then
+    CLUSTER_NAME="${BASE_CLUSTER_NAME}${NAME_SUFFIX}"
+    echo "Generated cluster name: $CLUSTER_NAME (${BASE_CLUSTER_NAME} + ${NAME_SUFFIX})"
+else
+    CLUSTER_NAME="$BASE_CLUSTER_NAME"
+    echo "Next available cluster name: $CLUSTER_NAME"
+fi
 echo ""
 
 # Validate generated name

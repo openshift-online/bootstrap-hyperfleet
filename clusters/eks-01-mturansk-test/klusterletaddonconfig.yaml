@@ -1,0 +1,22 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: eks-01-mturansk-test
+  namespace: eks-01-mturansk-test
+spec:
+  clusterName: eks-01-mturansk-test
+  clusterNamespace: eks-01-mturansk-test
+  clusterLabels:
+    name: eks-01-mturansk-test
+    cloud: Amazon
+    vendor: EKS
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true
