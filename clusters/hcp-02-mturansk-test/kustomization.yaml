@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - hostedcluster.yaml
+  - nodepool.yaml
+  - klusterletaddonconfig.yaml
+  - ssh-key-secret.yaml
+  - external-secrets.yaml
+
+# This will disable name hashing for all generators in this file
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: KlusterletAddonConfig
+      version: v1
+      group: agent.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: hcp-02-mturansk-test
+      - op: replace
+        path: /metadata/name
+        value: hcp-02-mturansk-test
+      - op: replace
+        path: /spec/clusterLabels/name
+        value: hcp-02-mturansk-test
+      - op: replace
+        path: /spec/clusterNamespace
+        value: hcp-02-mturansk-test
+      - op: replace
+        path: /spec/clusterName
+        value: hcp-02-mturansk-test

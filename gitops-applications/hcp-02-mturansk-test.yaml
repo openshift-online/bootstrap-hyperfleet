@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hcp-02-mturansk-test-applications
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/hcp-02-mturansk-test
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/hcp-02-mturansk-test
+        destination: https://managed-hcp-02-mturansk-test-us-east-1.eks.amazonaws.com
+        syncWave: "2"
+      - component: pipelines-hello-world
+        path: pipelines/hello-world/hcp-02-mturansk-test
+        destination: https://managed-hcp-02-mturansk-test-us-east-1.eks.amazonaws.com
+        syncWave: "3"
+      - component: pipelines-cloud-infrastructure-provisioning
+        path: pipelines/cloud-infrastructure-provisioning/hcp-02-mturansk-test
+        destination: https://managed-hcp-02-mturansk-test-us-east-1.eks.amazonaws.com
+        syncWave: "3"
+      - component: deployments-ocm
+        path: deployments/ocm/hcp-02-mturansk-test
+        destination: https://managed-hcp-02-mturansk-test-us-east-1.eks.amazonaws.com
+        syncWave: "4"
+  template:
+    metadata:
+      name: hcp-02-mturansk-test-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false

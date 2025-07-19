@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: gitea
+  namespace: gitea-system
+  labels:
+    app: gitea
+spec:
+  to:
+    kind: Service
+    name: gitea
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

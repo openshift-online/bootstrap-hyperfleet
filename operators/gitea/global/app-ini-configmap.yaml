@@ -1,0 +1,295 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitea-app-ini
+  namespace: gitea-system
+data:
+  app.ini: |
+    APP_NAME = Gitea: Git with a cup of tea
+    RUN_MODE = prod
+    RUN_USER = gitea
+
+    [repository]
+    ROOT = /tmp/gitea/repositories
+    SCRIPT_TYPE = bash
+    DETECTED_CHARSETS_ORDER = UTF-8, UTF-16BE, UTF-16LE, UTF-32BE, UTF-32LE, ISO-8859, windows-1252, ISO-8859, windows-1250, ISO-8859, ISO-8859, ISO-8859, windows-1253, ISO-8859, windows-1255, ISO-8859, windows-1251, windows-874, ISO-8859, ISO-8859, ISO-8859, windows-1254, Shift_JIS, GB2312, EUC-JP, EUC-KR, Big5, ISO-2022, ISO-2022, ISO-2022, IBM424_rtl, IBM424_ltr, IBM420_rtl, IBM420_ltr
+    ANSI_CHARSET = 
+    FORCE_PRIVATE = false
+    DEFAULT_PRIVATE = last
+    DEFAULT_PUSH_CREATE_PRIVATE = true
+    MAX_CREATION_LIMIT = -1
+    MIRROR_QUEUE_LENGTH = 1000
+    PULL_REQUEST_QUEUE_LENGTH = 1000
+    PREFERRED_LICENSES = Apache License 2.0,MIT License
+    DISABLE_HTTP_GIT = false
+    ACCESS_CONTROL_ALLOW_ORIGIN = 
+    USE_COMPAT_SSH_URI = false
+    DEFAULT_CLOSE_ISSUES_VIA_COMMITS_IN_ANY_BRANCH = false
+
+    [repository.editor]
+    LINE_WRAP_EXTENSIONS = .txt,.md,.markdown,.mdown,.mkd,
+    PREVIEWABLE_FILE_MODES = markdown
+
+    [repository.local]
+    LOCAL_COPY_PATH = /tmp/gitea/local-repo
+
+    [repository.upload]
+    ENABLED = true
+    TEMP_PATH = /tmp/gitea/uploads
+    ALLOWED_TYPES = 
+    FILE_MAX_SIZE = 3
+    MAX_FILES = 5
+
+    [repository.pull-request]
+    WORK_IN_PROGRESS_PREFIXES = WIP:,[WIP]
+    CLOSE_BASE_BRANCH_PULLS = false
+    DEFAULT_MERGE_STYLE = merge
+    DEFAULT_MERGE_MESSAGE_COMMITS_LIMIT = 50
+    DEFAULT_MERGE_MESSAGE_SIZE = 5120
+    DEFAULT_MERGE_MESSAGE_ALL_AUTHORS = false
+    DEFAULT_MERGE_MESSAGE_MAX_APPROVERS = 10
+    DEFAULT_MERGE_MESSAGE_OFFICIAL_ONLY = true
+    POPULATE_SQUASH_COMMENT_WITH_COMMIT_MESSAGES = false
+    ADD_CO_COMMITTER_TRAILERS = true
+
+    [repository.issue]
+    LOCK_REASONS = Too heated,Off-topic,Resolved,Spam
+
+    [cors]
+    ENABLED = false
+    SCHEME = http
+    ALLOW_DOMAIN = *
+    ALLOW_SUBDOMAIN = false
+    METHODS = GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS
+    MAX_AGE = 10m
+    ALLOW_CREDENTIALS = false
+
+    [ui]
+    EXPLORE_PAGING_NUM = 20
+    ISSUE_PAGING_NUM = 10
+    MEMBERS_PAGING_NUM = 20
+    FEED_MAX_COMMIT_NUM = 5
+    FEED_PAGING_NUM = 20
+    SITEMAP_PAGING_NUM = 20
+    GRAPH_MAX_COMMIT_NUM = 100
+    CODE_COMMENT_LINES = 4
+    DEFAULT_SHOW_FULL_NAME = false
+    SEARCH_REPO_DESCRIPTION = true
+    USE_SERVICE_WORKER = false
+
+    [ui.admin]
+    USER_PAGING_NUM = 50
+    REPO_PAGING_NUM = 50
+    NOTICE_PAGING_NUM = 25
+    ORG_PAGING_NUM = 50
+
+    [ui.user]
+    REPO_PAGING_NUM = 15
+
+    [ui.meta]
+    AUTHOR = Gitea - Git with a cup of tea
+    DESCRIPTION = Gitea (Git with a cup of tea) is a painless self-hosted Git service written in Go
+    KEYWORDS = go,git,self-hosted,gitea
+
+    [markdown]
+    ENABLE_HARD_LINE_BREAK_IN_COMMENTS = true
+    ENABLE_HARD_LINE_BREAK_IN_DOCUMENTS = false
+    CUSTOM_URL_SCHEMES = 
+    FILE_EXTENSIONS = .md,.markdown,.mdown,.mkd
+
+    [server]
+    APP_DATA_PATH = /tmp/gitea
+    BUILTIN_SSH_SERVER_USER = 
+    DOMAIN = gitea-gitea-system.apps.acme-test-002.rosa.mturansk-test.csu2.i3.devshift.org
+    HTTP_ADDR = 0.0.0.0
+    HTTP_PORT = 3000
+    PROTOCOL = http
+    REDIRECT_OTHER_PORT = false
+    ROOT_URL = https://gitea-gitea-system.apps.acme-test-002.rosa.mturansk-test.csu2.i3.devshift.org/
+    ROUTER_LOG_LEVEL = Info
+    STATIC_ROOT_PATH = 
+    ENABLE_GZIP = false
+    ENABLE_PPROF = false
+    PPROF_DATA_PATH = /tmp/gitea/data/tmp/pprof
+    LANDING_PAGE = explore
+    LFS_START_SERVER = false
+    OFFLINE_MODE = true
+
+    [database]
+    DB_TYPE = postgres
+    HOST = gitea-db.gitea-system.svc.cluster.local:5432
+    NAME = gitea
+    USER = gitea
+    PASSWD = giteapassword123
+    SCHEMA = 
+    CHARSET = utf8
+    TIMEOUT = 500
+
+    [indexer]
+    ISSUE_INDEXER_PATH = /tmp/gitea/indexers/issues.bleve
+    ISSUE_INDEXER_TYPE = bleve
+    ISSUE_INDEXER_CONN_STR = 
+    ISSUE_INDEXER_NAME = gitea_issues
+    STARTUP_TIMEOUT = 30s
+    REPO_INDEXER_ENABLED = false
+    REPO_INDEXER_PATH = /tmp/gitea/indexers/repos.bleve
+    REPO_INDEXER_INCLUDE = 
+    REPO_INDEXER_EXCLUDE = 
+    REPO_INDEXER_EXCLUDE_VENDORED = true
+    MAX_FILE_SIZE = 1048576
+
+    [admin]
+    DEFAULT_EMAIL_NOTIFICATIONS = enabled
+    DISABLE_REGULAR_ORG_CREATION = false
+
+    [security]
+    INSTALL_LOCK = true
+    SECRET_KEY = 47b4184cc5872da21dac65321398c3f15b2bc1f5c13b8e5d7b8e99a2a8e8e8e8
+    REVERSE_PROXY_LIMIT = 1
+    REVERSE_PROXY_TRUSTED_PROXIES = *
+    INTERNAL_TOKEN = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE1NDc2MzUzNzZ9.4Dbt4Fb_Xp_PQQ_GKwCp9xbV_P9X5mL6UgHjhJq_Zuo
+    PASSWORD_HASH_ALGO = pbkdf2
+
+    [openid]
+    ENABLE_OPENID_SIGNIN = false
+    ENABLE_OPENID_SIGNUP = false
+
+    [service]
+    ACTIVE_CODE_LIVE_MINUTES = 180
+    RESET_PASSWD_CODE_LIVE_MINUTES = 180
+    REGISTER_EMAIL_CONFIRM = false
+    REGISTER_MANUAL_CONFIRM = false
+    DISABLE_REGISTRATION = false
+    ALLOW_ONLY_EXTERNAL_REGISTRATION = false
+    REQUIRE_SIGNIN_VIEW = false
+    ENABLE_NOTIFY_MAIL = false
+    ENABLE_BASIC_AUTHENTICATION = true
+    ENABLE_REVERSE_PROXY_AUTHENTICATION = false
+    ENABLE_REVERSE_PROXY_AUTO_REGISTRATION = false
+    ENABLE_REVERSE_PROXY_EMAIL = false
+    ENABLE_CAPTCHA = false
+    CAPTCHA_TYPE = image
+    RECAPTCHA_SECRET = 
+    RECAPTCHA_SITEKEY = 
+    RECAPTCHA_URL = https://www.google.com/recaptcha/
+    HCAPTCHA_SECRET = 
+    HCAPTCHA_SITEKEY = 
+    DEFAULT_KEEP_EMAIL_PRIVATE = false
+    DEFAULT_ALLOW_CREATE_ORGANIZATION = true
+    DEFAULT_ENABLE_TIMETRACKING = true
+    NO_REPLY_ADDRESS = noreply.localhost
+    ENABLE_USER_HEATMAP = true
+    ENABLE_TIMETRACKING = true
+    DEFAULT_ENABLE_DEPENDENCIES = true
+    ALLOW_CROSS_REPOSITORY_DEPENDENCIES = true
+    ENABLE_USER_DELETE = true
+    VALID_SITE_URL_SCHEMES = http,https
+
+    [mailer]
+    ENABLED = false
+
+    [cache]
+    ENABLED = true
+    ADAPTER = memory
+    INTERVAL = 60
+    HOST = 
+    ITEM_TTL = 16h
+
+    [session]
+    PROVIDER = file
+    PROVIDER_CONFIG = /tmp/gitea/sessions
+    COOKIE_SECURE = false
+    COOKIE_NAME = i_like_gitea
+    GC_INTERVAL_TIME = 86400
+    SESSION_LIFE_TIME = 86400
+
+    [picture]
+    AVATAR_UPLOAD_PATH = /tmp/gitea/avatars
+    REPOSITORY_AVATAR_UPLOAD_PATH = /tmp/gitea/repo-avatars
+    REPOSITORY_AVATAR_FALLBACK = none
+    REPOSITORY_AVATAR_FALLBACK_IMAGE = /img/repo_default.png
+    AVATAR_MAX_WIDTH = 4096
+    AVATAR_MAX_HEIGHT = 3072
+    AVATAR_MAX_FILE_SIZE = 1048576
+    GRAVATAR_SOURCE = gravatar
+    DISABLE_GRAVATAR = false
+    ENABLE_FEDERATED_AVATAR = false
+
+    [attachment]
+    ENABLED = true
+    ALLOWED_TYPES = image/jpeg,image/png,application/zip,application/gzip
+    MAX_SIZE = 4
+    MAX_FILES = 5
+    PATH = /tmp/gitea/attachments
+
+    [time]
+    DEFAULT_UI_LOCATION = UTC
+
+    [log]
+    MODE = console
+    BUFFER_LEN = 10000
+    LEVEL = Info
+    STACKTRACE_LEVEL = None
+    ROOT_PATH = /tmp/gitea/log
+    ENABLE_ACCESS_LOG = false
+    ACCESS_LOG_TEMPLATE = {{.Ctx.RemoteAddr}} - {{.Identity}} {{.Start.Format "[02/Jan/2006:15:04:05 -0700]"}} "{{.Ctx.Req.Method}} {{.Ctx.Req.URL.RequestURI}} {{.Ctx.Req.Proto}}" {{.ResponseWriter.Status}} {{.ResponseWriter.Size}} "{{.Ctx.Req.Referer}}" "{{.Ctx.Req.UserAgent}}"
+
+    [log.console]
+    LEVEL = 
+    STDERR = false
+
+    [git]
+    PATH = 
+    HOME_PATH = /tmp/gitea
+    DISABLE_DIFF_HIGHLIGHT = false
+    MAX_GIT_DIFF_LINES = 1000
+    MAX_GIT_DIFF_LINE_CHARACTERS = 5000
+    MAX_GIT_DIFF_FILES = 100
+    GC_ARGS = 
+    ENABLE_AUTO_GIT_WIRE_PROTOCOL = true
+    PULL_REQUEST_PUSH_MESSAGE = true
+    VERBOSE_PUSH = true
+    VERBOSE_PUSH_DELAY = 5s
+    LARGE_OBJECT_THRESHOLD = 1048576
+
+    [git.timeout]
+    DEFAULT = 360
+    MIGRATE = 600
+    MIRROR = 300
+    CLONE = 300
+    PULL = 300
+    GC = 60
+
+    [mirror]
+    DEFAULT_INTERVAL = 8h
+    MIN_INTERVAL = 10m
+
+    [api]
+    ENABLE_SWAGGER = true
+    MAX_RESPONSE_ITEMS = 50
+    DEFAULT_PAGING_NUM = 30
+    DEFAULT_GIT_TREES_PER_PAGE = 1000
+    DEFAULT_MAX_BLOB_SIZE = 10485760
+
+    [oauth2]
+    ENABLE = true
+    ACCESS_TOKEN_EXPIRATION_TIME = 3600
+    REFRESH_TOKEN_EXPIRATION_TIME = 730
+    INVALIDATE_REFRESH_TOKENS = false
+    JWT_SIGNING_ALGORITHM = RS256
+    JWT_SIGNING_PRIVATE_KEY_FILE = jwt/private.pem
+    JWT_SIGNING_PUBLIC_KEY_FILE = jwt/public.pem
+    MAX_TOKEN_LENGTH = 32767
+
+    [i18n]
+    LANGS = en-US,zh-CN,zh-HK,zh-TW,de-DE,fr-FR,nl-NL,lv-LV,ru-RU,uk-UA,ja-JP,es-ES,pt-BR,pt-PT,pl-PL,bg-BG,it-IT,fi-FI,tr-TR,cs-CZ,sv-SE,ko-KR,el-GR,fa-IR,hu-HU,id-ID,ml-IN
+    NAMES = English,简体中文,繁體中文（香港）,繁體中文（台灣）,Deutsch,français,Nederlands,latviešu,русский,Українська,日本語,español,português do Brasil,Português de Portugal,polski,български,italiano,suomi,Türkçe,čeština,svenska,한국어,ελληνικά,فارسی,magyar nyelv,bahasa Indonesia,മലയാളം
+
+    [markup]
+    MERMAID_MAX_SOURCE_CHARACTERS = 5000
+
+    [markup.asciidoc]
+    ENABLED = false
+    FILE_EXTENSIONS = .adoc,.asciidoc
+    RENDER_COMMAND = asciidoc --out-file=- -
+    IS_INPUT_FILE = false

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitea
+  namespace: openshift-gitops
+spec:
+  destination:
+    namespace: gitea-system
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    path: operators/gitea/global
+    repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
