@@ -1,6 +1,7 @@
 # Go module cache
 acme/pkg/mod/
 secrets/
+.secrets/
 .idea/
 .claude/
 STATUS.md

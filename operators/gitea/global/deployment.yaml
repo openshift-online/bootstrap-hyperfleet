@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea-system
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: gitea
+        image: quay.io/gpte-devops-automation/gitea:latest
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        - containerPort: 22
+          name: ssh
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            memory: "200Mi"
+            cpu: "100m"
+          limits:
+            memory: "500Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: gitea-data
+          mountPath: /tmp/gitea
+        - name: gitea-app-ini
+          mountPath: /home/gitea/conf
+          readOnly: true
+        env:
+        - name: GITEA__database__DB_TYPE
+          value: "postgres"
+        - name: GITEA__database__HOST
+          value: "gitea-db.gitea-system.svc.cluster.local:5432"
+        - name: GITEA__database__NAME
+          value: "gitea"
+        - name: GITEA__database__USER
+          value: "gitea"
+        - name: GITEA__database__PASSWD
+          value: "giteapassword123"
+        - name: GITEA__repository__ROOT
+          value: "/tmp/gitea/repositories"
+        - name: GITEA_WORK_DIR
+          value: "/tmp/gitea"
+        - name: GITEA_CUSTOM
+          value: "/tmp/gitea"
+        livenessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: gitea-data
+        persistentVolumeClaim:
+          claimName: gitea-data
+      - name: gitea-app-ini
+        configMap:
+          name: gitea-app-ini

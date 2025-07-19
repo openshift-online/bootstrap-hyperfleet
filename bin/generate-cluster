@@ -5,20 +5,44 @@ set -e
 # Generates complete Kustomize overlays from minimal regional specifications.
 
 usage() {
-    echo "Usage: $0 <regional-spec-dir>"
+    echo "Usage: $0 [--push-to-gitea] <regional-spec-dir>"
     echo "Example: $0 regions/us-east-1/ocp-01/"
     echo "         $0 regions/us-east-1/eks-01/"
     echo "         $0 regions/us-east-1/hcp-01/"
+    echo "         $0 --push-to-gitea regions/us-east-1/eks-01/"
+    echo ""
+    echo "Options:"
+    echo "  --push-to-gitea    Push generated configs to internal Gitea server"
     echo ""
     echo "Supported cluster types: ocp (OpenShift), eks (EKS), hcp (HostedControlPlane)"
     exit 1
 }
 
-if [ $# -ne 1 ]; then
+# Parse command line arguments
+PUSH_TO_GITEA=false
+SPEC_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --push-to-gitea)
+            PUSH_TO_GITEA=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option $1"
+            usage
+            ;;
+        *)
+            SPEC_DIR="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$SPEC_DIR" ]; then
     usage
 fi
 
-SPEC_DIR="$1"
 SPEC_FILE="$SPEC_DIR/region.yaml"
 
 if [ ! -f "$SPEC_FILE" ]; then
@@ -33,6 +57,7 @@ REGION=$(grep "region:" "$SPEC_FILE" | awk '{print $2}')
 DOMAIN=$(grep "domain:" "$SPEC_FILE" | awk '{print $2}')
 INSTANCE_TYPE=$(grep "instanceType:" "$SPEC_FILE" | awk '{print $2}')
 REPLICAS=$(grep "replicas:" "$SPEC_FILE" | awk '{print $2}')
+KUBERNETES_VERSION=$(grep -A 1 "kubernetes:" "$SPEC_FILE" | grep "version:" | awk '{print $2}' | tr -d '"')
 
 # Use the cluster name directly from region.yaml
 FULL_CLUSTER_NAME="$CLUSTER_NAME"
@@ -51,6 +76,19 @@ REGION=${REGION:-"us-east-1"}
 DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
 REPLICAS=${REPLICAS:-3}
+KUBERNETES_VERSION=${KUBERNETES_VERSION:-"1.28"}
+
+# For EKS, ensure semantic versioning (remove 'v' prefix if present and ensure format is X.Y)
+if [ "$CLUSTER_TYPE" = "eks" ]; then
+    KUBERNETES_VERSION=$(echo "$KUBERNETES_VERSION" | sed 's/^v//')
+    # Ensure we have semantic version format (X.Y.Z), default to .0 if only X.Y
+    if [[ ! "$KUBERNETES_VERSION" =~ \.[0-9]+$ ]]; then
+        KUBERNETES_VERSION="${KUBERNETES_VERSION}.0"
+    fi
+    EKS_VERSION="v${KUBERNETES_VERSION}"  # EKS API expects v prefix
+else
+    EKS_VERSION="$KUBERNETES_VERSION"
+fi
 
 # Create output directories
 mkdir -p "$CLUSTER_OUTPUT_DIR"
@@ -112,7 +150,7 @@ metadata:
 spec:
   region: $REGION
   sshKeyName: ""
-  version: v1.28
+  version: $EKS_VERSION
   baseDomain: $DOMAIN
   vpc:
     availabilityZoneUsageLimit: 2
@@ -138,6 +176,28 @@ spec:
     desiredSize: $REPLICAS
   diskSize: 20
   amiType: AL2_x86_64
+EOF
+
+    # Generate machinepool.yaml (Critical: Links CAPI Cluster to AWSManagedMachinePool)
+    cat > "$CLUSTER_OUTPUT_DIR/machinepool.yaml" << EOF
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  clusterName: $FULL_CLUSTER_NAME
+  replicas: $REPLICAS
+  template:
+    spec:
+      bootstrap:
+        dataSecretName: ""
+      clusterName: $FULL_CLUSTER_NAME
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: AWSManagedMachinePool
+        name: $FULL_CLUSTER_NAME
+      version: $KUBERNETES_VERSION
 EOF
 
     # Generate managedcluster.yaml
@@ -182,6 +242,72 @@ spec:
     enabled: true
 EOF
 
+    # Generate ExternalSecrets for EKS cluster
+    cat > "$CLUSTER_OUTPUT_DIR/external-secrets.yaml" << EOF
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aws-credentials
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: aws-credentials
+    creationPolicy: Owner
+  data:
+  - secretKey: aws_access_key_id
+    remoteRef:
+      key: aws-credentials
+      property: aws_access_key_id
+  - secretKey: aws_secret_access_key
+    remoteRef:
+      key: aws-credentials
+      property: aws_secret_access_key
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: pull-secret
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: pull-secret
+    creationPolicy: Owner
+    type: kubernetes.io/dockerconfigjson
+  data:
+  - secretKey: .dockerconfigjson
+    remoteRef:
+      key: pull-secret
+      property: .dockerconfigjson
+EOF
+
+    # Generate klusterlet-crd.yaml (Required for ACM integration)
+    if [ -f ".secrets/klusterlet-crd.yaml" ]; then
+        cp .secrets/klusterlet-crd.yaml "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml"
+        echo "Using existing Klusterlet CRD from .secrets/"
+    else
+        echo "Warning: klusterlet-crd.yaml not found in .secrets/, generating placeholder"
+        cat > "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml" << EOF
+# Placeholder - Replace with actual Klusterlet CRD from hub cluster
+# Run: oc get crd klusterlets.operator.open-cluster-management.io -o yaml > .secrets/klusterlet-crd.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: klusterlet-crd-placeholder
+  namespace: $FULL_CLUSTER_NAME
+data:
+  note: "Please replace this with actual Klusterlet CRD from hub cluster"
+EOF
+    fi
+
     # Generate kustomization.yaml
     cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -192,8 +318,11 @@ resources:
   - cluster.yaml
   - awsmanagedcontrolplane.yaml
   - awsmanagedmachinepool.yaml
+  - machinepool.yaml
   - managedcluster.yaml
   - klusterletaddonconfig.yaml
+  - external-secrets.yaml
+  - klusterlet-crd.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -225,7 +354,19 @@ spec:
     serviceNetwork:
     - cidr: 172.31.0.0/16
   platform:
-    type: None
+    type: AWS
+    aws:
+      region: $REGION
+      credentialsSecretRef:
+        name: aws-credentials
+      rolesRef:
+        kubeCloudControllerARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        nodePoolManagementARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        controlPlaneOperatorARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        networkARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        storageARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        imageRegistryARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
+        ingressARN: arn:aws:iam::765374464689:role/controllers.cluster-api-provider-aws.sigs.k8s.io
   infraID: $FULL_CLUSTER_NAME
   dns:
     baseDomain: $DOMAIN
@@ -235,20 +376,41 @@ spec:
       type: LoadBalancer
   - service: OAuthServer
     servicePublishingStrategy:
-      type: NodePort
-      nodePort:
-        address: api.$FULL_CLUSTER_NAME.$DOMAIN
+      type: Route
   - service: OIDC
     servicePublishingStrategy:
       type: None
   - service: Konnectivity
     servicePublishingStrategy:
-      type: LoadBalancer
+      type: Route
   - service: Ignition
     servicePublishingStrategy:
-      type: NodePort
-      nodePort:
-        address: api.$FULL_CLUSTER_NAME.$DOMAIN
+      type: Route
+EOF
+
+    # Generate NodePool for HCP cluster
+    cat > "$CLUSTER_OUTPUT_DIR/nodepool.yaml" << EOF
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: $FULL_CLUSTER_NAME-nodepool
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  clusterName: $FULL_CLUSTER_NAME
+  nodeCount: $REPLICAS
+  platform:
+    type: AWS
+    aws:
+      instanceType: $INSTANCE_TYPE
+      subnet:
+        filters:
+        - name: "tag:kubernetes.io/role/elb"
+          values: ["1"]
+  management:
+    autoRepair: true
+    upgradeType: Replace
+  release:
+    image: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
 EOF
 
     # Generate SSH key secret
@@ -266,6 +428,25 @@ EOF
 
     # Generate ExternalSecrets for HCP cluster
     cat > "$CLUSTER_OUTPUT_DIR/external-secrets.yaml" << EOF
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aws-credentials
+  namespace: $FULL_CLUSTER_NAME
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: aws-credentials
+    creationPolicy: Owner
+  data:
+  - secretKey: credentials
+    remoteRef:
+      key: aws-credentials-arn
+      property: credentials
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -323,6 +504,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - hostedcluster.yaml
+  - nodepool.yaml
   - klusterletaddonconfig.yaml
   - ssh-key-secret.yaml
   - external-secrets.yaml
@@ -747,6 +929,107 @@ EOF
     fi
 }
 
+push_to_gitea() {
+    echo ""
+    echo "🚀 Pushing generated configurations to internal Gitea server..."
+    
+    # Gitea configuration
+    local GITEA_URL="http://gitea.gitea-system.svc.cluster.local:3000"
+    local GITEA_REPO_URL="http://admin:bootstrap123@gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git"
+    local GITEA_USER="admin"
+    local GITEA_PASS="bootstrap123"
+    
+    # Create a temporary job to push to Gitea from inside the cluster
+    echo "Creating push job for cluster: $FULL_CLUSTER_NAME"
+    
+    oc apply -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-push-$FULL_CLUSTER_NAME
+  namespace: gitea-system
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: git-push
+        image: alpine/git:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Setting up git configuration..."
+          export HOME=/tmp
+          mkdir -p /tmp/.config/git
+          git config --global user.name "Bootstrap Generator"
+          git config --global user.email "bootstrap@cluster.local"
+          git config --global init.defaultBranch main
+          
+          echo "Cloning bootstrap repository..."
+          git clone $GITEA_REPO_URL /tmp/bootstrap || {
+            echo "Repository doesn't exist, creating new one..."
+            mkdir -p /tmp/bootstrap
+            cd /tmp/bootstrap
+            git init
+            git remote add origin $GITEA_REPO_URL
+          }
+          
+          cd /tmp/bootstrap
+          
+          # Ensure we're on main branch
+          git checkout main 2>/dev/null || git checkout -b main
+          
+          echo "Creating cluster configuration directories..."
+          mkdir -p clusters/$FULL_CLUSTER_NAME
+          mkdir -p operators/openshift-pipelines/$FULL_CLUSTER_NAME
+          mkdir -p pipelines/hello-world/$FULL_CLUSTER_NAME
+          mkdir -p pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
+          mkdir -p deployments/ocm/$FULL_CLUSTER_NAME
+          mkdir -p gitops-applications
+          
+          echo "Generated cluster files will be added by separate process..."
+          echo "Cluster: $FULL_CLUSTER_NAME" > clusters/$FULL_CLUSTER_NAME/README.md
+          echo "Type: $CLUSTER_TYPE" >> clusters/$FULL_CLUSTER_NAME/README.md
+          echo "Region: $REGION" >> clusters/$FULL_CLUSTER_NAME/README.md
+          echo "Generated: \$(date)" >> clusters/$FULL_CLUSTER_NAME/README.md
+          
+          git add .
+          git commit -m "Initialize structure for $FULL_CLUSTER_NAME ($CLUSTER_TYPE)" || echo "No changes to commit"
+          
+          echo "Pushing to Gitea repository..."
+          git push -u origin main
+          
+          echo "✅ Successfully pushed cluster structure to Gitea"
+        env:
+        - name: GITEA_REPO_URL
+          value: "$GITEA_REPO_URL"
+        - name: FULL_CLUSTER_NAME
+          value: "$FULL_CLUSTER_NAME"
+        - name: CLUSTER_TYPE
+          value: "$CLUSTER_TYPE"
+        - name: REGION
+          value: "$REGION"
+EOF
+    
+    echo "Waiting for push job to complete..."
+    if oc wait --for=condition=complete job/gitea-push-$FULL_CLUSTER_NAME -n gitea-system --timeout=120s; then
+        echo "✅ Successfully pushed cluster configuration to Gitea"
+        echo "Repository URL: $GITEA_URL/bootstrap/bootstrap"
+        echo "Branch: main"
+        echo "Cluster path: clusters/$FULL_CLUSTER_NAME"
+        
+        # Clean up the job
+        oc delete job gitea-push-$FULL_CLUSTER_NAME -n gitea-system
+    else
+        echo "❌ Failed to push to Gitea. Check job logs:"
+        oc logs job/gitea-push-$FULL_CLUSTER_NAME -n gitea-system
+        oc delete job gitea-push-$FULL_CLUSTER_NAME -n gitea-system
+        exit 1
+    fi
+}
+
 # Generate type-specific manifests
 if [ "$CLUSTER_TYPE" = "ocp" ]; then
     generate_ocp_cluster
@@ -765,6 +1048,11 @@ generate_operators
 generate_regional_deployments
 generate_gitops_applications
 update_gitops_kustomization
+
+# Push to Gitea if requested
+if [ "$PUSH_TO_GITEA" = true ]; then
+    push_to_gitea
+fi
 
 echo "Generated $CLUSTER_TYPE cluster overlay successfully!"
 echo "Files created:"

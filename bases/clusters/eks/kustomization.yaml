@@ -4,7 +4,9 @@ kind: Component
 resources:
   - cluster.yaml
   - workers.yaml
+  - machinepool.yaml
   - external-secrets.yaml
+  - klusterlet-crd.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
