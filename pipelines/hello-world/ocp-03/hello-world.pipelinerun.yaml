@@ -1,0 +1,11 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: hello-world-run
+  namespace: ocm-ocp-03
+spec:
+  pipelineRef:
+    name: hello-world-pipeline
+  params:
+    - name: message
+      value: "Hello from ocp-03!"

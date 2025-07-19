@@ -8,6 +8,10 @@ resources:
   - ams.db.yaml
   - cs.db.yaml
   - osl.db.yaml
+  - trex.service.yaml
+  - trex.route.yaml
+  - trex.db.yaml
+  - trex.configmap.yaml
 
 secretGenerator:
   - name: ams-db
@@ -31,3 +35,23 @@ secretGenerator:
       - db.password="foobar"
       - db.user="osl-db"
       - db.port="5432"
+  - name: trex-db
+    literals:
+      - db.host="trex-db"
+      - db.name="trex-db"
+      - db.password="foobar"
+      - db.user="trex-db"
+      - db.port="5432"
+  - name: trex-rds
+    literals:
+      - db.host="trex-db"
+      - db.name="trex-db"
+      - db.password="foobar"
+      - db.user="trex-db"
+      - db.port="5432"
+  - name: trex
+    literals:
+      - ocm-service.clientId="dummy-client-id"
+      - ocm-service.clientSecret="dummy-client-secret"
+      - ocm-service.token="dummy-token"
+      - sentry.key="dummy-sentry-key"

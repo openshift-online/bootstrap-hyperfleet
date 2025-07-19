@@ -2,11 +2,11 @@
 apiVersion: hive.openshift.io/v1
 kind: ClusterDeployment
 metadata:
-  namespace: cluster-01
-  name: cluster-01
+  namespace: ocp-01
+  name: ocp-01
 spec:
   baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
-  clusterName: cluster-01
+  clusterName: ocp-01
   controlPlaneConfig:
     servingCertificates: {}
   platform:

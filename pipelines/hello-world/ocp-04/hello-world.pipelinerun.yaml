@@ -1,0 +1,13 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: hello-world-run
+  namespace: ocm-ocp-04
+spec:
+  pipelineRef:
+    name: hello-world-pipeline
+  params:
+    - name: cluster-name
+      value: ocp-04
+    - name: region
+      value: us-west-2

@@ -1,0 +1,6 @@
+type: eks
+name: eks-02
+region: ap-southeast-1
+domain: rosa.mturansk-test.csu2.i3.devshift.org
+instanceType: m5.large
+replicas: 3

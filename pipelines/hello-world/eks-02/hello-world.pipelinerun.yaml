@@ -1,0 +1,13 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: hello-world-run
+  namespace: ocm-eks-02
+spec:
+  pipelineRef:
+    name: hello-world-pipeline
+  params:
+    - name: cluster-name
+      value: eks-02
+    - name: region
+      value: ap-southeast-1

@@ -1,5 +1,10 @@
 # OpenShift Bootstrap Installation Guide
 
+**Audience**: Administrators  
+**Complexity**: Intermediate to Advanced  
+**Estimated Time**: 3-4 hours for complete setup  
+**Prerequisites**: Cluster-admin access to OpenShift, AWS credentials, pull secrets
+
 This guide provides comprehensive instructions for setting up and managing multi-cluster OpenShift deployments using GitOps automation.
 
 ## Overview
@@ -113,7 +118,7 @@ mkdir -p regions/[AWS_REGION]/[CLUSTER_NAME]/
 # Create region.yaml specification file
 cat > regions/[AWS_REGION]/[CLUSTER_NAME]/region.yaml << EOF
 type: [CLUSTER_TYPE]  # "ocp" or "eks"
-name: [CLUSTER_NAME]  # e.g., cluster-50
+name: [CLUSTER_NAME]  # e.g., ocp-05
 region: [AWS_REGION]  # e.g., us-west-2
 domain: rosa.mturansk-test.csu2.i3.devshift.org
 instanceType: [COMPUTE_TYPE]  # e.g., m5.large
@@ -125,10 +130,10 @@ EOF
 
 ```bash
 # OpenShift cluster in us-west-2
-mkdir -p regions/us-west-2/cluster-50/
-cat > regions/us-west-2/cluster-50/region.yaml << EOF
+mkdir -p regions/us-west-2/ocp-05/
+cat > regions/us-west-2/ocp-05/region.yaml << EOF
 type: ocp
-name: cluster-50
+name: ocp-05
 region: us-west-2
 domain: rosa.mturansk-test.csu2.i3.devshift.org
 instanceType: m5.large
@@ -136,10 +141,10 @@ replicas: 3
 EOF
 
 # EKS cluster in eu-west-1
-mkdir -p regions/eu-west-1/cluster-51/
-cat > regions/eu-west-1/cluster-51/region.yaml << EOF
+mkdir -p regions/eu-west-1/eks-01/
+cat > regions/eu-west-1/eks-01/region.yaml << EOF
 type: eks
-name: cluster-51
+name: eks-01
 region: eu-west-1
 domain: rosa.mturansk-test.csu2.i3.devshift.org
 instanceType: m5.xlarge

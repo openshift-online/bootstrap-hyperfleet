@@ -1,0 +1,179 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trex
+  labels:
+    app: trex
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trex
+  labels:
+    app: trex
+spec:
+  selector:
+    matchLabels:
+      app: trex
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: trex
+    spec:
+      serviceAccountName: trex
+      volumes:
+      - name: tls
+        secret:
+          secretName: trex-tls
+      - name: service
+        secret:
+          secretName: trex
+      - name: rds
+        secret:
+          secretName: trex-rds
+      - name: authentication
+        configMap:
+          name: authentication
+      initContainers:
+      - name: migration
+        image: quay.io/app-sre/trex:latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: service
+          mountPath: /secrets/service
+        - name: rds
+          mountPath: /secrets/rds
+        command:
+        - /usr/local/bin/trex
+        - migrate
+        - --db-host-file=/secrets/rds/db.host
+        - --db-port-file=/secrets/rds/db.port
+        - --db-user-file=/secrets/rds/db.user
+        - --db-password-file=/secrets/rds/db.password
+        - --db-name-file=/secrets/rds/db.name
+        - --alsologtostderr
+        - -v=10
+      containers:
+      - name: service
+        image: quay.io/app-sre/trex:latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: tls
+          mountPath: /secrets/tls
+        - name: service
+          mountPath: /secrets/service
+        - name: rds
+          mountPath: /secrets/rds
+        - name: authentication
+          mountPath: /configs/authentication
+        env:
+          - name: "AMS_ENV"
+            value: "production"
+        command:
+        - /usr/local/bin/trex
+        - serve
+        - --db-host-file=/secrets/rds/db.host
+        - --db-port-file=/secrets/rds/db.port
+        - --db-user-file=/secrets/rds/db.user
+        - --db-password-file=/secrets/rds/db.password
+        - --db-name-file=/secrets/rds/db.name
+        - --enable-ocm-mock=false
+        - --ocm-client-id-file=/secrets/service/ocm-service.clientId
+        - --ocm-client-secret-file=/secrets/service/ocm-service.clientSecret
+        - --enable-jwt=true
+        - --enable-https=true
+        - --api-server-bindaddress=:8000
+        - --health-check-server-bindaddress=:8083
+        - --enable-health-check-https=true
+        - --db-sslmode=disable
+        - --db-max-open-connections=50
+        - --enable-authz=true
+        - --enable-db-debug=false
+        - --enable-metrics-https=false
+        - --enable-sentry=false
+        - --http-read-timeout=5s
+        - --http-write-timeout=30s
+        - --label-metrics-inclusion-duration=168h
+        - --alsologtostderr
+        - -v=10
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /api/rh-trex
+            port: 8000
+            scheme: HTTPS
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 8083
+            scheme: HTTPS
+            httpHeaders:
+            - name: User-Agent
+              value: Probe
+          initialDelaySeconds: 20
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trex
+  labels:
+    app: trex
+    port: api
+  annotations:
+    description: Exposes and load balances the account manager pods
+    service.beta.openshift.io/serving-cert-secret-name: trex-tls
+spec:
+  selector:
+    app: trex
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trex-metrics
+  labels:
+    app: trex
+    port: metrics
+  annotations:
+    description: Exposes and load balances the rh-trex pods metrics endpoint
+    service.beta.openshift.io/serving-cert-secret-name: trex-metrics-tls
+spec:
+  selector:
+    app: trex
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trex-healthcheck
+  labels:
+    app: trex
+    port: healthcheck
+spec:
+  selector:
+    app: trex
+  ports:
+  - port: 8083
+    targetPort: 8083

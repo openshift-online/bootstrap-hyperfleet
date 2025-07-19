@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: trex-global
+
+resources:
+  - ../../../bases/ocm/trex.service.yaml
+  - ../../../bases/ocm/trex.db.yaml
+  - ../../../bases/ocm/trex.route.yaml
+  - ../../../bases/ocm/trex.configmap.yaml
+  - namespace.yaml
+
+patchesStrategicMerge:
+  - trex-config.yaml

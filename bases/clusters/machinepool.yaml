@@ -1,11 +1,11 @@
 apiVersion: hive.openshift.io/v1
 kind: MachinePool
 metadata:
-  name: cluster-01-worker
-  namespace: cluster-01
+  name: ocp-01-worker
+  namespace: ocp-01
 spec:
   clusterDeploymentRef:
-    name: 'cluster-01'
+    name: 'ocp-01'
   name: worker
   platform:
     aws:

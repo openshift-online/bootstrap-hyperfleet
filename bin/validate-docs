@@ -1,0 +1,485 @@
+#!/bin/bash
+# Documentation Validation Tool
+# Validates markdown syntax, checks internal links, and ensures documentation quality
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Counters
+TOTAL_FILES=0
+TOTAL_ERRORS=0
+TOTAL_WARNINGS=0
+TOTAL_LINKS=0
+BROKEN_LINKS=0
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+    ((TOTAL_WARNINGS++))
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    ((TOTAL_ERRORS++))
+}
+
+# Check if a file exists relative to repository root
+check_file_exists() {
+    local file_path="$1"
+    local context_dir="$2"
+    
+    # Try relative to context directory first
+    if [[ -f "$context_dir/$file_path" ]]; then
+        return 0
+    fi
+    
+    # Try relative to repository root
+    if [[ -f "$ROOT_DIR/$file_path" ]]; then
+        return 0
+    fi
+    
+    # Try resolving relative paths (../) from context
+    local resolved_path
+    resolved_path="$(cd "$context_dir" && realpath -m "$file_path" 2>/dev/null)" || return 1
+    
+    if [[ -f "$resolved_path" ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Validate markdown file
+validate_markdown_file() {
+    local file="$1"
+    local file_dir
+    file_dir="$(dirname "$file")"
+    
+    log_info "Validating: $file"
+    ((TOTAL_FILES++))
+    
+    # Check for required headers in documentation files
+    if [[ "$file" == *"/docs/"* ]] && ! grep -q "^\*\*Audience\*\*:" "$file" 2>/dev/null; then
+        log_warning "Missing audience header in: $file"
+    fi
+    
+    # Extract and validate internal links
+    local links
+    links=$(grep -oE '\[([^]]+)\]\(([^)]+)\)' "$file" 2>/dev/null || true)
+    
+    while IFS= read -r link; do
+        if [[ -z "$link" ]]; then
+            continue
+        fi
+        
+        ((TOTAL_LINKS++))
+        
+        # Extract the URL part
+        local url
+        url=$(echo "$link" | sed -n 's/.*](\([^)]*\)).*/\1/p')
+        
+        # Skip external URLs
+        if [[ "$url" =~ ^https?:// ]]; then
+            continue
+        fi
+        
+        # Skip anchors and email links
+        if [[ "$url" =~ ^# ]] || [[ "$url" =~ ^mailto: ]]; then
+            continue
+        fi
+        
+        # Remove anchor fragments for file checking
+        local file_path
+        file_path="${url%#*}"
+        
+        # Check if file exists
+        if ! check_file_exists "$file_path" "$file_dir"; then
+            log_error "Broken link in $file: $url"
+            ((BROKEN_LINKS++))
+        fi
+        
+    done <<< "$links"
+    
+    # Check for common markdown issues
+    local line_num=0
+    while IFS= read -r line; do
+        ((line_num++))
+        
+        # Check for malformed headers
+        if [[ "$line" =~ ^#{7,} ]]; then
+            log_warning "Header too deep (>6 levels) in $file:$line_num: $line"
+        fi
+        
+        # Check for trailing whitespace
+        if [[ "$line" =~ [[:space:]]$ ]]; then
+            log_warning "Trailing whitespace in $file:$line_num"
+        fi
+        
+        # Check for missing space after hash in headers
+        if [[ "$line" =~ ^#+[^[:space:]] ]] && [[ ! "$line" =~ ^#+$ ]]; then
+            log_warning "Missing space after # in header in $file:$line_num: $line"
+        fi
+        
+    done < "$file"
+    
+    # Check for empty files
+    if [[ ! -s "$file" ]]; then
+        log_warning "Empty file: $file"
+    fi
+    
+    # Check for very long lines
+    local long_lines
+    long_lines=$(awk 'length > 120 {print NR ": " $0}' "$file" | head -5)
+    if [[ -n "$long_lines" ]]; then
+        log_warning "Long lines (>120 chars) in $file:"
+        echo "$long_lines" | while IFS= read -r long_line; do
+            echo "    $long_line"
+        done
+    fi
+}
+
+# Validate all markdown files
+validate_all_markdown() {
+    log_info "Validating all markdown files..."
+    
+    # Find all markdown files
+    local md_files
+    md_files=$(find "$ROOT_DIR" -name "*.md" -type f | sort)
+    
+    if [[ -z "$md_files" ]]; then
+        log_warning "No markdown files found"
+        return
+    fi
+    
+    while IFS= read -r file; do
+        validate_markdown_file "$file"
+    done <<< "$md_files"
+}
+
+# Check documentation structure
+validate_docs_structure() {
+    log_info "Validating documentation structure..."
+    
+    # Check for main documentation files
+    local required_files=(
+        "README.md"
+        "ARCHITECTURE.md"
+        "INSTALL.md"
+        "CLAUDE.md"
+    )
+    
+    for file in "${required_files[@]}"; do
+        if [[ ! -f "$ROOT_DIR/$file" ]]; then
+            log_error "Missing required file: $file"
+        fi
+    done
+    
+    # Check for documentation index
+    if [[ -d "$ROOT_DIR/docs" ]] && [[ ! -f "$ROOT_DIR/docs/INDEX.md" ]]; then
+        log_warning "Missing documentation index: docs/INDEX.md"
+    fi
+    
+    # Check for getting started documentation
+    if [[ -d "$ROOT_DIR/docs/getting-started" ]]; then
+        local getting_started_files=(
+            "README.md"
+            "quickstart.md"
+            "concepts.md"
+        )
+        
+        for file in "${getting_started_files[@]}"; do
+            if [[ ! -f "$ROOT_DIR/docs/getting-started/$file" ]]; then
+                log_warning "Missing getting started file: docs/getting-started/$file"
+            fi
+        done
+    fi
+}
+
+# Validate cross-references
+validate_cross_references() {
+    log_info "Validating cross-references..."
+    
+    # Check for orphaned files (files not referenced by others)
+    local all_md_files
+    all_md_files=$(find "$ROOT_DIR" -name "*.md" -type f | sort)
+    
+    local orphaned_count=0
+    
+    while IFS= read -r file; do
+        local relative_path
+        relative_path="${file#$ROOT_DIR/}"
+        
+        # Skip README.md and CLAUDE.md as they are entry points
+        if [[ "$(basename "$file")" == "README.md" ]] || [[ "$(basename "$file")" == "CLAUDE.md" ]]; then
+            continue
+        fi
+        
+        # Check if file is referenced in any other markdown file
+        local is_referenced=false
+        while IFS= read -r other_file; do
+            if [[ "$file" == "$other_file" ]]; then
+                continue
+            fi
+            
+            if grep -q "$relative_path" "$other_file" 2>/dev/null; then
+                is_referenced=true
+                break
+            fi
+            
+            # Also check for basename references
+            if grep -q "$(basename "$file")" "$other_file" 2>/dev/null; then
+                is_referenced=true
+                break
+            fi
+        done <<< "$all_md_files"
+        
+        if [[ "$is_referenced" == "false" ]]; then
+            log_warning "Potentially orphaned file: $relative_path"
+            ((orphaned_count++))
+        fi
+        
+    done <<< "$all_md_files"
+    
+    if [[ $orphaned_count -eq 0 ]]; then
+        log_success "No orphaned files found"
+    fi
+}
+
+# Check for duplicate content
+check_duplicate_content() {
+    log_info "Checking for duplicate content..."
+    
+    # Look for files with similar names that might have duplicate content
+    local similar_files
+    similar_files=$(find "$ROOT_DIR" -name "*.md" -type f | sort | while read -r file; do
+        basename "$file" .md
+    done | sort | uniq -d)
+    
+    if [[ -n "$similar_files" ]]; then
+        log_warning "Files with similar names (potential duplicates):"
+        echo "$similar_files" | while IFS= read -r basename; do
+            find "$ROOT_DIR" -name "${basename}.md" -type f | while IFS= read -r file; do
+                echo "    ${file#$ROOT_DIR/}"
+            done
+        done
+    fi
+    
+    # Check for duplicated headings across files
+    local all_headings
+    all_headings=$(find "$ROOT_DIR" -name "*.md" -type f -exec grep -H "^# " {} \; | sort)
+    
+    local duplicate_headings
+    duplicate_headings=$(echo "$all_headings" | cut -d: -f2- | sort | uniq -d)
+    
+    if [[ -n "$duplicate_headings" ]]; then
+        log_warning "Duplicate headings found:"
+        echo "$duplicate_headings" | while IFS= read -r heading; do
+            echo "    $heading"
+            echo "$all_headings" | grep -F "$heading" | while IFS= read -r match; do
+                local file_path
+                file_path="${match%%:*}"
+                echo "      ${file_path#$ROOT_DIR/}"
+            done
+        done
+    fi
+}
+
+# Generate validation report
+generate_report() {
+    log_info "Generating validation report..."
+    
+    local report_file="$ROOT_DIR/docs-validation-report.md"
+    
+    cat > "$report_file" << EOF
+# Documentation Validation Report
+
+*Generated on: $(date)*
+
+## Summary
+
+- **Total Files Validated**: $TOTAL_FILES
+- **Total Links Checked**: $TOTAL_LINKS
+- **Broken Links**: $BROKEN_LINKS
+- **Errors**: $TOTAL_ERRORS
+- **Warnings**: $TOTAL_WARNINGS
+
+## Status
+
+EOF
+    
+    if [[ $TOTAL_ERRORS -eq 0 ]] && [[ $BROKEN_LINKS -eq 0 ]]; then
+        echo "✅ **PASSED** - No critical issues found" >> "$report_file"
+    elif [[ $TOTAL_ERRORS -gt 0 ]] || [[ $BROKEN_LINKS -gt 0 ]]; then
+        echo "❌ **FAILED** - Critical issues found" >> "$report_file"
+    else
+        echo "⚠️ **WARNING** - Minor issues found" >> "$report_file"
+    fi
+    
+    cat >> "$report_file" << EOF
+
+## Recommendations
+
+EOF
+    
+    if [[ $BROKEN_LINKS -gt 0 ]]; then
+        echo "- Fix broken internal links" >> "$report_file"
+    fi
+    
+    if [[ $TOTAL_WARNINGS -gt 5 ]]; then
+        echo "- Address formatting warnings" >> "$report_file"
+    fi
+    
+    echo "- Run \`bin/validate-docs\` regularly" >> "$report_file"
+    echo "- Consider automating validation in CI/CD" >> "$report_file"
+    
+    log_success "Validation report generated: $report_file"
+}
+
+# Show summary
+show_summary() {
+    echo "\n$BLUE===== VALIDATION SUMMARY =====$NC"
+    echo "Files validated: $TOTAL_FILES"
+    echo "Links checked: $TOTAL_LINKS"
+    echo "Broken links: $BROKEN_LINKS"
+    echo "Errors: $TOTAL_ERRORS"
+    echo "Warnings: $TOTAL_WARNINGS"
+    
+    if [[ $TOTAL_ERRORS -eq 0 ]] && [[ $BROKEN_LINKS -eq 0 ]]; then
+        log_success "Documentation validation passed!"
+        return 0
+    elif [[ $TOTAL_ERRORS -gt 0 ]] || [[ $BROKEN_LINKS -gt 0 ]]; then
+        log_error "Documentation validation failed!"
+        return 1
+    else
+        log_warning "Documentation validation completed with warnings"
+        return 0
+    fi
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS] [FILES...]
+
+Validate markdown documentation for syntax, links, and structure.
+
+OPTIONS:
+    -h, --help        Show this help message
+    --links-only      Check only internal links
+    --structure-only  Check only documentation structure
+    --no-report       Don't generate validation report
+    --quiet           Suppress non-error output
+
+EXAMPLES:
+    $(basename "$0")                    # Validate all documentation
+    $(basename "$0") README.md           # Validate specific file
+    $(basename "$0") --links-only        # Check only links
+    $(basename "$0") docs/               # Validate files in directory
+
+EOF
+}
+
+# Main execution
+main() {
+    local links_only=false
+    local structure_only=false
+    local generate_report_flag=true
+    local quiet=false
+    local files_to_check=()
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            --links-only)
+                links_only=true
+                ;;
+            --structure-only)
+                structure_only=true
+                ;;
+            --no-report)
+                generate_report_flag=false
+                ;;
+            --quiet)
+                quiet=true
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+            *)
+                files_to_check+=("$1")
+                ;;
+        esac
+        shift
+    done
+    
+    # Redirect output if quiet mode
+    if [[ "$quiet" == "true" ]]; then
+        exec 3>&1 4>&2 1>/dev/null 2>/dev/null
+    fi
+    
+    log_info "Starting documentation validation..."
+    
+    if [[ ${#files_to_check[@]} -gt 0 ]]; then
+        # Validate specific files/directories
+        for item in "${files_to_check[@]}"; do
+            if [[ -f "$item" ]] && [[ "$item" == *.md ]]; then
+                validate_markdown_file "$item"
+            elif [[ -d "$item" ]]; then
+                find "$item" -name "*.md" -type f | while IFS= read -r file; do
+                    validate_markdown_file "$file"
+                done
+            else
+                log_error "Invalid file or directory: $item"
+            fi
+        done
+    else
+        # Validate all documentation
+        if [[ "$structure_only" != "true" ]]; then
+            validate_all_markdown
+        fi
+        
+        if [[ "$links_only" != "true" ]]; then
+            validate_docs_structure
+            validate_cross_references
+            check_duplicate_content
+        fi
+    fi
+    
+    # Restore output if quiet mode
+    if [[ "$quiet" == "true" ]]; then
+        exec 1>&3 2>&4 3>&- 4>&-
+    fi
+    
+    # Generate report
+    if [[ "$generate_report_flag" == "true" ]]; then
+        generate_report
+    fi
+    
+    # Show summary and exit with appropriate code
+    show_summary
+}
+
+# Run main function
+main "$@"

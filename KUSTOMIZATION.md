@@ -44,15 +44,15 @@ The root kustomization (`gitops-applications/kustomization.yaml`) manages:
 ### Sync Wave Strategy
 
 ```yaml
-# gitops-applications/cluster-10.cluster.yaml
+# gitops-applications/ocp-02.cluster.yaml
 annotations:
   argocd.argoproj.io/sync-wave: "1"    # Cluster provisioning first
 
-# gitops-applications/cluster-10.pipelines.yaml  
+# gitops-applications/ocp-02.pipelines.yaml  
 annotations:
   argocd.argoproj.io/sync-wave: "2"    # Pipelines after cluster ready
 
-# gitops-applications/cluster-10.deployments.yaml
+# gitops-applications/ocp-02.deployments.yaml
 annotations:
   argocd.argoproj.io/sync-wave: "3"    # Services after pipelines ready
 ```
@@ -82,7 +82,7 @@ Each cluster overlay (`clusters/overlay/cluster-X/`) includes:
 3. **KlusterletAddonConfig**: ACM agent configuration
 4. **Patches**: Cluster-specific customizations
 
-**Example**: `clusters/overlay/cluster-10/kustomization.yaml`
+**Example**: `clusters/overlay/ocp-02/kustomization.yaml`
 
 ```yaml
 resources:
@@ -92,7 +92,7 @@ resources:
 
 secretGenerator:
   - name: install-config
-    namespace: cluster-10
+    namespace: ocp-02
     files:
       - install-config.yaml
 
@@ -102,7 +102,7 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-10
+        value: ocp-02
 ```
 
 ## Regional Pipelines Layer
@@ -194,7 +194,7 @@ Each overlay (`regional-deployments/overlays/cluster-X/`) provides:
 ### Current Issues
 
 #### 1. Hardcoded Cluster URLs
-**Problem**: ArgoCD Application manifests contain static server URLs like `https://api.cluster-10.rosa.mturansk-test.csu2.i3.devshift.org:6443`
+**Problem**: ArgoCD Application manifests contain static server URLs like `https://api.ocp-02.rosa.mturansk-test.csu2.i3.devshift.org:6443`
 
 **Explanation**: Each cluster application hardcodes its destination server URL, requiring manual updates when:
 - Adding new clusters
@@ -209,8 +209,8 @@ Each overlay (`regional-deployments/overlays/cluster-X/`) provides:
 #### 2. Commented Resources
 **Problem**: Multiple commented cluster applications in `gitops-applications/kustomization.yaml`:
 ```yaml
-#- ./regional-clusters.cluster-40.application.yaml
-#- ./regional-deployments.cluster-40.application.yaml
+#- ./regional-clusters.eks-02.application.yaml
+#- ./regional-deployments.eks-02.application.yaml
 ```
 
 **Explanation**: Commented resources indicate manual cluster activation/deactivation rather than automated lifecycle management. This suggests:
@@ -251,10 +251,10 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: cluster-10
+        value: ocp-02
       - op: replace
         path: /metadata/name
-        value: cluster-10
+        value: ocp-02
 ```
 
 **Explanation**: Each cluster overlay contains nearly identical patch operations with only cluster names differing:
@@ -457,9 +457,9 @@ jobs:
 ## Current Cluster Status
 
 ### Deployed Clusters (OpenShift)
-- **cluster-10**: Active (us-east-1)
-- **cluster-20**: Active (region-02)
-- **cluster-30**: Active (region-03)
+- **ocp-02**: Active (us-east-1)
+- **ocp-03**: Active (region-02)
+- **ocp-04**: Active (region-03)
 
 ### Architecture Benefits
 
@@ -473,24 +473,24 @@ jobs:
 
 ```bash
 # Validate cluster overlays
-kustomize build clusters/overlay/cluster-10/
-kustomize build clusters/overlay/cluster-20/
-kustomize build clusters/overlay/cluster-30/
+kustomize build clusters/overlay/ocp-02/
+kustomize build clusters/overlay/ocp-03/
+kustomize build clusters/overlay/ocp-04/
 
 # Validate pipeline overlays
-kustomize build regional-pipelines/overlays/cluster-10/
-kustomize build regional-pipelines/overlays/cluster-20/
-kustomize build regional-pipelines/overlays/cluster-30/
+kustomize build regional-pipelines/overlays/ocp-02/
+kustomize build regional-pipelines/overlays/ocp-03/
+kustomize build regional-pipelines/overlays/ocp-04/
 
 # Validate deployment overlays
-kustomize build regional-deployments/overlays/cluster-10/
-kustomize build regional-deployments/overlays/cluster-20/
-kustomize build regional-deployments/overlays/cluster-30/
+kustomize build regional-deployments/overlays/ocp-02/
+kustomize build regional-deployments/overlays/ocp-03/
+kustomize build regional-deployments/overlays/ocp-04/
 
 # Dry-run validation
-oc --dry-run=client apply -k clusters/overlay/cluster-10/
-oc --dry-run=client apply -k regional-pipelines/overlays/cluster-10/
-oc --dry-run=client apply -k regional-deployments/overlays/cluster-10/
+oc --dry-run=client apply -k clusters/overlay/ocp-02/
+oc --dry-run=client apply -k regional-pipelines/overlays/ocp-02/
+oc --dry-run=client apply -k regional-deployments/overlays/ocp-02/
 ```
 
 This analysis provides a foundation for understanding the current Kustomize structure and implementing improvements for better scalability, security, and maintainability.
