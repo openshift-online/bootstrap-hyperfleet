@@ -105,19 +105,12 @@ ls gitops-applications/       # → cluster-10.yaml, cluster-20.yaml, global/
 
 1. **Create regional specification:**
 ```bash
-mkdir -p regions/us-west-2/cluster-50/
-cat > regions/us-west-2/cluster-50/region.yaml << EOF
-type: eks                    # "ocp" or "eks"
-name: cluster-50
-region: us-west-2
-domain: rosa.mturansk-test.csu2.i3.devshift.org
-instanceType: m5.large
-replicas: 3
-EOF
+./bin/new-cluster
 ```
 
 2. **Generate complete cluster overlay:**
 ```bash
+# Automatically called by new-cluster, but can be run manually:
 ./bin/generate-cluster regions/us-west-2/cluster-50/
 ```
 
