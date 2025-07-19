@@ -11,7 +11,8 @@ resources:
 - ./global/vault.application.yaml
 - ./global/eso.application.yaml
 
-- ./ocp-02.yaml
-- ./ocp-03.yaml
-- ./ocp-04.yaml
-- ./ocp-05.yaml
+- ./ocp-01-mturansk-test.yaml
+
+- ./eks-01-mturansk-test.yaml
+
+- ./hcp-01-mturansk-test.yaml

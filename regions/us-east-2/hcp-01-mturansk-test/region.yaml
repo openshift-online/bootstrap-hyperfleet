@@ -1,0 +1,20 @@
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: hcp-01-mturansk-test
+  namespace: us-east-2
+spec:
+  type: hcp
+  region: us-east-2
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Minimal compute config
+  compute:
+    instanceType: m5.large
+    replicas: 3
+    
+  # HyperShift specific configuration
+  hypershift:
+    release: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
+    infrastructureAvailabilityPolicy: SingleReplica
+    platform: None
