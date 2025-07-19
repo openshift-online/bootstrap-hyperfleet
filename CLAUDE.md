@@ -249,6 +249,16 @@ The project uses ACM's native GitOps integration with infrastructure providers f
 - **Solution**: Updated AWSManagedControlPlane and AWSManagedMachinePool to v1beta2
 - **Status**: ✅ Code fixed in git, cluster provisioning pending
 
+### EKS Base Template Fixes (as of 2025-07-18)
+- **Problem**: EKS base templates using outdated v1beta1 API versions
+- **Solution**: Updated bases/clusters/eks/ templates to use v1beta2 for all CAPI resources
+- **Changes Applied**:
+  - Updated AWSManagedControlPlane API version from v1beta1 to v1beta2
+  - Updated AWSManagedMachinePool API version from v1beta1 to v1beta2
+  - Fixed capacityType from ON_DEMAND to onDemand
+  - Standardized machine pool naming from ${CLUSTER_NAME}-worker to ${CLUSTER_NAME}
+- **Status**: ✅ Base templates fixed, future clusters will use correct API versions
+
 ### Operators Directory Migration
 - **Before**: operators/cluster-* (flat structure)
 - **After**: operators/openshift-pipelines/cluster-* (organized by operator type)
@@ -362,4 +372,7 @@ oc --dry-run=client apply -k clusters/cluster-10/
 oc --dry-run=client apply -k deployments/ocm/cluster-10/
 oc --dry-run=client apply -k gitops-applications/
 ```
-```
+
+
+"Reconciling VPC\" controller=\"awscluster\" controllerGroup=\"infrastructure.cluster.x-k8s.io\" controllerKind=\"AWSCluster\" AWSCluster=\"openshift-cluster-api-guests/cluster-20-fnq4p\" namespace=\"openshift-cluster-api-guests\" name=\"cluster-20-fnq4p\" reconcileID=\"82e70926-9ac0-4834-bbfc-98da5aa2f724\" cluster=\"openshift-cluster-api-guests/cluster-20-fnq4p\""
+time="2025-07-18T15:37:08Z" level=debug msg="I0718 15:37:08.785698 92 instances.go

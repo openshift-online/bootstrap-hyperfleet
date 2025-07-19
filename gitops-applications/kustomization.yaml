@@ -16,4 +16,3 @@ resources:
 - ./cluster-10.yaml
 - ./cluster-20.yaml
 - ./cluster-30.yaml
-- ./cluster-40.yaml

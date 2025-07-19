@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-cluster-40
-  labels:
-    name: ocm-cluster-40
