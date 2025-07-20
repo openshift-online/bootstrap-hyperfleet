@@ -82,3 +82,11 @@ patches:
       - op: replace
         path: /spec/clusterName
         value: ocp-01-mturansk-test
+  - target:
+      kind: ExternalSecret
+      version: v1
+      group: external-secrets.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-test

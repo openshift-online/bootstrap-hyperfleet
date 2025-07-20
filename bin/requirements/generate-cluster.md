@@ -1,13 +1,16 @@
-# Generate Cluster Tool
-
-**Generates complete Kustomize overlay from minimal regional specification**
+# bin/generate-cluster Requirements
 
 ## Purpose
 
 The `generate-cluster` tool converts simplified Regional Cluster specifications into complete Kustomize overlay directories ready for GitOps deployment.
 
-## Usage
+## Functional Requirements
 
+### Input/Output Requirements
+- **Input**: Regional specification directory (`regions/region/cluster/`)
+- **Output**: Complete Kustomize overlay directory
+
+### Usage Patterns
 ```bash
 # Generate cluster overlay from regional spec
 ./bin/generate-cluster regions/us-east-1/ocp-01/
@@ -20,10 +23,7 @@ kubectl kustomize clusters/eks-01/
 ./bin/generate-cluster regions/us-east-1/hcp-01/
 ```
 
-**Input**: Regional specification directory (`regions/region/cluster/`)
-**Output**: Complete Kustomize overlay directory
-
-## Generation Logic
+## Generation Logic Requirements
 
 ### OCP Cluster Generation
 
@@ -42,7 +42,7 @@ kubectl kustomize clusters/eks-01/
 4. Generate `awsmanagedmachinepool.yaml` (EKS worker nodes)
 5. Generate `managedcluster.yaml` (ACM registration)
 
-## Generated File Structure
+## Generated File Structure Requirements
 
 ### OCP Cluster Output
 ```
@@ -78,7 +78,7 @@ clusters/hcp-XX/
 └── kustomization.yaml               # 25 lines - resource list with patches
 ```
 
-## Default Values Applied
+## Default Values Requirements
 
 The generator applies intelligent defaults to minimize required configuration:
 
@@ -122,7 +122,7 @@ defaults:
       iops: 2000
 ```
 
-## Input Format
+## Input Format Requirements
 
 ### Required Regional Specification
 
@@ -168,14 +168,14 @@ spec:
     max: 10
 ```
 
-## Error Handling
+## Error Handling Requirements
 
 ### Generator Errors  
 - **Invalid specs**: Schema validation with helpful error messages
 - **Missing defaults**: Clear indication of required vs optional fields
 - **Template errors**: Detailed context for generation failures
 
-## Validation Testing
+## Validation Requirements
 
 ### Integration Tests
 ```bash
@@ -202,7 +202,7 @@ argocd app create test-cluster \
   --dry-run
 ```
 
-## Migration Strategy
+## Migration Strategy Requirements
 
 ### Phase 1: Validation
 ```bash
@@ -227,7 +227,7 @@ diff -r clusters/ocp-02/ clusters/ocp-01/
 - Update GitOps applications to use semantic names
 - Remove old cluster-XX numbering scheme
 
-## Benefits
+## Benefits Requirements
 
 ### Simplified Configuration Management
 - **Before**: 7 files, 200+ lines, complex JSON patches
@@ -240,13 +240,17 @@ diff -r clusters/ocp-02/ clusters/ocp-01/
 - **Schema Validation**: Prevent configuration errors
 - **Template-Based**: Ensures proper resource generation
 
-## Related Documentation
+## Related Tools
 
-- **[Convert Cluster Tool](./convert-cluster.md)** - Convert Kustomize overlays to regional specs
-- **[Regional Specification](../REGIONALSPEC.md)** - Complete regional cluster specification format
-- **[New Cluster Tool](./new-cluster.md)** - Interactive cluster creation wizard
-- **[Cluster Creation Guide](../guides/cluster-creation.md)** - End-to-end cluster deployment workflow
+### Prerequisites
+- **[new-cluster.md](./new-cluster.md)** - Creates regional specifications that this tool processes
 
----
+### Alternative Workflows
+- **[convert-cluster.md](./convert-cluster.md)** - Converts existing clusters to regional specs
+
+### Bulk Operations
+- **[regenerate-all-clusters.md](./regenerate-all-clusters.md)** - Uses this tool for bulk cluster generation
+
+## Design Principles
 
 *This tool enables **configuration as code** - cluster specifications are version-controlled, reviewable, and auditable.*

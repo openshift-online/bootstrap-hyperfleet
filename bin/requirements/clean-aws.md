@@ -1,4 +1,4 @@
-# AWS Resource Cleaner
+# bin/clean-aws Requirements
 
 ## Functional Requirements for bin/clean-aws
 
@@ -176,3 +176,15 @@ aws ec2 detach-network-interface --attachment-id "$attachment" --force
 - **User Experience**: Interactive prompts with defaults + automated mode
 
 The script successfully eliminates code duplication by implementing a working, comprehensive solution in `bin/clean-aws` while maintaining concise requirements documentation that references the implementation rather than duplicating code.
+
+## Related Tools
+
+### Discovery Dependencies
+- **[find-aws-resources.md](./find-aws-resources.md)** - Provides the discovery patterns and resource identification used by this cleanup tool
+
+### Validation and Testing
+- **[test-find-aws-resources.md](./test-find-aws-resources.md)** - Validates resource discovery patterns used in cleanup
+
+### Cluster Lifecycle
+- **[generate-cluster.md](./generate-cluster.md)** - Creates clusters that eventually require cleanup
+- **[status.md](./status.md)** - Monitor cluster status before cleanup decisions

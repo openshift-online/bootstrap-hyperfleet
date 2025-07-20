@@ -1,10 +1,4 @@
-# bin/new-cluster - Interactive Cluster Generator
-
-## Overview
-The `bin/new-cluster` tool is an interactive CLI that generates complete OpenShift/EKS cluster configurations for the bootstrap GitOps repository.
-
-## Implementation Status
-✅ **COMPLETED** - Tool has been implemented and tested successfully.
+# bin/new-cluster Requirements
 
 ## Requirements
 
@@ -96,76 +90,6 @@ Automatically calls `bin/generate-cluster` to create:
 - **Error handling** with debug commands if validation fails
 - Lists all generated files and provides next steps
 
-## Usage
-
-```bash
-./bin/new-cluster
-```
-
-The tool will interactively prompt for all required information and generate a complete cluster configuration ready for GitOps deployment.
-
-## Example Output
-
-```
-OpenShift Regional Cluster Generator
-===================================
-
-Please provide the following information for your new cluster:
-
-Cluster Type (ocp/eks/hcp) [ocp]: hcp
-Region [us-west-2]: us-east-1
-Base Domain [rosa.mturansk-test.csu2.i3.devshift.org]: 
-Instance Type [m5.2xlarge]: m5.large
-Number of Replicas [2]: 3
-
-Generating cluster name...
-Next available cluster name: hcp-01
-
-Configuration Summary:
-=====================
-Cluster Name: hcp-01 (auto-generated)
-Type: hcp
-Region: us-east-1
-Domain: rosa.mturansk-test.csu2.i3.devshift.org
-Instance Type: m5.large
-Replicas: 3
-
-Proceed with cluster generation? (y/N): y
-
-Generated regional specification at: regions/us-east-1/hcp-01/region.yaml
-Running bin/generate-cluster to create cluster configuration...
-[...generation output...]
-🎉 Cluster generation completed successfully!
-
-Validating generated configuration...
-
-Validating cluster configuration...
-✅ Cluster configuration is valid
-Validating deployments configuration...
-✅ Deployments configuration is valid
-Validating GitOps applications...
-✅ GitOps applications configuration is valid
-
-✅ All validation checks passed!
-```
-
-## Automatic Validation
-
-The tool now automatically runs validation checks after generating the cluster configuration:
-
-- **Cluster Configuration**: `oc kustomize clusters/[cluster-name]/`
-- **Deployments Configuration**: `oc kustomize deployments/ocm/[cluster-name]/`
-- **GitOps Applications**: `oc kustomize gitops-applications/`
-
-Each validation check shows a clear ✅ or ❌ status indicator. If validation fails, the tool provides debug commands to investigate the issues.
-
-## Integration with Bootstrap Workflow
-
-1. **Generation**: Use `bin/new-cluster` to create cluster configuration
-2. **Review**: Validate generated files and configuration
-3. **Commit**: Add changes to git repository
-4. **Deploy**: Run `./bin/bootstrap.sh` to provision cluster via GitOps
-
 ## Error Handling
 
 - Automatically generates semantic cluster names
@@ -187,3 +111,17 @@ Potential enhancements for future iterations:
 4. **Rollback Support**: Automatic cleanup on generation failure
 5. **Enhanced Validation**: Additional resource validation beyond kustomize
 6. **Multi-Region Support**: Cross-region cluster configurations
+
+## Related Tools
+
+### Prerequisites
+- **[bootstrap.md](./bootstrap.md)** - Sets up the GitOps infrastructure for cluster management
+
+### Direct Dependencies
+- **[generate-cluster.md](./generate-cluster.md)** - Automatically called to create complete cluster configurations
+
+### Bulk Operations
+- **[regenerate-all-clusters.md](./regenerate-all-clusters.md)** - Regenerates all clusters including those created by this tool
+
+### Alternative Workflows
+- **[convert-cluster.md](./convert-cluster.md)** - Converts existing clusters to the regional specification format
