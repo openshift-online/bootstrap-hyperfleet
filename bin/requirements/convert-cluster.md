@@ -1,13 +1,16 @@
-# Convert Cluster Tool
-
-**Converts existing complex cluster overlays into minimal regional specifications**
+# bin/convert-cluster Requirements
 
 ## Purpose
 
 The `convert-cluster` tool implements bidirectional conversion from the current complex Kustomize-based cluster configurations to the new simplified Regional Cluster specification format.
 
-## Usage
+## Functional Requirements
 
+### Input/Output Requirements
+- **Input**: Kustomize overlay directory (`clusters/overlay/cluster-XX/`)
+- **Output**: Minimal regional specification (YAML to stdout)
+
+### Usage Patterns
 ```bash
 # Convert OCP cluster
 ./bin/convert-cluster clusters/overlay/ocp-02 > regions/us-east-1/ocp-prod/region.yaml
@@ -15,9 +18,6 @@ The `convert-cluster` tool implements bidirectional conversion from the current 
 # Convert EKS cluster  
 ./bin/convert-cluster clusters/overlay/eks-02 > regions/ap-southeast-1/eks-dev/region.yaml
 ```
-
-**Input**: Kustomize overlay directory (`clusters/overlay/cluster-XX/`)
-**Output**: Minimal regional specification (YAML to stdout)
 
 ## Regional Specification Format
 
@@ -127,14 +127,14 @@ defaults:
 3. Extract cluster name from metadata
 4. Apply defaults and output minimal specification
 
-## Error Handling
+## Error Handling Requirements
 
 ### Converter Errors
 - **Missing files**: Graceful degradation with warnings
 - **Invalid YAML**: Clear error messages with file/line numbers
 - **Unsupported patterns**: Warnings about non-standard configurations
 
-## Validation Testing
+## Validation Requirements
 
 ```bash
 # Test conversion round-trip
@@ -146,7 +146,7 @@ kubectl kustomize clusters/overlay/ocp-02/ > /tmp/original.yaml
 diff /tmp/original.yaml /tmp/generated.yaml
 ```
 
-## Benefits
+## Benefits Requirements
 
 ### Before (Complex)
 - **ocp-02**: 7 files, 200+ lines, 84-line kustomization with complex JSON patches
@@ -158,12 +158,17 @@ diff /tmp/original.yaml /tmp/generated.yaml
 - **Cognitive Load**: All configuration visible in single file
 - **Maintenance**: Direct YAML, no patches, no base template hunting
 
-## Related Documentation
+## Related Tools
 
-- **[Generate Cluster Tool](./generate-cluster.md)** - Convert regional specs to Kustomize overlays
-- **[Regional Specification](../REGIONALSPEC.md)** - Complete regional cluster specification format
-- **[Cluster Creation Guide](../guides/cluster-creation.md)** - End-to-end cluster deployment workflow
+### Prerequisites
+- **[generate-cluster.md](./generate-cluster.md)** - Processes regional specifications created by this conversion tool
 
----
+### Alternative Workflows
+- **[new-cluster.md](./new-cluster.md)** - Creates new regional specifications from scratch
+
+### Bulk Operations
+- **[regenerate-all-clusters.md](./regenerate-all-clusters.md)** - Bulk generation from converted specifications
+
+## Design Principles
 
 *This design prioritizes **cognitive simplicity** - any developer can understand a cluster configuration in 30 seconds by reading one file.*

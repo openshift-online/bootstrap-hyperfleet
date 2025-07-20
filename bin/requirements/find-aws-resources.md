@@ -1,4 +1,4 @@
-# AWS Resource Discovery
+# bin/find-aws-resources Requirements
 
 ## Functional Requirements for bin/find-aws-resources
 
@@ -332,3 +332,15 @@ done
 - IAM roles and policies for node groups
 
 This comprehensive discovery approach ensures complete visibility into AWS resource consumption across all cluster types and regions used in this OpenShift bootstrap project.
+
+## Related Tools
+
+### Workflow Sequence
+- **[clean-aws.md](./clean-aws.md)** - Uses this tool's discovery patterns for resource cleanup
+
+### Validation and Testing
+- **[test-find-aws-resources.md](./test-find-aws-resources.md)** - Validates this tool's functionality and coverage
+
+### Cluster Management
+- **[generate-cluster.md](./generate-cluster.md)** - Creates the cluster configurations that generate these AWS resources
+- **[status.md](./status.md)** - Monitor clusters that consume AWS resources

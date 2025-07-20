@@ -55,6 +55,7 @@ The project uses semantic directory organization with consistent patterns:
 
 - Don't run `bin/bootstrap.sh` from a Claude session
 - When provisioning or managing OpenShift, always use `oc` client
+- Critical! Always use smart semantic naming for maximum usability and comprehensive
 
 ## Documentation Navigation
 
