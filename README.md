@@ -1,11 +1,15 @@
 # OpenShift Bootstrap
 
-**Audience**: All users  
-**Complexity**: Beginner to Intermediate  
-**Estimated Time**: 15 minutes to understand, 2 hours to implement  
-**Prerequisites**: Basic Kubernetes/OpenShift knowledge, AWS account access
+**GitOps-driven multi-cluster management for OpenShift and EKS.** Deploy and manage regional clusters at scale using a centralized hub cluster approach.
 
-Multi-cluster OpenShift and EKS management using GitOps automation. This repository provides everything needed to bootstrap and manage regional cluster deployments with a centralized hub cluster approach.
+This repository provides a complete automation framework for:
+- **Cluster provisioning** - OpenShift (via Hive) and EKS (via CAPI) clusters across multiple AWS regions
+- **GitOps automation** - ArgoCD ApplicationSets orchestrate deployments with proper dependency ordering  
+- **Operations at scale** - Advanced Cluster Management (ACM) provides unified cluster lifecycle management
+- **Pipeline automation** - Tekton pipelines deploy consistently across all managed clusters
+- **Service deployment** - OCM database services and applications deploy automatically to target clusters
+
+**Key benefits:** Single command cluster creation, automatic GitOps integration, semantic directory organization for intuitive navigation, and support for hybrid OpenShift/EKS environments.
 
 ## 🏗️ Architecture Overview
 
