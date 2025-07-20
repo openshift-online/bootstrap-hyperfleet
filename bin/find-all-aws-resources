@@ -1,0 +1,625 @@
+#!/bin/bash
+set -euo pipefail
+
+# bin/find-all-aws-resources - Comprehensive AWS resource inventory for all clusters
+# Automatically discovers and catalogs AWS resources for every cluster in this repository
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default values
+DEBUG=${DEBUG:-false}
+INCLUDE_COSTS=false
+OUTPUT_FORMAT="table"  # table|csv|json
+CLUSTER_PATTERN=""
+REGION_FILTER=""
+REFRESH_CACHE=false
+DETAILED_BREAKDOWN=false
+
+# Temporary and cache directories
+TEMP_DIR="/tmp/find-all-aws-resources-$$"
+CACHE_DIR="${HOME}/.cache/bootstrap-aws-resources"
+
+# Usage information
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Discover and catalog AWS resources for all clusters in this repository.
+
+OPTIONS:
+    --include-costs        Include cost analysis in output
+    --format FORMAT        Output format: table (default), csv, json
+    --cluster-pattern PAT  Only process clusters matching pattern
+    --region REGION        Only process specified region
+    --detailed             Include detailed resource breakdown
+    --refresh              Refresh cache (re-run discovery)
+    --debug                Enable debug output
+    --help                 Show this help message
+
+EXAMPLES:
+    $0                                    # Basic inventory
+    $0 --include-costs                    # With cost analysis
+    $0 --format csv > resources.csv       # CSV export
+    $0 --cluster-pattern "ocp-*"          # Only OCP clusters
+    $0 --region us-west-2                 # Single region
+    $0 --detailed --include-costs         # Full analysis
+
+OUTPUT:
+    Generates comprehensive tables showing resource usage across all clusters:
+    - Master summary table with resource counts per cluster
+    - Regional distribution summary
+    - Resource type breakdown
+    - Cost analysis (optional)
+    - Detailed resource listings (optional)
+
+EOF
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --include-costs)
+            INCLUDE_COSTS=true
+            shift
+            ;;
+        --format)
+            OUTPUT_FORMAT="$2"
+            shift 2
+            ;;
+        --cluster-pattern)
+            CLUSTER_PATTERN="$2"
+            shift 2
+            ;;
+        --region)
+            REGION_FILTER="$2"
+            shift 2
+            ;;
+        --detailed)
+            DETAILED_BREAKDOWN=true
+            shift
+            ;;
+        --refresh)
+            REFRESH_CACHE=true
+            shift
+            ;;
+        --debug)
+            DEBUG=true
+            set -x
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Debug logging function
+debug_log() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "[DEBUG $(date '+%H:%M:%S')] $*" >&2
+    fi
+}
+
+# Setup directories and cleanup
+setup() {
+    debug_log "Setting up directories..."
+    mkdir -p "$TEMP_DIR" "$CACHE_DIR"
+    trap cleanup EXIT
+}
+
+cleanup() {
+    debug_log "Cleaning up temporary files..."
+    rm -rf "$TEMP_DIR"
+}
+
+# Validate dependencies
+check_dependencies() {
+    debug_log "Checking dependencies..."
+    
+    local missing_deps=()
+    
+    command -v aws >/dev/null 2>&1 || missing_deps+=("aws")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+    if [[ "$INCLUDE_COSTS" == "true" ]]; then
+        command -v bc >/dev/null 2>&1 || missing_deps+=("bc")
+    fi
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "❌ Error: Missing required dependencies: ${missing_deps[*]}"
+        echo "   Install missing tools and try again"
+        exit 1
+    fi
+    
+    # Check AWS credentials
+    if ! aws sts get-caller-identity >/dev/null 2>&1; then
+        echo "❌ Error: AWS credentials not configured"
+        echo "   Run: aws configure"
+        exit 1
+    fi
+    
+    # Check for find-aws-resources tool
+    if [[ ! -x "${SCRIPT_DIR}/find-aws-resources" ]]; then
+        echo "❌ Error: find-aws-resources tool not found or not executable"
+        echo "   Expected: ${SCRIPT_DIR}/find-aws-resources"
+        exit 1
+    fi
+    
+    debug_log "All dependencies satisfied"
+}
+
+# Validate repository structure
+check_repository() {
+    debug_log "Checking repository structure..."
+    
+    if [[ ! -d "regions/" && ! -d "clusters/" ]]; then
+        echo "❌ Error: No cluster configurations found"
+        echo "   Expected: regions/ or clusters/ directories"
+        echo "   Current directory: $(pwd)"
+        exit 1
+    fi
+    
+    debug_log "Repository structure valid"
+}
+
+# Auto-discover all clusters from repository structure
+find_repository_clusters() {
+    debug_log "Discovering clusters from repository structure..."
+    
+    local clusters_found=()
+    
+    # Scan regions/ directory for regional specifications
+    if [[ -d "regions/" ]]; then
+        debug_log "Scanning regions/ directory..."
+        while IFS= read -r -d '' region_dir; do
+            region_name=$(basename "$region_dir")
+            debug_log "Found region: $region_name"
+            
+            # Skip if region filter is set and doesn't match
+            if [[ -n "$REGION_FILTER" && "$region_name" != "$REGION_FILTER" ]]; then
+                debug_log "Skipping region $region_name (filter: $REGION_FILTER)"
+                continue
+            fi
+            
+            while IFS= read -r -d '' cluster_dir; do
+                cluster_name=$(basename "$cluster_dir")
+                debug_log "Found cluster spec: $cluster_name in $region_name"
+                
+                # Skip if cluster pattern is set and doesn't match
+                if [[ -n "$CLUSTER_PATTERN" && ! "$cluster_name" == $CLUSTER_PATTERN ]]; then
+                    debug_log "Skipping cluster $cluster_name (pattern: $CLUSTER_PATTERN)"
+                    continue
+                fi
+                
+                clusters_found+=("$cluster_name:$region_name:regional_spec")
+            done < <(find "$region_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+        done < <(find "regions/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+    fi
+    
+    # Scan clusters/ directory for deployed clusters
+    if [[ -d "clusters/" ]]; then
+        debug_log "Scanning clusters/ directory..."
+        while IFS= read -r -d '' cluster_dir; do
+            cluster_name=$(basename "$cluster_dir")
+            debug_log "Found deployed cluster: $cluster_name"
+            
+            # Skip if cluster pattern is set and doesn't match
+            if [[ -n "$CLUSTER_PATTERN" && ! "$cluster_name" == $CLUSTER_PATTERN ]]; then
+                debug_log "Skipping cluster $cluster_name (pattern: $CLUSTER_PATTERN)"
+                continue
+            fi
+            
+            # Try to extract region from cluster configuration
+            local region="unknown"
+            if [[ -f "$cluster_dir/kustomization.yaml" ]]; then
+                # Look for region in various places
+                local region_sources=(
+                    "$(grep -r "region:" "$cluster_dir" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || true)"
+                    "$(find regions/ -name "$cluster_name" -type d 2>/dev/null | head -1 | cut -d'/' -f2 || true)"
+                )
+                
+                for src in "${region_sources[@]}"; do
+                    if [[ -n "$src" && "$src" != "unknown" ]]; then
+                        region="$src"
+                        break
+                    fi
+                done
+            fi
+            
+            debug_log "Detected region for $cluster_name: $region"
+            
+            # Skip if region filter is set and doesn't match
+            if [[ -n "$REGION_FILTER" && "$region" != "$REGION_FILTER" ]]; then
+                debug_log "Skipping cluster $cluster_name (region filter: $REGION_FILTER)"
+                continue
+            fi
+            
+            # Check if we already have this cluster from regions scan
+            local already_found=false
+            for existing in "${clusters_found[@]}"; do
+                if [[ "$existing" == "$cluster_name:$region:"* ]]; then
+                    already_found=true
+                    break
+                fi
+            done
+            
+            if [[ "$already_found" == "false" ]]; then
+                clusters_found+=("$cluster_name:$region:deployed")
+            fi
+        done < <(find "clusters/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+    fi
+    
+    # Output discovered clusters
+    printf '%s\n' "${clusters_found[@]}"
+    
+    debug_log "Found ${#clusters_found[@]} clusters total"
+}
+
+# Run find-aws-resources for each discovered cluster
+discover_all_cluster_resources() {
+    local cluster_list="$1"
+    
+    debug_log "Starting resource discovery for all clusters..."
+    
+    local cluster_count=0
+    local successful_discoveries=0
+    local failed_discoveries=0
+    
+    while IFS=':' read -r cluster region status; do
+        [[ -n "$cluster" ]] || continue
+        
+        ((cluster_count++))
+        
+        local cache_file="${CACHE_DIR}/resources-${cluster}-${region}.txt"
+        local temp_file="${TEMP_DIR}/resources-${cluster}-${region}.txt"
+        
+        echo "Processing: $cluster in $region ($status)"
+        
+        # Use cache if available and not refreshing
+        if [[ "$REFRESH_CACHE" == "false" && -f "$cache_file" && -s "$cache_file" ]]; then
+            debug_log "Using cached results for $cluster"
+            cp "$cache_file" "$temp_file"
+            echo "✅ Resources loaded from cache for $cluster"
+            ((successful_discoveries++))
+            continue
+        fi
+        
+        # Run find-aws-resources for this cluster
+        debug_log "Running find-aws-resources for $cluster in $region"
+        if "${SCRIPT_DIR}/find-aws-resources" "$cluster" "$region" > "$temp_file" 2>&1; then
+            echo "✅ Resources discovered for $cluster"
+            # Cache successful results
+            cp "$temp_file" "$cache_file"
+            ((successful_discoveries++))
+        else
+            echo "❌ Failed to discover resources for $cluster"
+            echo "   Check that cluster is deployed and accessible in $region"
+            
+            # Create empty file to avoid breaking table generation
+            echo "# No resources found for $cluster in $region" > "$temp_file"
+            ((failed_discoveries++))
+        fi
+    done <<< "$cluster_list"
+    
+    echo ""
+    echo "Discovery Summary:"
+    echo "  Total clusters: $cluster_count"
+    echo "  Successful: $successful_discoveries"
+    echo "  Failed: $failed_discoveries"
+    echo ""
+}
+
+# Parse resource counts from discovery output
+parse_resource_counts() {
+    local resource_file="$1"
+    local resource_type="$2"
+    
+    case "$resource_type" in
+        "ec2")
+            grep -c "EC2 Instance:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "ebs")
+            grep -c -E "(EBS Volume:|Volume:|vol-)" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "elb")
+            grep -c -E "(Load Balancer:|Classic Load Balancer:)" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "vpc")
+            grep -c "VPC:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "subnet")
+            grep -c "Subnet:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "nat")
+            grep -c "NAT Gateway:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "igw")
+            grep -c "Internet Gateway:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        "sg")
+            grep -c "Security Group:" "$resource_file" 2>/dev/null || echo "0"
+            ;;
+        *)
+            echo "0"
+            ;;
+    esac
+}
+
+# Generate comprehensive resource summary table
+generate_master_table() {
+    debug_log "Generating master resource table..."
+    
+    local format="$1"
+    local total_clusters=0
+    local total_resources=0
+    local total_cost=0
+    
+    case "$format" in
+        "csv")
+            echo "Cluster,Region,Status,EC2_Instances,EBS_Volumes,Load_Balancers,VPCs,Subnets,Total_Resources"
+            ;;
+        "json")
+            echo '{"clusters":['
+            ;;
+        *)
+            echo "| Cluster | Region | Status | EC2 Instances | EBS Volumes | Load Balancers | VPCs | Subnets | Total Resources |"
+            echo "|---------|--------|--------|---------------|-------------|----------------|------|---------|-----------------|"
+            ;;
+    esac
+    
+    local json_entries=()
+    
+    for resource_file in "${TEMP_DIR}"/resources-*.txt; do
+        [[ -f "$resource_file" ]] || continue
+        
+        local filename=$(basename "$resource_file")
+        local cluster=$(echo "$filename" | cut -d'-' -f2)
+        local region=$(echo "$filename" | cut -d'-' -f3 | cut -d'.' -f1)
+        
+        # Parse resource counts
+        local ec2_count=$(parse_resource_counts "$resource_file" "ec2")
+        local ebs_count=$(parse_resource_counts "$resource_file" "ebs")
+        local elb_count=$(parse_resource_counts "$resource_file" "elb")
+        local vpc_count=$(parse_resource_counts "$resource_file" "vpc")
+        local subnet_count=$(parse_resource_counts "$resource_file" "subnet")
+        
+        local total=$((ec2_count + ebs_count + elb_count + vpc_count + subnet_count))
+        
+        # Determine cluster status
+        local status="Unknown"
+        if [[ -f "clusters/$cluster/kustomization.yaml" ]]; then
+            status="Deployed"
+        elif [[ -d "regions/$region/$cluster" ]]; then
+            status="Spec Only"
+        fi
+        
+        case "$format" in
+            "csv")
+                echo "$cluster,$region,$status,$ec2_count,$ebs_count,$elb_count,$vpc_count,$subnet_count,$total"
+                ;;
+            "json")
+                local cost_data=""
+                if [[ "$INCLUDE_COSTS" == "true" ]]; then
+                    local cluster_cost=$(calculate_cluster_cost "$ec2_count" "$ebs_count" "$elb_count")
+                    cost_data=",\"estimated_monthly_cost\":$cluster_cost"
+                    total_cost=$(echo "$total_cost + $cluster_cost" | bc -l)
+                fi
+                
+                json_entries+=("{\"cluster\":\"$cluster\",\"region\":\"$region\",\"status\":\"$status\",\"resources\":{\"ec2\":$ec2_count,\"ebs\":$ebs_count,\"elb\":$elb_count,\"vpc\":$vpc_count,\"subnet\":$subnet_count,\"total\":$total}$cost_data}")
+                ;;
+            *)
+                echo "| $cluster | $region | $status | $ec2_count | $ebs_count | $elb_count | $vpc_count | $subnet_count | $total |"
+                ;;
+        esac
+        
+        ((total_clusters++))
+        total_resources=$((total_resources + total))
+    done
+    
+    if [[ "$format" == "json" ]]; then
+        # Join JSON entries
+        local IFS=','
+        echo "${json_entries[*]}"
+        echo '],"summary":{"total_clusters":'$total_clusters',"total_resources":'$total_resources
+        if [[ "$INCLUDE_COSTS" == "true" ]]; then
+            echo ',"total_estimated_monthly_cost":'$total_cost
+        fi
+        echo '}}'
+    elif [[ "$format" == "table" ]]; then
+        echo ""
+        echo "Total Clusters: $total_clusters"
+        echo "Total Resources: $total_resources"
+        if [[ "$INCLUDE_COSTS" == "true" ]]; then
+            printf "Total Estimated Monthly Cost: \$%.2f\n" "$total_cost"
+        fi
+    fi
+}
+
+# Calculate estimated monthly cost for a cluster
+calculate_cluster_cost() {
+    local ec2_count="$1"
+    local ebs_count="$2"
+    local elb_count="$3"
+    
+    # Cost estimates (USD per month)
+    local ec2_hourly_cost=0.20  # Average cost per hour for m5.xlarge
+    local ebs_monthly_cost=0.10  # Cost per GB per month for gp3
+    local elb_monthly_cost=18.00  # Cost per ALB per month
+    
+    local ec2_cost=$(echo "$ec2_count * $ec2_hourly_cost * 24 * 30" | bc -l)
+    local ebs_cost=$(echo "$ebs_count * 100 * $ebs_monthly_cost" | bc -l)  # Assume 100GB per volume
+    local elb_cost=$(echo "$elb_count * $elb_monthly_cost" | bc -l)
+    
+    echo "$ec2_cost + $ebs_cost + $elb_cost" | bc -l
+}
+
+# Generate cost analysis table
+generate_cost_analysis() {
+    debug_log "Generating cost analysis..."
+    
+    echo ""
+    echo "=== Estimated Monthly Costs by Cluster ==="
+    echo ""
+    echo "| Cluster | Region | EC2 Cost | EBS Cost | Load Balancer Cost | Total Est. Cost |"
+    echo "|---------|--------|----------|----------|-------------------|-----------------|"
+    
+    local total_cost=0
+    
+    for resource_file in "${TEMP_DIR}"/resources-*.txt; do
+        [[ -f "$resource_file" ]] || continue
+        
+        local filename=$(basename "$resource_file")
+        local cluster=$(echo "$filename" | cut -d'-' -f2)
+        local region=$(echo "$filename" | cut -d'-' -f3 | cut -d'.' -f1)
+        
+        local ec2_count=$(parse_resource_counts "$resource_file" "ec2")
+        local ebs_count=$(parse_resource_counts "$resource_file" "ebs")
+        local elb_count=$(parse_resource_counts "$resource_file" "elb")
+        
+        # Cost calculations
+        local ec2_hourly_cost=0.20
+        local ebs_monthly_cost=0.10
+        local elb_monthly_cost=18.00
+        
+        local ec2_cost=$(echo "$ec2_count * $ec2_hourly_cost * 24 * 30" | bc -l)
+        local ebs_cost=$(echo "$ebs_count * 100 * $ebs_monthly_cost" | bc -l)
+        local elb_cost=$(echo "$elb_count * $elb_monthly_cost" | bc -l)
+        local cluster_total=$(echo "$ec2_cost + $ebs_cost + $elb_cost" | bc -l)
+        
+        printf "| %s | %s | \$%.2f | \$%.2f | \$%.2f | \$%.2f |\n" \
+            "$cluster" "$region" "$ec2_cost" "$ebs_cost" "$elb_cost" "$cluster_total"
+        
+        total_cost=$(echo "$total_cost + $cluster_total" | bc -l)
+    done
+    
+    echo ""
+    printf "Total Estimated Monthly Cost: \$%.2f\n" "$total_cost"
+}
+
+# Generate regional distribution summary
+generate_regional_summary() {
+    debug_log "Generating regional summary..."
+    
+    echo ""
+    echo "=== Resource Distribution by Region ==="
+    echo ""
+    
+    declare -A region_clusters region_resources region_costs
+    
+    for resource_file in "${TEMP_DIR}"/resources-*.txt; do
+        [[ -f "$resource_file" ]] || continue
+        
+        local filename=$(basename "$resource_file")
+        local cluster=$(echo "$filename" | cut -d'-' -f2)
+        local region=$(echo "$filename" | cut -d'-' -f3 | cut -d'.' -f1)
+        
+        local ec2_count=$(parse_resource_counts "$resource_file" "ec2")
+        local ebs_count=$(parse_resource_counts "$resource_file" "ebs")
+        local elb_count=$(parse_resource_counts "$resource_file" "elb")
+        local vpc_count=$(parse_resource_counts "$resource_file" "vpc")
+        local subnet_count=$(parse_resource_counts "$resource_file" "subnet")
+        
+        local total_resources=$((ec2_count + ebs_count + elb_count + vpc_count + subnet_count))
+        
+        region_clusters[$region]=$((${region_clusters[$region]:-0} + 1))
+        region_resources[$region]=$((${region_resources[$region]:-0} + total_resources))
+        
+        if [[ "$INCLUDE_COSTS" == "true" ]]; then
+            local cluster_cost=$(calculate_cluster_cost "$ec2_count" "$ebs_count" "$elb_count")
+            region_costs[$region]=$(echo "${region_costs[$region]:-0} + $cluster_cost" | bc -l)
+        fi
+    done
+    
+    for region in "${!region_clusters[@]}"; do
+        echo "$region:"
+        echo "  - Clusters: ${region_clusters[$region]}"
+        echo "  - Total Resources: ${region_resources[$region]}"
+        if [[ "$INCLUDE_COSTS" == "true" ]]; then
+            printf "  - Estimated Cost: \$%.2f\n" "${region_costs[$region]}"
+        fi
+        echo ""
+    done
+}
+
+# Generate detailed resource breakdown
+generate_detailed_breakdown() {
+    debug_log "Generating detailed breakdown..."
+    
+    echo ""
+    echo "=== Detailed Resource Breakdown by Cluster ==="
+    echo ""
+    
+    for resource_file in "${TEMP_DIR}"/resources-*.txt; do
+        [[ -f "$resource_file" ]] || continue
+        
+        local filename=$(basename "$resource_file")
+        local cluster=$(echo "$filename" | cut -d'-' -f2)
+        local region=$(echo "$filename" | cut -d'-' -f3 | cut -d'.' -f1)
+        
+        echo "## $cluster ($region)"
+        echo ""
+        
+        # Show first 10 lines of actual discovery output
+        echo "### Resource Discovery Output"
+        echo '```'
+        head -20 "$resource_file" | grep -v "^#" || echo "No detailed resource information available"
+        echo '```'
+        echo ""
+    done
+}
+
+# Main execution function
+main() {
+    setup
+    check_dependencies
+    check_repository
+    
+    echo "=== Multi-Cluster AWS Resource Inventory ==="
+    echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo ""
+    
+    # Discover all clusters
+    local cluster_list
+    cluster_list=$(find_repository_clusters)
+    
+    if [[ -z "$cluster_list" ]]; then
+        echo "No clusters found matching criteria"
+        exit 0
+    fi
+    
+    echo "Discovered clusters:"
+    echo "$cluster_list" | while IFS=':' read -r cluster region status; do
+        echo "  - $cluster ($region) [$status]"
+    done
+    echo ""
+    
+    # Discover resources for all clusters
+    discover_all_cluster_resources "$cluster_list"
+    
+    # Generate output based on format
+    case "$OUTPUT_FORMAT" in
+        "csv"|"json")
+            generate_master_table "$OUTPUT_FORMAT"
+            ;;
+        *)
+            generate_master_table "table"
+            generate_regional_summary
+            
+            if [[ "$INCLUDE_COSTS" == "true" ]]; then
+                generate_cost_analysis
+            fi
+            
+            if [[ "$DETAILED_BREAKDOWN" == "true" ]]; then
+                generate_detailed_breakdown
+            fi
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"
