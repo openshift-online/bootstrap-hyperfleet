@@ -83,7 +83,7 @@ flowchart TD
 ```
 
 **Role-Based Paths:**
-- **Administrator**: [Installation](../../INSTALL.md) → [Vault Setup](../../VAULT-SETUP.md) → [Operations](../operations/cluster-management.md)
+- **Administrator**: [Installation](./production-installation.md) → [Vault Setup](../../operators/vault/global/VAULT-SETUP.md) → [Operations](../operations/cluster-management.md)
 - **Operator**: [Quickstart](./quickstart.md) → [Cluster Management](../operations/cluster-management.md) → [Monitoring](../operations/monitoring.md)
 - **Developer**: [Architecture](../../ARCHITECTURE.md) → [Core Concepts](./concepts.md) → [GitOps Flow](../architecture/gitops-flow.md)
 - **New User**: [Core Concepts](./concepts.md) → [Quickstart](./quickstart.md) → [First Cluster](./first-cluster.md)
@@ -132,7 +132,7 @@ flowchart TD
 → [AWS Cleanup Guide](../../bin/clean-aws.md)
 
 #### Set up Vault integration
-→ [Vault Setup Guide](../../VAULT-SETUP.md)
+→ [Vault Setup Guide](../../operators/vault/global/VAULT-SETUP.md)
 
 #### Manage day-to-day operations
 → [Cluster Management Guide](../operations/cluster-management.md)
@@ -158,7 +158,7 @@ flowchart TD
 6. [Architecture Deep Dive](../architecture/gitops-flow.md) - Technical details
 
 **Advanced Path:**
-7. [Vault Integration](../../VAULT-SETUP.md) - Advanced security
+7. [Vault Integration](../../operators/vault/global/VAULT-SETUP.md) - Advanced security
 8. [Customization](../architecture/customization.md) - Extending the system
 9. [Troubleshooting Mastery](../operations/troubleshooting.md) - Expert-level problem solving
 

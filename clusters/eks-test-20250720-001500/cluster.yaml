@@ -1,0 +1,22 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: eks-test-20250720-001500
+  namespace: eks-test-20250720-001500
+  labels:
+    cloud: Amazon
+    region: us-west-2
+    vendor: EKS
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 192.168.0.0/16
+  infrastructureRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    kind: AWSManagedControlPlane
+    name: eks-test-20250720-001500
+  controlPlaneRef:
+    kind: AWSManagedControlPlane
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    name: eks-test-20250720-001500

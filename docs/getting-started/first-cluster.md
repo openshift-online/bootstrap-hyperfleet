@@ -113,7 +113,7 @@ oc --dry-run=client apply -k clusters/my-first-cluster/
 Launch the deployment:
 
 ```bash
-./bootstrap.sh
+./bin/bootstrap.sh
 ```
 
 **This triggers:**

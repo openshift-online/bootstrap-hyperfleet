@@ -29,7 +29,7 @@ Running services across regions
 
 ### 2. 🔄 Deploy via GitOps  
 ```bash
-./bootstrap.sh
+./bin/bootstrap.sh
 # ArgoCD automatically provisions cluster and deploys applications
 ```
 
@@ -72,10 +72,11 @@ Running services across regions
 
 Ready to dive deeper?
 
-1. **Full Setup**: [Complete Installation Guide](../../INSTALL.md)
-2. **Understand Architecture**: [Architecture Overview](../../ARCHITECTURE.md)  
-3. **Deploy Your First Cluster**: [Cluster Creation Guide](../../guides/cluster-creation.md)
-4. **Monitor & Troubleshoot**: [Monitoring Guide](../../guides/monitoring.md)
+1. **Basic Setup**: [Getting Started Installation](./installation.md)
+2. **Hands-On Guide**: [Deploy Your First Cluster](./first-cluster.md)
+3. **Understand Architecture**: [Architecture Overview](../architecture/ARCHITECTURE.md)  
+4. **Production Setup**: [Complete Installation Guide](./production-installation.md)
+5. **Monitor & Troubleshoot**: [Monitoring Guide](../../guides/monitoring.md)
 
 ## Common Use Cases
 

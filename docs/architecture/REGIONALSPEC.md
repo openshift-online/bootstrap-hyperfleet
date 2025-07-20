@@ -39,22 +39,42 @@ regions/
 
 ```yaml
 # regions/us-east-1/ocp-02/region.yaml
-type: ocp
-name: ocp-02
-region: us-east-1
-domain: rosa.mturansk-test.csu2.i3.devshift.org
-instanceType: m5.xlarge
-replicas: 1
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: ocp-02
+  namespace: us-east-1
+spec:
+  type: ocp
+  region: us-east-1
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Minimal compute config
+  compute:
+    instanceType: m5.xlarge
+    replicas: 1
 ```
 
 ```yaml
-# regions/ap-southeast-1/eks-02/region.yaml
-type: eks
-name: eks-02
-region: ap-southeast-1
-domain: rosa.mturansk-test.csu2.i3.devshift.org
-instanceType: m5.large
-replicas: 3
+# regions/us-east-2/eks-01-mturansk-test/region.yaml
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: eks-01-mturansk-test
+  namespace: us-east-2
+spec:
+  type: eks
+  region: us-east-2
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Minimal compute config
+  compute:
+    instanceType: m5.large
+    replicas: 3
+    
+  # Type-specific configuration
+  kubernetes:
+    version: "1.28"
 ```
 
 **Workers file only when different from defaults** (currently not implemented, but reserved):
@@ -148,13 +168,21 @@ compute:
   replicas: 1
 # ... 40+ more lines
 
-# After: region.yaml (7 lines)
-type: ocp
-name: ocp-02
-region: us-east-1
-domain: rosa.mturansk-test.csu2.i3.devshift.org
-instanceType: m5.xlarge
-replicas: 1
+# After: region.yaml (19 lines)
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: ocp-02
+  namespace: us-east-1
+spec:
+  type: ocp
+  region: us-east-1
+  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  
+  # Minimal compute config
+  compute:
+    instanceType: m5.xlarge
+    replicas: 1
 ```
 
 This design prioritizes **cognitive simplicity** - a developer can understand any cluster in 10 seconds by reading one file.
@@ -320,9 +348,9 @@ clusters/cluster-XX/
 **Regional Specification**:
 ```
 regions/region-name/cluster-XX/
-└── region.yaml                      # 6-7 lines - ALL config
+└── region.yaml                      # 19 lines - ALL config
 ```
-**Total**: ~7 lines (98% reduction in complexity)
+**Total**: ~19 lines (77% reduction in complexity)
 
 #### **For EKS Clusters** (Pattern is optimal):
 ```
@@ -340,9 +368,9 @@ clusters/cluster-XX/
 **Regional Specification**:
 ```
 regions/region-name/cluster-XX/
-└── region.yaml                      # 6 lines - ALL config
+└── region.yaml                      # 19 lines - ALL config
 ```
-**Total**: ~6 lines (95% reduction in complexity)
+**Total**: ~19 lines (83% reduction in complexity)
 
 ### Implementation Status ✅
 

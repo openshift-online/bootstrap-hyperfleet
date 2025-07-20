@@ -17,6 +17,28 @@ Multi-cluster OpenShift and EKS management using GitOps automation. This reposit
 
 ## 📁 Directory Structure & Navigation
 
+The repository uses **semantic directory organization** designed for intuitive navigation. Each directory level follows consistent patterns that clearly indicate purpose and scope.
+
+### 🔍 Semantic Organization Patterns
+
+**Top-level directories represent "things":**
+- `clusters/` - Cluster provisioning configurations
+- `operators/` - Application/operator deployments  
+- `pipelines/` - Pipeline configurations
+- `deployments/` - Service deployments
+- `regions/` - Regional cluster specifications
+- `bases/` - Reusable template components
+
+**Nested patterns follow logical hierarchy:**
+- **operators/{operator-name}/{deployment-target}/** - Service-first, then location
+- **pipelines/{pipeline-name}/{cluster-name}/** - Pipeline type, then target cluster  
+- **deployments/{service-name}/{cluster-name}/** - Service type, then deployment location
+- **regions/{aws-region}/{cluster-name}/** - Geographic organization
+
+**Deployment targets are consistent:**
+- `global/` - Hub cluster deployments (shared infrastructure)
+- `{cluster-name}/` - Managed cluster-specific deployments (e.g., `ocp-02/`, `eks-01/`)
+
 The repository is designed for **intuitive navigation** with each directory level showing your next options:
 
 ### 🔧 Generation Input (where you start)
@@ -58,14 +80,18 @@ deployments/                     # Service deployments (auto-generated)
     ├── ocp-02/             # OCM services for ocp-02
     └── ocp-03/             # OCM services for ocp-03
 
-operators/                       # Operator deployments
+operators/                       # Operator deployments ({operator-name}/{deployment-target})
 ├── advanced-cluster-management/
 │   └── global/                 # ACM hub cluster deployment
-└── openshift-pipelines/
-    ├── global/                 # Pipelines hub cluster deployment
-    ├── ocp-02/             # Pipelines operator for ocp-02
-    ├── ocp-03/             # Pipelines operator for ocp-03
-    └── eks-02/             # Pipelines operator for eks-02
+├── gitops-integration/
+│   └── global/                 # GitOps integration policies
+├── openshift-pipelines/
+│   ├── global/                 # Pipelines hub cluster deployment
+│   ├── ocp-02/             # Pipelines operator for ocp-02
+│   ├── ocp-03/             # Pipelines operator for ocp-03
+│   └── eks-02/             # Pipelines operator for eks-02
+└── vault/
+    └── global/                 # Vault secret management
 ```
 
 ### 🚀 GitOps Applications (orchestration)
@@ -95,6 +121,10 @@ ls operators/openshift-pipelines/ # → global, ocp-02, ocp-03, eks-02
 
 # Check GitOps applications
 ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
+
+# Explore operators by type
+ls operators/                 # → advanced-cluster-management, gitops-integration, openshift-pipelines, vault
+ls operators/vault/           # → global/
 ```
 
 **🎯 Key Navigation Benefits:**
@@ -102,6 +132,7 @@ ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
 - **Self-documenting**: Directory names clearly indicate their purpose  
 - **Easy discovery**: `ls` at any level shows your available options
 - **Logical grouping**: Related resources are co-located
+- **Semantic organization**: Resource type first, then deployment target
 - **Global vs Regional**: Clear separation between hub cluster (`global/`) and managed cluster (`cluster-XX/`) deployments
 
 ## 🚀 Quick Start
@@ -121,7 +152,7 @@ ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
 
 3. **Deploy via GitOps:**
 ```bash
-./bootstrap.sh
+./bin/bootstrap.sh
 ```
 
 **That's it!** The system automatically:
@@ -134,7 +165,7 @@ ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
 
 ## 📖 Documentation
 
-- **[INSTALL.md](./INSTALL.md)** - Complete installation guide (hub setup + adding regions)
+- **[docs/getting-started/production-installation.md](./docs/getting-started/production-installation.md)** - Complete installation guide (hub setup + adding regions)
 - **[NEWREGION.md](./NEWREGION.md)** - Detailed test plan for new cluster deployment
 - **[CLAUDE.md](./CLAUDE.md)** - Project overview and development guidance  
 
@@ -177,7 +208,7 @@ sequenceDiagram
    Admin->>Generator: ./bin/generate-cluster regions/us-west-2/ocp-05/
    Generator->>Git: Create overlays + ApplicationSet
    
-   Admin->>Hub: ./bootstrap.sh
+   Admin->>Hub: ./bin/bootstrap.sh
    Hub->>ArgoCD: Deploy ApplicationSet
    
    ArgoCD->>Git: Sync Wave 1 (cluster)
@@ -202,4 +233,4 @@ sequenceDiagram
 - **Rollback**: Clean rollback procedures for failed deployments
 - **Extensibility**: Base template system allows easy addition of new services and pipelines
 
-**For detailed installation and troubleshooting guidance, see [INSTALL.md](./INSTALL.md)**
+**For detailed installation and troubleshooting guidance, see [docs/getting-started/production-installation.md](./docs/getting-started/production-installation.md)**

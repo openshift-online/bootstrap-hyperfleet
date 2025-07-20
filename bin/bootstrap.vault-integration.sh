@@ -71,7 +71,7 @@ fi
 if ! oc get clustersecretstore vault-cluster-store >/dev/null 2>&1; then
   echo -e "${RED}❌ ClusterSecretStore 'vault-cluster-store' not found.${NC}"
   echo "Please run the Vault setup first:"
-  echo "  oc apply -f vault/cluster-secret-store.yaml"
+  echo "  oc apply -f operators/vault/global/cluster-secret-store.yaml"
   exit 1
 fi
 
