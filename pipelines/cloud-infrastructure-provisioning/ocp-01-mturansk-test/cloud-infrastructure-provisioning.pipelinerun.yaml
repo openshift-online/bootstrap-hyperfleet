@@ -1,0 +1,19 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-ocp-01-mturansk-test
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning-pipeline
+  params:
+    - name: cluster-name
+      value: ocp-01-mturansk-test
+    - name: cloud-provider
+      value: aws
+    - name: region
+      value: us-west-2
+    - name: instance-type
+      value: m5.2xlarge
+    - name: node-count
+      value: "2"

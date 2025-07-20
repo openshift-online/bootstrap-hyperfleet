@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: eks-test-20250720-001500
-  labels:
-    name: eks-test-20250720-001500
