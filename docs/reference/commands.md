@@ -36,7 +36,7 @@ oc get cluster.cluster.x-k8s.io -A  # EKS clusters
 ### Deployment Management
 ```bash
 # Deploy all GitOps applications
-./bootstrap.sh
+./bin/bootstrap.sh
 
 # Force application sync
 oc patch application APP-NAME -n openshift-gitops --type='merge' \
@@ -135,7 +135,7 @@ oc apply -f secrets/aws-credentials.yaml -n CLUSTER-NAME
 oc apply -f secrets/pull-secret.yaml -n CLUSTER-NAME
 
 # Run vault bootstrap script
-./bootstrap.vault.sh
+./bin/bootstrap.vault.sh
 ```
 
 ## 🔧 Cluster Operations
@@ -265,7 +265,7 @@ alias clusters='oc get managedcluster'
 
 # Common operations
 alias new-cluster='./bin/new-cluster'
-alias bootstrap='./bootstrap.sh'
+alias bootstrap='./bin/bootstrap.sh'
 alias clean-aws='./bin/clean-aws'
 
 # ArgoCD shortcuts

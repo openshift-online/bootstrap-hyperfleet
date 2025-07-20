@@ -164,7 +164,7 @@ Each validation check shows a clear ✅ or ❌ status indicator. If validation f
 1. **Generation**: Use `bin/new-cluster` to create cluster configuration
 2. **Review**: Validate generated files and configuration
 3. **Commit**: Add changes to git repository
-4. **Deploy**: Run `./bootstrap.sh` to provision cluster via GitOps
+4. **Deploy**: Run `./bin/bootstrap.sh` to provision cluster via GitOps
 
 ## Error Handling
 

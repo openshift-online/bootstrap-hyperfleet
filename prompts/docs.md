@@ -7,11 +7,11 @@
 - **`CLAUDE.md`** (Claude instructions) - Detailed project overview and development guidance  
 - **`ARCHITECTURE.md`** - Visual architecture diagram with GitOps sync wave flows
 - **`STATUS.md`** - Live cluster status with auto-generated health checks
-- **`VAULT-SETUP.md`** - Complete Vault + ESO integration guide
+- **`operators/vault/global/VAULT-SETUP.md`** - Complete Vault + ESO integration guide
 
 ### 📁 **Specialized Documentation**
 - **`NEWREGION.md`** - Interactive test plan for new cluster deployment
-- **`INSTALL.md`** - Complete installation guide
+- **`docs/getting-started/production-installation.md`** - Complete installation guide
 - **`KUSTOMIZATION.md`** - Kustomize configuration management
 - **`STATUSCHECKING.md`** - Status monitoring guidance
 - **`CONVERTER.md`** - Conversion utilities

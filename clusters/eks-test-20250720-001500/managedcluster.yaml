@@ -1,0 +1,12 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: eks-test-20250720-001500
+  namespace: eks-test-20250720-001500
+  labels:
+    name: eks-test-20250720-001500
+    cloud: Amazon
+    region: us-west-2
+    vendor: EKS
+spec:
+  hubAcceptsClient: true

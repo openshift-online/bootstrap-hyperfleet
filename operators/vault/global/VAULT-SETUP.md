@@ -80,7 +80,7 @@ oc exec vault-0 -n vault -- vault write auth/kubernetes/config \
 
 ```bash
 # Create ServiceAccount and RBAC for Vault authentication
-oc apply -f vault/vault-auth-serviceaccount.yaml
+oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
 ```
 
 ### Step 5: Configure Secret Policies
@@ -108,7 +108,7 @@ oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
 
 ```bash
 # Deploy the global ClusterSecretStore
-oc apply -f vault/cluster-secret-store.yaml
+oc apply -f operators/vault/global/cluster-secret-store.yaml
 
 # Verify ESO can connect to Vault
 oc get clustersecretstore vault-cluster-store -o yaml
@@ -146,14 +146,14 @@ oc exec vault-0 -n vault -- vault kv put secret/database-credentials \
 #### Per-Cluster Secret Deployment
 ```bash
 # Deploy secrets for ocp-02
-sed 's/CLUSTER_NAMESPACE/ocp-02/g' vault/external-secrets-template.yaml | oc apply -f -
+sed 's/CLUSTER_NAMESPACE/ocp-02/g' bases/ocm/external-secrets-template.yaml | oc apply -f -
 
 # Deploy secrets for ocp-03
-sed 's/CLUSTER_NAMESPACE/ocp-03/g' vault/external-secrets-template.yaml | oc apply -f -
+sed 's/CLUSTER_NAMESPACE/ocp-03/g' bases/ocm/external-secrets-template.yaml | oc apply -f -
 
 # Or use a loop for all clusters
 for cluster in ocp-02 ocp-03 ocp-04 eks-02 ocp-05; do
-    sed "s/CLUSTER_NAMESPACE/$cluster/g" vault/external-secrets-template.yaml | oc apply -f -
+    sed "s/CLUSTER_NAMESPACE/$cluster/g" bases/ocm/external-secrets-template.yaml | oc apply -f -
 done
 ```
 

@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: eks-test-20250720-001500-applications
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/eks-test-20250720-001500
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/eks-test-20250720-001500
+        destination: https://managed-eks-test-20250720-001500-us-west-2.eks.amazonaws.com
+        syncWave: "2"
+      - component: pipelines-hello-world
+        path: pipelines/hello-world/eks-test-20250720-001500
+        destination: https://managed-eks-test-20250720-001500-us-west-2.eks.amazonaws.com
+        syncWave: "3"
+      - component: pipelines-cloud-infrastructure-provisioning
+        path: pipelines/cloud-infrastructure-provisioning/eks-test-20250720-001500
+        destination: https://managed-eks-test-20250720-001500-us-west-2.eks.amazonaws.com
+        syncWave: "3"
+      - component: deployments-ocm
+        path: deployments/ocm/eks-test-20250720-001500
+        destination: https://managed-eks-test-20250720-001500-us-west-2.eks.amazonaws.com
+        syncWave: "4"
+  template:
+    metadata:
+      name: eks-test-20250720-001500-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false

@@ -272,5 +272,5 @@ oc port-forward -n vault vault-0 8200:8200
 
 - [Cluster Creation Guide](./cluster-creation.md) - Creating new clusters
 - [Architecture Overview](../ARCHITECTURE.md) - System architecture
-- [Installation Guide](../INSTALL.md) - Initial setup
+- [Installation Guide](../docs/getting-started/production-installation.md) - Initial setup
 - [AWS Cleanup Guide](../bin/clean-aws.md) - Resource cleanup

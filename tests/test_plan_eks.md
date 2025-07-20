@@ -257,15 +257,19 @@ oc get managedcluster eks-test-YYYYMMDD
 aws eks update-kubeconfig --name eks-test-YYYYMMDD --region us-west-2 --kubeconfig /tmp/eks-test-kubeconfig
 ```
 
-#### Step 5.2: Klusterlet CRD and Agent Installation
+#### Step 5.2: Automatic Klusterlet CRD Installation
 ```bash
-# The Klusterlet CRD should already be applied from cluster generation
-# If not, manually apply:
+# The Klusterlet CRD is now automatically deployed via GitOps
+# Check that the managed-cluster-setup ApplicationSet component deployed successfully
+oc get applications -n openshift-gitops | grep eks-test-YYYYMMDD-managed-cluster-setup
+# Expected: Application synced and healthy
+
+# Verify CRD was automatically installed on EKS cluster
 export KUBECONFIG=/tmp/eks-test-kubeconfig
 kubectl get crd klusterlets.operator.open-cluster-management.io
-# Expected: CRD exists
+# Expected: CRD exists on EKS cluster (deployed via GitOps)
 
-# Extract and apply import manifest
+# Extract and apply import manifest (ACM will generate this after cluster registration)
 oc get secret eks-test-YYYYMMDD-import -n eks-test-YYYYMMDD -o jsonpath='{.data.import\.yaml}' | base64 -d > .secrets/import.yaml
 kubectl apply -f .secrets/import.yaml
 

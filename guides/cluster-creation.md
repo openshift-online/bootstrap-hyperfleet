@@ -30,7 +30,7 @@ The tool automatically creates:
 
 ### 3. Deploy via GitOps
 ```bash
-./bootstrap.sh
+./bin/bootstrap.sh
 ```
 
 ## Detailed Workflow & Validation
@@ -124,7 +124,7 @@ replicas: [Replicas]
 **Objective**: Verify GitOps workflow deployment using ApplicationSet
 
 **Steps**:
-1. ✅ Run bootstrap: `./bootstrap.sh`
+1. ✅ Run bootstrap: `./bin/bootstrap.sh`
 2. ✅ Check ApplicationSet status
 3. ✅ Check generated applications with proper sync wave ordering
 4. ✅ Verify cluster provisioning (OCP: ClusterDeployment, EKS: AWSManagedControlPlane)
@@ -236,6 +236,6 @@ After successful cluster creation:
 ## Related Documentation
 
 - [Architecture Overview](../ARCHITECTURE.md) - Visual architecture diagrams
-- [Installation Guide](../INSTALL.md) - Hub cluster setup
+- [Installation Guide](../docs/getting-started/production-installation.md) - Hub cluster setup
 - [Monitoring Guide](./monitoring.md) - Status checking procedures
 - [AWS Cleanup Guide](../bin/clean-aws.md) - Resource cleanup procedures

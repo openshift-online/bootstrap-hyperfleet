@@ -280,7 +280,7 @@ oc get policy -A
 oc describe policy cluster-policy -n open-cluster-management
 
 # Update policy templates
-vim operators/advanced-cluster-management/global/gitops-integration/policies/
+vim operators/gitops-integration/global/policies/
 ```
 
 ### Audit and Reporting

@@ -1,0 +1,18 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: eks-test-20250720-001500
+  namespace: eks-test-20250720-001500
+spec:
+  clusterName: eks-test-20250720-001500
+  replicas: 3
+  template:
+    spec:
+      bootstrap:
+        dataSecretName: ""
+      clusterName: eks-test-20250720-001500
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: AWSManagedMachinePool
+        name: eks-test-20250720-001500
+      version: "1.28.0"

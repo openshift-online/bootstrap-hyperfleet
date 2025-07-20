@@ -39,6 +39,7 @@ SUCCESS CRITERIA:
 
 ERROR HANDLING:
 - Missing MachinePool: Verify generator includes machinepool.yaml  
+- Missing Klusterlet CRD: Extract from hub cluster and apply to EKS cluster (remove metadata)
 - Pull secret issues: Copy working credentials from hub cluster
 - Version format errors: Ensure semantic versioning (1.28.0 not v1.28)
 - ACM import failures: Verify cluster is accessible and credentials are valid

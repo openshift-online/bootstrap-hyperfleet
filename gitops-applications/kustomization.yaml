@@ -11,13 +11,17 @@ resources:
 - ./global/vault.application.yaml
 - ./global/eso.application.yaml
 
+- ./eks-test-20250720-001500.yaml
+
+
+
+
 
 - ./eks-05-gitea-final.yaml
 
 
 
 
-- ./ocp-01-mturansk-test.yaml
 
 - ./eks-01-mturansk-test.yaml
 

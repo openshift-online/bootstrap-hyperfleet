@@ -2,38 +2,38 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                 HUB CLUSTER                                          │
+│                                 HUB CLUSTER                                         │
 │                            (OpenShift + ArgoCD + ACM)                               │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐                 │
-│  │   ArgoCD        │    │      ACM        │    │   Tekton        │                 │
-│  │   GitOps        │    │ MultiClusterHub │    │   Pipelines     │                 │
-│  │                 │    │                 │    │                 │                 │
-│  │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │                 │
-│  │ │Applications │ │    │ │Infrastructur│ │    │ │   Global    │ │                 │
-│  │ │    ets      │ │    │ │  Providers  │ │    │ │  Operators  │ │                 │
-│  │ │             │ │    │ │             │ │    │ │             │ │                 │
-│  │ │• ocp-02 │ │    │ │• AWS (EKS)  │ │    │ │• Pipelines  │ │                 │
-│  │ │• ocp-03 │ │    │ │• Azure(AKS) │ │    │ │  Operator   │ │                 │
-│  │ │• ocp-04 │ │    │ │• GCP (GKE)  │ │    │ │             │ │                 │
-│  │ │• eks-02 │ │    │ │• vSphere    │ │    │ │             │ │                 │
-│  │ └─────────────┘ │    │ │• OpenStack  │ │    │ └─────────────┘ │                 │
-│  └─────────────────┘    │ │• BareMetal  │ │    └─────────────────┘                 │
-│                         │ └─────────────┘ │                                        │
-│                         └─────────────────┘                                        │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐                  │
+│  │   ArgoCD        │    │      ACM        │    │   Tekton        │                  │
+│  │   GitOps        │    │ MultiClusterHub │    │   Pipelines     │                  │
+│  │                 │    │                 │    │                 │                  │
+│  │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │                  │
+│  │ │Applications │ │    │ │Infrastructur│ │    │ │   Global    │ │                  │
+│  │ │    ets      │ │    │ │  Providers  │ │    │ │  Operators  │ │                  │
+│  │ │             │ │    │ │             │ │    │ │             │ │                  │
+│  │ │• ocp-02     │ │    │ │• AWS (EKS)  │ │    │ │• Pipelines  │ │                  │
+│  │ │• ocp-03     │ │    │ │• Azure(AKS) │ │    │ │  Operator   │ │                  │
+│  │ │• ocp-04     │ │    │ │• GCP (GKE)  │ │    │ │             │ │                  │
+│  │ │• eks-02     │ │    │ │• vSphere    │ │    │ │             │ │                  │
+│  │ └─────────────┘ │    │ │• OpenStack  │ │    │ └─────────────┘ │                  │
+│  └─────────────────┘    │ │• BareMetal  │ │    └─────────────────┘                  │
+│                         │ └─────────────┘ │                                         │
+│                         └─────────────────┘                                         │
 │                                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                      CAPI CRDs & Resources                                  │   │
-│  │                                                                             │   │
-│  │  OCP Clusters (Hive)           EKS Clusters (CAPI)                        │   │
-│  │  ┌─────────────────┐            ┌─────────────────┐                        │   │
-│  │  │ClusterDeployment│            │AWSManagedControl│                        │   │
-│  │  │MachinePool      │            │Plane            │                        │   │
-│  │  │InstallConfig    │            │AWSManagedMachine│                        │   │
-│  │  │                 │            │Pool             │                        │   │
-│  │  └─────────────────┘            └─────────────────┘                        │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐    │
+│  │                      CAPI CRDs & Resources                                  │    │
+│  │                                                                             │    │
+│  │  OCP Clusters (Hive)           EKS Clusters (CAPI)                          │    │
+│  │  ┌─────────────────┐            ┌─────────────────┐                         │    │
+│  │  │ClusterDeployment│            │AWSManagedControl│                         │    │
+│  │  │MachinePool      │            │Plane            │                         │    │
+│  │  │InstallConfig    │            │AWSManagedMachine│                         │    │
+│  │  │                 │            │Pool             │                         │    │
+│  │  └─────────────────┘            └─────────────────┘                         │    │
+│  └─────────────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
                                           │ GitOps Sync
@@ -45,7 +45,7 @@
 │   us-east-1     │              │   us-west-2     │              │ ap-southeast-1  │
 │                 │              │                 │              │                 │
 │  ┌───────────┐  │              │  ┌───────────┐  │              │  ┌───────────┐  │
-│  │ocp-02 │  │              │  │ocp-04 │  │              │  │eks-02 │  │
+│  │ocp-02     │  │              │  │ocp-04     │  │              │  │eks-02     │  │
 │  │   (OCP)   │  │              │  │   (OCP)   │  │              │  │   (EKS)   │  │
 │  │           │  │              │  │           │  │              │  │           │  │
 │  │┌─────────┐│  │              │  │┌─────────┐│  │              │  │┌─────────┐│  │
@@ -65,7 +65,7 @@
 │  └───────────┘  │              │  └───────────┘  │              │  └───────────┘  │
 │                 │              │                 │              │                 │
 │  ┌───────────┐  │              │                 │              │                 │
-│  │ocp-03 │  │              │                 │              │                 │
+│  │ocp-03     │  │              │                 │              │                 │
 │  │   (OCP)   │  │              │                 │              │                 │
 │  │           │  │              │                 │              │                 │
 │  │┌─────────┐│  │              │                 │              │                 │
@@ -92,33 +92,33 @@ GitOps Sync Wave Flow:
 │                                                                                     │
 │  Wave 1: Cluster Provisioning                                                      │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Hub Cluster → cluster-XX namespace → CAPI/Hive Resources                   │   │
-│  │ • OCP: ClusterDeployment + MachinePool + InstallConfig                     │   │
-│  │ • EKS: Cluster + AWSManagedControlPlane + AWSManagedMachinePool            │   │
+│  │ Hub Cluster → cluster-XX namespace → CAPI/Hive Resources                    │   │
+│  │ • OCP: ClusterDeployment + MachinePool + InstallConfig                      │   │
+│  │ • EKS: Cluster + AWSManagedControlPlane + AWSManagedMachinePool             │   │
 │  └─────────────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                               │
 │                                    ▼                                               │
 │  Wave 2: Operators Installation                                                    │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐   │
 │  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • OpenShift Pipelines Operator                                             │   │
-│  │ • CRDs: Pipeline, PipelineRun, Task, TaskRun                              │   │
+│  │ • OpenShift Pipelines Operator                                              │   │
+│  │ • CRDs: Pipeline, PipelineRun, Task, TaskRun                                │   │
 │  └─────────────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                               │
 │                                    ▼                                               │
 │  Wave 3: Pipeline Deployment                                                       │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐   │
 │  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • Hello World Pipeline + PipelineRun                                       │   │
-│  │ • Cloud Infrastructure Pipeline + PipelineRun                              │   │
+│  │ • Hello World Pipeline + PipelineRun                                        │   │
+│  │ • Cloud Infrastructure Pipeline + PipelineRun                               │   │
 │  └─────────────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                               │
 │                                    ▼                                               │
 │  Wave 4: Service Deployment                                                        │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐   │
 │  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • OCM Services: AMS-DB, OSL-DB, CS-DB                                      │   │
-│  │ • Persistent Volumes + Services + Deployments                              │   │
+│  │ • OCM Services: AMS-DB, OSL-DB, CS-DB                                       │   │
+│  │ • Persistent Volumes + Services + Deployments                               │   │
 │  └─────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                     │
 └─────────────────────────────────────────────────────────────────────────────────────┘
