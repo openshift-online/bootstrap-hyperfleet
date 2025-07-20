@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-eks-05-gitea-final
-  labels:
-    name: ocm-eks-05-gitea-final
