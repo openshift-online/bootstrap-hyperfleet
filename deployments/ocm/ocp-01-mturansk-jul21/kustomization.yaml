@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-ocp-01-mturansk-jul21
+
+resources:
+  - ../../../bases/ocm
+  - namespace.yaml
