@@ -10,17 +10,5 @@ resources:
 
 - ./global/vault.application.yaml
 - ./global/eso.application.yaml
-
-- ./ocp-01-mturansk-test.yaml
-
-
-
-
-
-
-
-
-
-
-
+- ./global/gitea.application.yaml
 
