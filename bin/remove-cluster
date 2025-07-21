@@ -1,0 +1,357 @@
+#!/bin/bash
+set -e
+
+# Interactive CLI tool for removing cluster configurations and resources
+# This tool systematically removes all references to a cluster
+
+echo "OpenShift Regional Cluster Removal Tool"
+echo "======================================="
+echo ""
+
+# Function to show usage
+usage() {
+    echo "Usage: $0 [OPTIONS] [CLUSTER_NAME]"
+    echo ""
+    echo "Options:"
+    echo "  --dry-run      Show what would be removed without actually removing"
+    echo "  --force        Skip confirmation prompts"
+    echo "  --hub-only     Only remove hub cluster resources"
+    echo "  --files-only   Only remove repository files"
+    echo "  -h, --help     Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 ocp-01"
+    echo "  $0 --dry-run eks-02-test" 
+    echo "  $0 --force --files-only hcp-01"
+    exit 1
+}
+
+# Parse command line arguments
+DRY_RUN=false
+FORCE=false
+HUB_ONLY=false
+FILES_ONLY=false
+CLUSTER_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --force)
+            FORCE=true
+            shift
+            ;;
+        --hub-only)
+            HUB_ONLY=true
+            shift
+            ;;
+        --files-only)
+            FILES_ONLY=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo "Unknown option $1"
+            usage
+            ;;
+        *)
+            CLUSTER_NAME="$1"
+            shift
+            ;;
+    esac
+done
+
+# Function to validate semantic cluster naming
+validate_cluster_name() {
+    local name="$1"
+    
+    # Check if name matches semantic format: {type}-{number} or {type}-{number}-{suffix}
+    if [[ ! "$name" =~ ^(ocp|eks|hcp)-[0-9]+ ]]; then
+        echo "Error: Cluster name must follow format {type}-{number} or {type}-{number}-{suffix}" >&2
+        echo "       Valid types: ocp, eks, hcp" >&2
+        echo "       Examples: ocp-01, eks-02-test, hcp-01-dev" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to find cluster in regions
+find_cluster_region() {
+    local name="$1"
+    
+    if [ -d "regions" ]; then
+        for region_dir in regions/*/"$name"; do
+            if [ -d "$region_dir" ] && [ -f "$region_dir/region.yaml" ]; then
+                # Extract region from path (e.g., regions/us-west-2/cluster -> us-west-2)
+                echo "$(basename "$(dirname "$region_dir")")"
+                return 0
+            fi
+        done
+    fi
+    
+    return 1
+}
+
+# Function to check if cluster exists
+validate_cluster_exists() {
+    local name="$1"
+    local found=false
+    
+    # Check if regional specification exists
+    if find regions -name "$name" -type d 2>/dev/null | grep -q .; then
+        found=true
+    fi
+    
+    # Check if cluster directory exists
+    if [ -d "clusters/$name" ]; then
+        found=true
+    fi
+    
+    # Check if gitops application exists
+    if [ -f "gitops-applications/$name.yaml" ]; then
+        found=true
+    fi
+    
+    if [ "$found" = false ]; then
+        echo "Error: Cluster '$name' not found in repository" >&2
+        echo "Checked:"
+        echo "  - regions/*/$name/"
+        echo "  - clusters/$name/"
+        echo "  - gitops-applications/$name.yaml"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to execute or show command
+execute_or_show() {
+    local cmd="$1"
+    local description="$2"
+    
+    if [ "$DRY_RUN" = true ]; then
+        echo "[DRY-RUN] $description: $cmd"
+    else
+        echo "$description..."
+        eval "$cmd" || echo "  Warning: Command failed (continuing)"
+    fi
+}
+
+# Function to remove file or directory
+remove_path() {
+    local path="$1"
+    local description="$2"
+    
+    if [ -e "$path" ]; then
+        execute_or_show "rm -rf \"$path\"" "$description"
+    else
+        if [ "$DRY_RUN" = true ]; then
+            echo "[DRY-RUN] $description: $path (not found)"
+        else
+            echo "$description: $path (not found, skipping)"
+        fi
+    fi
+}
+
+# Function to remove hub cluster resources
+remove_hub_resources() {
+    local name="$1"
+    
+    echo ""
+    echo "=== Phase 1: Removing Hub Cluster Resources ==="
+    
+    # Check if we can connect to the cluster
+    if ! oc whoami > /dev/null 2>&1; then
+        echo "Warning: Not connected to hub cluster - skipping hub resource removal"
+        echo "Run 'oc login' to connect and remove hub resources manually"
+        return 0
+    fi
+    
+    echo "Connected to hub cluster, removing resources for: $name"
+    
+    # Remove ManagedCluster
+    execute_or_show "oc delete managedcluster \"$name\" --ignore-not-found=true" "Removing ManagedCluster"
+    
+    # Remove ClusterDeployment and namespace
+    execute_or_show "oc delete clusterdeployment \"$name\" -n \"$name\" --ignore-not-found=true" "Removing ClusterDeployment"
+    execute_or_show "oc delete namespace \"$name\" --ignore-not-found=true" "Removing namespace"
+    
+    # Remove ArgoCD Applications
+    execute_or_show "oc delete application -n openshift-gitops -l app.kubernetes.io/name=\"$name\" --ignore-not-found=true" "Removing ArgoCD Applications"
+    
+    # Remove ApplicationSets
+    execute_or_show "oc delete applicationset \"$name-applications\" -n openshift-gitops --ignore-not-found=true" "Removing ApplicationSet"
+}
+
+# Function to remove repository files
+remove_repository_files() {
+    local name="$1"
+    local region="$2"
+    
+    echo ""
+    echo "=== Phase 2: Removing Repository Files ==="
+    
+    # 1. Regional specification (source)
+    if [ -n "$region" ]; then
+        remove_path "regions/$region/$name" "Removing regional specification"
+        
+        # Remove region directory if empty
+        if [ "$DRY_RUN" = false ] && [ -d "regions/$region" ] && [ -z "$(ls -A "regions/$region")" ]; then
+            execute_or_show "rmdir \"regions/$region\"" "Removing empty region directory"
+        fi
+    fi
+    
+    # 2. GitOps Applications
+    remove_path "gitops-applications/$name.yaml" "Removing GitOps ApplicationSet"
+    
+    # Update kustomization.yaml if file exists and not dry-run
+    if [ "$DRY_RUN" = false ] && [ -f "gitops-applications/kustomization.yaml" ]; then
+        if grep -q "$name.yaml" "gitops-applications/kustomization.yaml"; then
+            echo "Updating gitops-applications/kustomization.yaml..."
+            sed -i "/$name.yaml/d" "gitops-applications/kustomization.yaml"
+        fi
+    elif [ "$DRY_RUN" = true ]; then
+        echo "[DRY-RUN] Updating gitops-applications/kustomization.yaml: remove $name.yaml reference"
+    fi
+    
+    # 3. Cluster manifests
+    remove_path "clusters/$name" "Removing cluster manifests"
+    
+    # 4. Operator deployments
+    remove_path "operators/openshift-pipelines/$name" "Removing operator configs"
+    
+    # 5. Pipeline configurations
+    remove_path "pipelines/hello-world/$name" "Removing hello-world pipeline configs"
+    remove_path "pipelines/cloud-infrastructure-provisioning/$name" "Removing cloud-infra pipeline configs"
+    
+    # 6. Service deployments
+    remove_path "deployments/ocm/$name" "Removing service deployment configs"
+}
+
+# Function to show removal plan
+show_removal_plan() {
+    local name="$1"
+    local region="$2"
+    
+    echo "Removal Plan for Cluster: $name"
+    echo "================================"
+    
+    if [ "$FILES_ONLY" = false ]; then
+        echo ""
+        echo "Hub Cluster Resources (if connected):"
+        echo "  - ManagedCluster: $name"
+        echo "  - ClusterDeployment: $name (namespace: $name)"
+        echo "  - Namespace: $name"
+        echo "  - ArgoCD Applications with label app.kubernetes.io/name=$name"
+        echo "  - ApplicationSet: $name-applications"
+    fi
+    
+    if [ "$HUB_ONLY" = false ]; then
+        echo ""
+        echo "Repository Files:"
+        if [ -n "$region" ]; then
+            echo "  - Regional spec: regions/$region/$name/"
+        fi
+        echo "  - GitOps app: gitops-applications/$name.yaml"
+        echo "  - Cluster manifests: clusters/$name/"
+        echo "  - Operator configs: operators/openshift-pipelines/$name/"
+        echo "  - Pipeline configs:"
+        echo "    - pipelines/hello-world/$name/"
+        echo "    - pipelines/cloud-infrastructure-provisioning/$name/"
+        echo "  - Service configs: deployments/ocm/$name/"
+        echo "  - Update: gitops-applications/kustomization.yaml"
+    fi
+    
+    echo ""
+}
+
+# Get cluster name from user if not provided
+if [ -z "$CLUSTER_NAME" ]; then
+    echo "Please provide the cluster name to remove:"
+    read -p "Cluster Name: " CLUSTER_NAME
+    
+    if [ -z "$CLUSTER_NAME" ]; then
+        echo "Error: Cluster name is required" >&2
+        exit 1
+    fi
+fi
+
+# Validate cluster name format
+if ! validate_cluster_name "$CLUSTER_NAME"; then
+    exit 1
+fi
+
+# Validate cluster exists
+if ! validate_cluster_exists "$CLUSTER_NAME"; then
+    echo ""
+    echo "Available clusters:"
+    echo "Regional specifications:"
+    find regions -name "region.yaml" 2>/dev/null | while read -r spec; do
+        cluster_name=$(basename "$(dirname "$spec")")
+        echo "  - $cluster_name"
+    done
+    echo "Cluster directories:"
+    if [ -d "clusters" ]; then
+        ls -1 clusters/ 2>/dev/null | sed 's/^/  - /' || true
+    fi
+    exit 1
+fi
+
+# Find cluster region
+REGION=$(find_cluster_region "$CLUSTER_NAME" || echo "")
+
+# Show removal plan
+show_removal_plan "$CLUSTER_NAME" "$REGION"
+
+# Get confirmation unless forced
+if [ "$FORCE" = false ] && [ "$DRY_RUN" = false ]; then
+    echo ""
+    read -p "Proceed with cluster removal? (y/N): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "Cancelled."
+        exit 0
+    fi
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    echo ""
+    echo "=== DRY RUN - No changes will be made ==="
+fi
+
+# Execute removal phases
+if [ "$FILES_ONLY" = false ]; then
+    remove_hub_resources "$CLUSTER_NAME"
+fi
+
+if [ "$HUB_ONLY" = false ]; then
+    remove_repository_files "$CLUSTER_NAME" "$REGION"
+fi
+
+# Summary
+echo ""
+echo "=== Removal Summary ==="
+if [ "$DRY_RUN" = true ]; then
+    echo "DRY RUN completed - no changes were made"
+    echo "Run without --dry-run to perform actual removal"
+else
+    echo "✅ Cluster '$CLUSTER_NAME' removal completed"
+    
+    if [ "$FILES_ONLY" = false ] && [ "$HUB_ONLY" = false ]; then
+        echo ""
+        echo "Next steps:"
+        echo "1. Commit changes: git add . && git commit -m 'Remove $CLUSTER_NAME cluster'"
+        echo "2. Verify removal: ./bin/health-check"
+    elif [ "$FILES_ONLY" = true ]; then
+        echo "Repository files removed. Hub cluster resources remain."
+    elif [ "$HUB_ONLY" = true ]; then
+        echo "Hub cluster resources removed. Repository files remain."
+    fi
+fi
+
+echo ""
+echo "Removal operation complete! ✨"
