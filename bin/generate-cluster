@@ -1172,8 +1172,9 @@ update_gitops_kustomization() {
         
         # Find the line number where cluster applications start (after global/eso.application.yaml)
         local insert_line
-        insert_line=$(grep -n "global/eso.application.yaml" "$kustomization_file" | cut -d: -f1)
-        
+#        insert_line=$(grep -n "global/eso.application.yaml" "$kustomization_file" | cut -d: -f1)
+        insert_line=$(grep -n "# ADD CLUSTERS HERE" "$kustomization_file" | cut -d: -f1)
+
         if [ -z "$insert_line" ]; then
             echo "Warning: Could not find global/eso.application.yaml in kustomization.yaml, appending to end"
             cat >> "$kustomization_file" << EOF
