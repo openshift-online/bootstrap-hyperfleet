@@ -100,3 +100,6 @@ patches:
       - op: replace
         path: /metadata/namespace
         value: ocp-01-mturansk-5
+      - op: replace
+        path: /spec/target/type
+        value: kubernetes.io/dockerconfigjson
