@@ -1,152 +1,80 @@
 #!/bin/bash
 set -e
 
-# Cluster Discovery and Listing Tool
+# Simple Cluster Discovery Tool
 # Lists all cluster configurations found in regions/ directory
 
-echo "OpenShift Regional Cluster Discovery Tool" >&2
-echo "=========================================" >&2
-echo "" >&2
-
-# Function to show usage
 usage() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0"
     echo ""
-    echo "Output Format Options:"
-    echo "  --format FORMAT    Output format: table, compact, json, csv (default: table)"
-    echo "  --compact          Same as --format compact"
-    echo "  --json             Same as --format json" 
-    echo "  --csv              Same as --format csv"
-    echo ""
-    echo "Filtering Options:"
-    echo "  --type TYPE        Filter by cluster type (ocp,eks,hcp)"
-    echo "  --region REGION    Filter by region"
-    echo "  --name PATTERN     Filter by name pattern (supports wildcards)"
-    echo ""
-    echo "Display Options:"
-    echo "  --sort FIELD       Sort by field: name, type, region, replicas (default: name)"
-    echo "  --no-header        Suppress table header"
-    echo "  --show-path        Include file paths in output"
-    echo "  --show-status      Include deployment status from hub cluster"
-    echo ""
-    echo "Validation Options:"
-    echo "  --validate         Validate all specifications"
-    echo "  --show-errors      Show parsing errors"
-    echo "  --check-files      Verify generated files exist"
-    echo ""
-    echo "Other Options:"
-    echo "  -h, --help         Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  $0                                    # Default table view"
-    echo "  $0 --compact --type ocp               # Compact view, OCP only"
-    echo "  $0 --json --region us-west-2          # JSON format, specific region"
-    echo "  $0 --show-status --sort type          # Show status, sort by type"
+    echo "Lists all clusters from regions/ directory in table format"
     exit 1
 }
 
 # Parse command line arguments
-FORMAT="table"
-TYPE_FILTER=""
-REGION_FILTER=""
-NAME_FILTER=""
-SORT_FIELD="name"
-NO_HEADER=false
-SHOW_PATH=false
-SHOW_STATUS=false
-VALIDATE=false
-SHOW_ERRORS=false
-CHECK_FILES=false
-
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --format)
-            FORMAT="$2"
-            shift 2
-            ;;
-        --compact)
-            FORMAT="compact"
-            shift
-            ;;
-        --json)
-            FORMAT="json"
-            shift
-            ;;
-        --csv)
-            FORMAT="csv"
-            shift
-            ;;
-        --type)
-            TYPE_FILTER="$2"
-            shift 2
-            ;;
-        --region)
-            REGION_FILTER="$2"
-            shift 2
-            ;;
-        --name)
-            NAME_FILTER="$2"
-            shift 2
-            ;;
-        --sort)
-            SORT_FIELD="$2"
-            shift 2
-            ;;
-        --no-header)
-            NO_HEADER=true
-            shift
-            ;;
-        --show-path)
-            SHOW_PATH=true
-            shift
-            ;;
-        --show-status)
-            SHOW_STATUS=true
-            shift
-            ;;
-        --validate)
-            VALIDATE=true
-            shift
-            ;;
-        --show-errors)
-            SHOW_ERRORS=true
-            shift
-            ;;
-        --check-files)
-            CHECK_FILES=true
-            shift
-            ;;
         -h|--help)
             usage
             ;;
-        -*)
-            echo "Unknown option $1" >&2
-            usage
-            ;;
         *)
-            echo "Unexpected argument: $1" >&2
+            echo "Unknown option: $1"
             usage
             ;;
     esac
 done
 
-# Validate format
-if [ "$FORMAT" != "table" ] && [ "$FORMAT" != "compact" ] && [ "$FORMAT" != "json" ] && [ "$FORMAT" != "csv" ]; then
-    echo "Error: Invalid format '$FORMAT'. Valid formats: table, compact, json, csv" >&2
-    exit 1
-fi
+# Function to extract YAML value (handles nested structure)
+extract_yaml_value() {
+    local file="$1"
+    local key="$2"
+    
+    if [ ! -f "$file" ]; then
+        echo ""
+        return
+    fi
+    
+    # Use yq if available, otherwise fallback to grep/awk
+    if command -v yq >/dev/null 2>&1; then
+        yq eval ".$key" "$file" 2>/dev/null | sed 's/null//'
+    else
+        # Simple grep-based extraction
+        grep -E "^[[:space:]]*${key}:" "$file" | head -1 | awk -F: '{print $2}' | sed 's/^[[:space:]]*//' | sed 's/["\047]//g' | tr -d '\r'
+    fi
+}
 
-# Validate sort field
-if [ "$SORT_FIELD" != "name" ] && [ "$SORT_FIELD" != "type" ] && [ "$SORT_FIELD" != "region" ] && [ "$SORT_FIELD" != "replicas" ]; then
-    echo "Error: Invalid sort field '$SORT_FIELD'. Valid fields: name, type, region, replicas" >&2
-    exit 1
-fi
+# Function to extract nested YAML value
+extract_nested_yaml_value() {
+    local file="$1"
+    local parent="$2"
+    local child="$3"
+    
+    if [ ! -f "$file" ]; then
+        echo ""
+        return
+    fi
+    
+    if command -v yq >/dev/null 2>&1; then
+        yq eval ".spec.${parent}.${child}" "$file" 2>/dev/null | sed 's/null//'
+    else
+        # Fallback parsing - look for the value under the parent section
+        awk "
+        BEGIN { in_section=0 }
+        /^[[:space:]]*${parent}:/ { in_section=1; next }
+        /^[[:space:]]*[^[:space:]]/ && in_section && !/^[[:space:]]*${child}:/ { in_section=0 }
+        in_section && /^[[:space:]]*${child}:/ { 
+            gsub(/^[[:space:]]*${child}:[[:space:]]*/, \"\")
+            gsub(/[\"']/, \"\")
+            print
+            exit
+        }
+        " "$file"
+    fi
+}
 
-# Function to validate semantic cluster naming
+# Function to validate cluster name format
 validate_cluster_name() {
     local name="$1"
-    
-    # Check if name matches semantic format: {type}-{number} or {type}-{number}-{suffix}
     if [[ "$name" =~ ^(ocp|eks|hcp)-[0-9]+ ]]; then
         return 0
     else
@@ -160,194 +88,37 @@ extract_cluster_type() {
     echo "$name" | sed -E 's/^(ocp|eks|hcp)-.*/\1/'
 }
 
-# Function to parse YAML value
-parse_yaml_value() {
-    local file="$1"
-    local key="$2"
-    
-    # Simple YAML parser for basic key: value pairs
-    if [ -f "$file" ]; then
-        grep "^[[:space:]]*${key}:" "$file" | head -1 | sed "s/^[[:space:]]*${key}:[[:space:]]*//" | sed 's/["\047]//g' | tr -d '\r'
-    else
-        echo ""
-    fi
-}
-
-# Function to parse nested YAML value
-parse_nested_yaml_value() {
-    local file="$1"
-    local parent_key="$2"
-    local child_key="$3"
-    
-    if [ -f "$file" ]; then
-        # Find the parent section and extract child value
-        awk "
-        /^[[:space:]]*${parent_key}:/ { in_section=1; next }
-        /^[[:space:]]*[^[:space:]]/ && in_section && !/^[[:space:]]*${child_key}:/ { in_section=0 }
-        in_section && /^[[:space:]]*${child_key}:/ { 
-            gsub(/^[[:space:]]*${child_key}:[[:space:]]*/, \"\")
-            gsub(/[\"']/, \"\")
-            print
-            exit
-        }
-        " "$file"
-    else
-        echo ""
-    fi
-}
-
-# Function to get cluster status from hub cluster
-get_cluster_status() {
-    local cluster_name="$1"
-    
-    if ! oc whoami >/dev/null 2>&1; then
-        echo "NotConnected"
-        return
-    fi
-    
-    # Check if ManagedCluster exists
-    if ! oc get managedcluster "$cluster_name" >/dev/null 2>&1; then
-        echo "NotFound"
-        return
-    fi
-    
-    # Get cluster status
-    local status=$(oc get managedcluster "$cluster_name" -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
-    local last_seen=$(oc get managedcluster "$cluster_name" -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null | cut -dT -f1 || echo "Never")
-    
-    if [ "$status" = "True" ]; then
-        echo "Available:$last_seen"
-    elif [ "$status" = "False" ]; then
-        echo "Pending:$last_seen" 
-    elif [ -n "$status" ]; then
-        echo "Error:$last_seen"
-    else
-        echo "Unknown:$last_seen"
-    fi
-}
-
-# Function to check if generated files exist
-check_generated_files() {
-    local cluster_name="$1"
-    local missing_files=""
-    
-    # Check key generated files
-    local files_to_check=(
-        "clusters/$cluster_name/kustomization.yaml"
-        "gitops-applications/$cluster_name.yaml"
-        "operators/openshift-pipelines/$cluster_name/kustomization.yaml"
-        "deployments/ocm/$cluster_name/kustomization.yaml"
-    )
-    
-    for file in "${files_to_check[@]}"; do
-        if [ ! -f "$file" ]; then
-            if [ -n "$missing_files" ]; then
-                missing_files="$missing_files,$file"
-            else
-                missing_files="$file"
-            fi
-        fi
-    done
-    
-    if [ -n "$missing_files" ]; then
-        echo "Missing:$missing_files"
-    else
-        echo "Complete"
-    fi
-}
-
-# Function to match name pattern
-match_pattern() {
-    local name="$1"
-    local pattern="$2"
-    
-    if [ -z "$pattern" ]; then
-        return 0
-    fi
-    
-    # Convert shell pattern to regex-ish matching
-    case "$name" in
-        $pattern) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# Function to apply filters
-apply_filters() {
-    local name="$1"
-    local type="$2" 
-    local region="$3"
-    
-    # Type filter
-    if [ -n "$TYPE_FILTER" ]; then
-        local type_match=false
-        IFS=',' read -ra TYPES <<< "$TYPE_FILTER"
-        for t in "${TYPES[@]}"; do
-            if [ "$type" = "$t" ]; then
-                type_match=true
-                break
-            fi
-        done
-        if [ "$type_match" = false ]; then
-            return 1
-        fi
-    fi
-    
-    # Region filter
-    if [ -n "$REGION_FILTER" ]; then
-        local region_match=false
-        IFS=',' read -ra REGIONS <<< "$REGION_FILTER"
-        for r in "${REGIONS[@]}"; do
-            if [ "$region" = "$r" ]; then
-                region_match=true
-                break
-            fi
-        done
-        if [ "$region_match" = false ]; then
-            return 1
-        fi
-    fi
-    
-    # Name pattern filter
-    if ! match_pattern "$name" "$NAME_FILTER"; then
-        return 1
-    fi
-    
-    return 0
-}
-
-# Declare arrays for cluster data
-declare -a CLUSTER_NAMES
-declare -a CLUSTER_TYPES  
-declare -a CLUSTER_REGIONS
-declare -a CLUSTER_DOMAINS
-declare -a CLUSTER_INSTANCE_TYPES
-declare -a CLUSTER_REPLICAS
-declare -a CLUSTER_VERSIONS
-declare -a CLUSTER_PATHS
-declare -a CLUSTER_ERRORS
-declare -a CLUSTER_STATUS
-declare -a CLUSTER_FILES_STATUS
-
-echo "Scanning regions/ directory for cluster configurations..." >&2
-
-# Discover all clusters in regions directory
-cluster_count=0
-error_count=0
+echo "Cluster Discovery Tool"
+echo "====================="
+echo ""
 
 if [ ! -d "regions" ]; then
     echo "Error: regions/ directory not found" >&2
     exit 1
 fi
 
-# Walk through regions directory structure
+# Arrays to store cluster data
+declare -a clusters
+declare -a types
+declare -a regions
+declare -a domains
+declare -a instance_types
+declare -a replicas
+declare -a versions
+declare -a errors
+
+cluster_count=0
+error_count=0
+
+echo "Scanning regions/ directory..."
+
+# Walk through regions directory
 for region_dir in regions/*/; do
     if [ ! -d "$region_dir" ]; then
         continue
     fi
     
     region_name=$(basename "$region_dir")
-    echo "  Scanning region: $region_name" >&2
     
     for cluster_dir in "$region_dir"*/; do
         if [ ! -d "$cluster_dir" ]; then
@@ -357,61 +128,52 @@ for region_dir in regions/*/; do
         cluster_name=$(basename "$cluster_dir")
         spec_file="$cluster_dir/region.yaml"
         
-        echo "    Found cluster: $cluster_name" >&2
-        
-        # Initialize variables
+        # Initialize error tracking
         local_error=""
         
-        # Validate cluster name format
+        # Validate cluster name
         if ! validate_cluster_name "$cluster_name"; then
-            local_error="Invalid cluster name format (expected: {type}-{number} or {type}-{number}-{suffix})"
+            local_error="Invalid name format"
         fi
         
-        # Check if region.yaml exists
+        # Check if spec file exists
         if [ ! -f "$spec_file" ]; then
-            local_error="Missing region.yaml file"
+            local_error="Missing region.yaml"
         fi
         
         # Extract cluster type from name
         cluster_type=$(extract_cluster_type "$cluster_name")
         
-        # Parse metadata from region.yaml
+        # Parse specification file
         if [ -f "$spec_file" ]; then
-            # Basic fields
-            parsed_name=$(parse_yaml_value "$spec_file" "name")
-            parsed_type=$(parse_yaml_value "$spec_file" "type") 
-            parsed_region=$(parse_yaml_value "$spec_file" "region")
-            parsed_domain=$(parse_yaml_value "$spec_file" "domain")
+            # Extract basic fields
+            spec_type=$(extract_yaml_value "$spec_file" "spec.type")
+            spec_region=$(extract_yaml_value "$spec_file" "spec.region")
+            spec_domain=$(extract_yaml_value "$spec_file" "spec.domain")
             
-            # Compute configuration
-            parsed_instance_type=$(parse_nested_yaml_value "$spec_file" "compute" "instanceType")
-            parsed_replicas=$(parse_nested_yaml_value "$spec_file" "compute" "replicas")
+            # Extract compute configuration
+            instance_type=$(extract_nested_yaml_value "$spec_file" "compute" "instanceType")
+            replica_count=$(extract_nested_yaml_value "$spec_file" "compute" "replicas")
             
-            # Type-specific version info
-            if [ "$parsed_type" = "ocp" ]; then
-                parsed_version=$(parse_nested_yaml_value "$spec_file" "openshift" "version")
-            elif [ "$parsed_type" = "eks" ]; then
-                parsed_version=$(parse_nested_yaml_value "$spec_file" "kubernetes" "version")
-            elif [ "$parsed_type" = "hcp" ]; then
-                parsed_version="hypershift"
-            else
-                parsed_version=""
+            # Extract version information based on type
+            version=""
+            if [ "$spec_type" = "ocp" ] || [ "$cluster_type" = "ocp" ]; then
+                version=$(extract_nested_yaml_value "$spec_file" "openshift" "version")
+            elif [ "$spec_type" = "eks" ] || [ "$cluster_type" = "eks" ]; then
+                version=$(extract_nested_yaml_value "$spec_file" "kubernetes" "version")
+            elif [ "$spec_type" = "hcp" ] || [ "$cluster_type" = "hcp" ]; then
+                version="hypershift"
             fi
             
-            # Validate required fields
-            if [ -z "$parsed_name" ] || [ -z "$parsed_type" ] || [ -z "$parsed_region" ]; then
-                local_error="Missing required fields in region.yaml"
-            fi
-            
-            # Use parsed values or fallbacks
-            final_type="${parsed_type:-$cluster_type}"
-            final_region="${parsed_region:-$region_name}"
-            final_domain="${parsed_domain:-}"
-            final_instance_type="${parsed_instance_type:-}"
-            final_replicas="${parsed_replicas:-}"
-            final_version="${parsed_version:-}"
+            # Use spec values or fallback to inferred values
+            final_type="${spec_type:-$cluster_type}"
+            final_region="${spec_region:-$region_name}"
+            final_domain="${spec_domain:-}"
+            final_instance_type="${instance_type:-}"
+            final_replicas="${replica_count:-}"
+            final_version="${version:-}"
         else
-            # Use defaults when file missing
+            # Use defaults when file is missing
             final_type="$cluster_type"
             final_region="$region_name"
             final_domain=""
@@ -420,35 +182,15 @@ for region_dir in regions/*/; do
             final_version=""
         fi
         
-        # Apply filters
-        if ! apply_filters "$cluster_name" "$final_type" "$final_region"; then
-            continue
-        fi
-        
-        # Get status if requested
-        cluster_status=""
-        if [ "$SHOW_STATUS" = true ]; then
-            cluster_status=$(get_cluster_status "$cluster_name")
-        fi
-        
-        # Check generated files if requested
-        files_status=""
-        if [ "$CHECK_FILES" = true ]; then
-            files_status=$(check_generated_files "$cluster_name")
-        fi
-        
         # Store cluster data
-        CLUSTER_NAMES[$cluster_count]="$cluster_name"
-        CLUSTER_TYPES[$cluster_count]="$final_type"
-        CLUSTER_REGIONS[$cluster_count]="$final_region"
-        CLUSTER_DOMAINS[$cluster_count]="$final_domain"
-        CLUSTER_INSTANCE_TYPES[$cluster_count]="$final_instance_type"
-        CLUSTER_REPLICAS[$cluster_count]="$final_replicas"
-        CLUSTER_VERSIONS[$cluster_count]="$final_version"
-        CLUSTER_PATHS[$cluster_count]="$spec_file"
-        CLUSTER_ERRORS[$cluster_count]="$local_error"
-        CLUSTER_STATUS[$cluster_count]="$cluster_status"
-        CLUSTER_FILES_STATUS[$cluster_count]="$files_status"
+        clusters[$cluster_count]="$cluster_name"
+        types[$cluster_count]="$final_type"
+        regions[$cluster_count]="$final_region"
+        domains[$cluster_count]="$final_domain"
+        instance_types[$cluster_count]="$final_instance_type"
+        replicas[$cluster_count]="$final_replicas"
+        versions[$cluster_count]="$final_version"
+        errors[$cluster_count]="$local_error"
         
         if [ -n "$local_error" ]; then
             ((error_count++))
@@ -458,297 +200,73 @@ for region_dir in regions/*/; do
     done
 done
 
-echo "" >&2
-echo "Found $cluster_count cluster configurations in regions/ directory" >&2
+echo ""
+echo "Found $cluster_count cluster configurations"
 if [ $error_count -gt 0 ]; then
-    echo "Warning: $error_count clusters have errors" >&2
+    echo "Warning: $error_count clusters have errors"
 fi
-echo "" >&2
+echo ""
 
-# Sort clusters based on sort field
-echo "Sorting clusters by $SORT_FIELD..." >&2
+# Calculate column widths
+max_name=12
+max_type=4
+max_region=6
+max_domain=6
+max_instance=8
+max_replicas=8
+max_version=7
 
-# Create array of indices for sorting
-declare -a INDICES
-for i in $(seq 0 $((cluster_count - 1))); do
-    INDICES[$i]=$i
+for ((i = 0; i < cluster_count; i++)); do
+    [ ${#clusters[$i]} -gt $max_name ] && max_name=${#clusters[$i]}
+    [ ${#types[$i]} -gt $max_type ] && max_type=${#types[$i]}
+    [ ${#regions[$i]} -gt $max_region ] && max_region=${#regions[$i]}
+    [ ${#domains[$i]} -gt $max_domain ] && max_domain=${#domains[$i]}
+    [ ${#instance_types[$i]} -gt $max_instance ] && max_instance=${#instance_types[$i]}
+    [ ${#replicas[$i]} -gt $max_replicas ] && max_replicas=${#replicas[$i]}
+    [ ${#versions[$i]} -gt $max_version ] && max_version=${#versions[$i]}
 done
 
-# Simple bubble sort implementation
-for ((i = 0; i < cluster_count - 1; i++)); do
-    for ((j = 0; j < cluster_count - i - 1; j++)); do
-        idx1=${INDICES[$j]}
-        idx2=${INDICES[$((j + 1))]}
-        
-        should_swap=false
-        
-        case "$SORT_FIELD" in
-            "name")
-                if [[ "${CLUSTER_NAMES[$idx1]}" > "${CLUSTER_NAMES[$idx2]}" ]]; then
-                    should_swap=true
-                fi
-                ;;
-            "type")
-                if [[ "${CLUSTER_TYPES[$idx1]}" > "${CLUSTER_TYPES[$idx2]}" ]] || 
-                   [[ "${CLUSTER_TYPES[$idx1]}" == "${CLUSTER_TYPES[$idx2]}" && "${CLUSTER_NAMES[$idx1]}" > "${CLUSTER_NAMES[$idx2]}" ]]; then
-                    should_swap=true
-                fi
-                ;;
-            "region")
-                if [[ "${CLUSTER_REGIONS[$idx1]}" > "${CLUSTER_REGIONS[$idx2]}" ]] ||
-                   [[ "${CLUSTER_REGIONS[$idx1]}" == "${CLUSTER_REGIONS[$idx2]}" && "${CLUSTER_NAMES[$idx1]}" > "${CLUSTER_NAMES[$idx2]}" ]]; then
-                    should_swap=true
-                fi
-                ;;
-            "replicas")
-                rep1=${CLUSTER_REPLICAS[$idx1]:-0}
-                rep2=${CLUSTER_REPLICAS[$idx2]:-0}
-                if [ "$rep1" -gt "$rep2" ] || 
-                   [ "$rep1" -eq "$rep2" ] && [[ "${CLUSTER_NAMES[$idx1]}" > "${CLUSTER_NAMES[$idx2]}" ]]; then
-                    should_swap=true
-                fi
-                ;;
-        esac
-        
-        if [ "$should_swap" = true ]; then
-            # Swap indices
-            temp=${INDICES[$j]}
-            INDICES[$j]=${INDICES[$((j + 1))]}
-            INDICES[$((j + 1))]=$temp
-        fi
-    done
+# Print table header
+printf "%-${max_name}s %-${max_type}s %-${max_region}s %-${max_domain}s %-${max_instance}s %-${max_replicas}s %-${max_version}s\n" \
+       "CLUSTER NAME" "TYPE" "REGION" "DOMAIN" "INSTANCE TYPE" "REPLICAS" "VERSION"
+
+# Print separator
+printf "%*s %*s %*s %*s %*s %*s %*s\n" \
+       $max_name "$(printf '%*s' $max_name | tr ' ' '=')" \
+       $max_type "$(printf '%*s' $max_type | tr ' ' '=')" \
+       $max_region "$(printf '%*s' $max_region | tr ' ' '=')" \
+       $max_domain "$(printf '%*s' $max_domain | tr ' ' '=')" \
+       $max_instance "$(printf '%*s' $max_instance | tr ' ' '=')" \
+       $max_replicas "$(printf '%*s' $max_replicas | tr ' ' '=')" \
+       $max_version "$(printf '%*s' $max_version | tr ' ' '=')"
+
+# Print cluster data
+for ((i = 0; i < cluster_count; i++)); do
+    error_indicator=""
+    if [ -n "${errors[$i]}" ]; then
+        error_indicator=" (ERROR: ${errors[$i]})"
+    fi
+    
+    printf "%-${max_name}s %-${max_type}s %-${max_region}s %-${max_domain}s %-${max_instance}s %-${max_replicas}s %-${max_version}s%s\n" \
+           "${clusters[$i]}" \
+           "${types[$i]}" \
+           "${regions[$i]}" \
+           "${domains[$i]}" \
+           "${instance_types[$i]}" \
+           "${replicas[$i]}" \
+           "${versions[$i]}" \
+           "$error_indicator"
 done
 
-# Output results based on format
-case "$FORMAT" in
-    "json")
-        echo "["
-        for ((i = 0; i < cluster_count; i++)); do
-            idx=${INDICES[$i]}
-            
-            echo -n "  {"
-            echo -n "\"name\": \"${CLUSTER_NAMES[$idx]}\", "
-            echo -n "\"type\": \"${CLUSTER_TYPES[$idx]}\", "
-            echo -n "\"region\": \"${CLUSTER_REGIONS[$idx]}\", "
-            echo -n "\"domain\": \"${CLUSTER_DOMAINS[$idx]}\", "
-            echo -n "\"instanceType\": \"${CLUSTER_INSTANCE_TYPES[$idx]}\", "
-            echo -n "\"replicas\": \"${CLUSTER_REPLICAS[$idx]}\", "
-            echo -n "\"version\": \"${CLUSTER_VERSIONS[$idx]}\""
-            
-            if [ "$SHOW_PATH" = true ]; then
-                echo -n ", \"path\": \"${CLUSTER_PATHS[$idx]}\""
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ] && [ -n "${CLUSTER_ERRORS[$idx]}" ]; then
-                echo -n ", \"error\": \"${CLUSTER_ERRORS[$idx]}\""
-            fi
-            
-            if [ "$SHOW_STATUS" = true ] && [ -n "${CLUSTER_STATUS[$idx]}" ]; then
-                status_parts=(${CLUSTER_STATUS[$idx]//:/ })
-                echo -n ", \"status\": \"${status_parts[0]}\", \"lastSeen\": \"${status_parts[1]}\""
-            fi
-            
-            if [ "$CHECK_FILES" = true ] && [ -n "${CLUSTER_FILES_STATUS[$idx]}" ]; then
-                echo -n ", \"filesStatus\": \"${CLUSTER_FILES_STATUS[$idx]}\""
-            fi
-            
-            echo -n "}"
-            
-            if [ $i -lt $((cluster_count - 1)) ]; then
-                echo ","
-            else
-                echo ""
-            fi
-        done
-        echo "]"
-        ;;
-        
-    "csv")
-        # CSV header
-        if [ "$NO_HEADER" = false ]; then
-            echo -n "Name,Type,Region,Domain,InstanceType,Replicas,Version"
-            if [ "$SHOW_PATH" = true ]; then
-                echo -n ",Path"
-            fi
-            if [ "$SHOW_STATUS" = true ]; then
-                echo -n ",Status,LastSeen"
-            fi
-            if [ "$SHOW_ERRORS" = true ]; then
-                echo -n ",Error"
-            fi
-            if [ "$CHECK_FILES" = true ]; then
-                echo -n ",FilesStatus"
-            fi
-            echo ""
-        fi
-        
-        # CSV rows
-        for ((i = 0; i < cluster_count; i++)); do
-            idx=${INDICES[$i]}
-            
-            echo -n "${CLUSTER_NAMES[$idx]},${CLUSTER_TYPES[$idx]},${CLUSTER_REGIONS[$idx]},${CLUSTER_DOMAINS[$idx]},${CLUSTER_INSTANCE_TYPES[$idx]},${CLUSTER_REPLICAS[$idx]},${CLUSTER_VERSIONS[$idx]}"
-            
-            if [ "$SHOW_PATH" = true ]; then
-                echo -n ",${CLUSTER_PATHS[$idx]}"
-            fi
-            
-            if [ "$SHOW_STATUS" = true ]; then
-                if [ -n "${CLUSTER_STATUS[$idx]}" ]; then
-                    status_parts=(${CLUSTER_STATUS[$idx]//:/ })
-                    echo -n ",${status_parts[0]},${status_parts[1]}"
-                else
-                    echo -n ",,"
-                fi
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ]; then
-                echo -n ",${CLUSTER_ERRORS[$idx]}"
-            fi
-            
-            if [ "$CHECK_FILES" = true ]; then
-                echo -n ",${CLUSTER_FILES_STATUS[$idx]}"
-            fi
-            
-            echo ""
-        done
-        ;;
-        
-    "compact")
-        for ((i = 0; i < cluster_count; i++)); do
-            idx=${INDICES[$i]}
-            
-            echo -n "${CLUSTER_NAMES[$idx]} (${CLUSTER_TYPES[$idx]}/${CLUSTER_REGIONS[$idx]}/${CLUSTER_INSTANCE_TYPES[$idx]}/${CLUSTER_REPLICAS[$idx]})"
-            
-            if [ "$SHOW_STATUS" = true ] && [ -n "${CLUSTER_STATUS[$idx]}" ]; then
-                status_parts=(${CLUSTER_STATUS[$idx]//:/ })
-                echo -n " [${status_parts[0]}]"
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ] && [ -n "${CLUSTER_ERRORS[$idx]}" ]; then
-                echo -n " ERROR: ${CLUSTER_ERRORS[$idx]}"
-            fi
-            
-            echo ""
-        done
-        ;;
-        
-    "table"|*)
-        # Calculate column widths
-        max_name_width=12
-        max_type_width=4
-        max_region_width=6
-        max_domain_width=6
-        max_instance_width=8
-        max_replicas_width=8
-        max_version_width=7
-        max_status_width=6
-        max_error_width=5
-        
-        for ((i = 0; i < cluster_count; i++)); do
-            idx=${INDICES[$i]}
-            
-            [ ${#CLUSTER_NAMES[$idx]} -gt $max_name_width ] && max_name_width=${#CLUSTER_NAMES[$idx]}
-            [ ${#CLUSTER_TYPES[$idx]} -gt $max_type_width ] && max_type_width=${#CLUSTER_TYPES[$idx]}
-            [ ${#CLUSTER_REGIONS[$idx]} -gt $max_region_width ] && max_region_width=${#CLUSTER_REGIONS[$idx]}
-            [ ${#CLUSTER_DOMAINS[$idx]} -gt $max_domain_width ] && max_domain_width=${#CLUSTER_DOMAINS[$idx]}
-            [ ${#CLUSTER_INSTANCE_TYPES[$idx]} -gt $max_instance_width ] && max_instance_width=${#CLUSTER_INSTANCE_TYPES[$idx]}
-            [ ${#CLUSTER_REPLICAS[$idx]} -gt $max_replicas_width ] && max_replicas_width=${#CLUSTER_REPLICAS[$idx]}
-            [ ${#CLUSTER_VERSIONS[$idx]} -gt $max_version_width ] && max_version_width=${#CLUSTER_VERSIONS[$idx]}
-            
-            if [ "$SHOW_STATUS" = true ] && [ -n "${CLUSTER_STATUS[$idx]}" ]; then
-                status_parts=(${CLUSTER_STATUS[$idx]//:/ })
-                [ ${#status_parts[0]} -gt $max_status_width ] && max_status_width=${#status_parts[0]}
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ] && [ -n "${CLUSTER_ERRORS[$idx]}" ]; then
-                [ ${#CLUSTER_ERRORS[$idx]} -gt $max_error_width ] && max_error_width=${#CLUSTER_ERRORS[$idx]}
-            fi
-        done
-        
-        # Table header
-        if [ "$NO_HEADER" = false ]; then
-            printf "%-${max_name_width}s %-${max_type_width}s %-${max_region_width}s %-${max_domain_width}s %-${max_instance_width}s %-${max_replicas_width}s %-${max_version_width}s" \
-                   "CLUSTER NAME" "TYPE" "REGION" "DOMAIN" "INSTANCE TYPE" "REPLICAS" "VERSION"
-            
-            if [ "$SHOW_STATUS" = true ]; then
-                printf " %-${max_status_width}s %-10s" "STATUS" "LAST SEEN"
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ]; then
-                printf " %-${max_error_width}s" "ERROR"
-            fi
-            
-            echo ""
-            
-            # Header separator
-            printf "%*s %*s %*s %*s %*s %*s %*s" \
-                   $max_name_width "$(printf '%*s' $max_name_width | tr ' ' '=')" \
-                   $max_type_width "$(printf '%*s' $max_type_width | tr ' ' '=')" \
-                   $max_region_width "$(printf '%*s' $max_region_width | tr ' ' '=')" \
-                   $max_domain_width "$(printf '%*s' $max_domain_width | tr ' ' '=')" \
-                   $max_instance_width "$(printf '%*s' $max_instance_width | tr ' ' '=')" \
-                   $max_replicas_width "$(printf '%*s' $max_replicas_width | tr ' ' '=')" \
-                   $max_version_width "$(printf '%*s' $max_version_width | tr ' ' '=')"
-            
-            if [ "$SHOW_STATUS" = true ]; then
-                printf " %*s %*s" \
-                       $max_status_width "$(printf '%*s' $max_status_width | tr ' ' '=')" \
-                       10 "$(printf '%*s' 10 | tr ' ' '=')"
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ]; then
-                printf " %*s" $max_error_width "$(printf '%*s' $max_error_width | tr ' ' '=')"
-            fi
-            
-            echo ""
-        fi
-        
-        # Table rows
-        for ((i = 0; i < cluster_count; i++)); do
-            idx=${INDICES[$i]}
-            
-            printf "%-${max_name_width}s %-${max_type_width}s %-${max_region_width}s %-${max_domain_width}s %-${max_instance_width}s %-${max_replicas_width}s %-${max_version_width}s" \
-                   "${CLUSTER_NAMES[$idx]}" \
-                   "${CLUSTER_TYPES[$idx]}" \
-                   "${CLUSTER_REGIONS[$idx]}" \
-                   "${CLUSTER_DOMAINS[$idx]}" \
-                   "${CLUSTER_INSTANCE_TYPES[$idx]}" \
-                   "${CLUSTER_REPLICAS[$idx]}" \
-                   "${CLUSTER_VERSIONS[$idx]}"
-            
-            if [ "$SHOW_STATUS" = true ]; then
-                if [ -n "${CLUSTER_STATUS[$idx]}" ]; then
-                    status_parts=(${CLUSTER_STATUS[$idx]//:/ })
-                    printf " %-${max_status_width}s %-10s" "${status_parts[0]}" "${status_parts[1]}"
-                else
-                    printf " %-${max_status_width}s %-10s" "Unknown" "Never"
-                fi
-            fi
-            
-            if [ "$SHOW_ERRORS" = true ]; then
-                printf " %-${max_error_width}s" "${CLUSTER_ERRORS[$idx]}"
-            fi
-            
-            echo ""
-        done
-        ;;
-esac
-
-# Show summary if errors found and --show-errors is set
-if [ "$SHOW_ERRORS" = true ] && [ $error_count -gt 0 ]; then
-    echo "" >&2
-    echo "Errors found in $error_count clusters:" >&2
+# Show error summary if there are errors
+if [ $error_count -gt 0 ]; then
+    echo ""
+    echo "Errors found:"
     for ((i = 0; i < cluster_count; i++)); do
-        idx=${INDICES[$i]}
-        if [ -n "${CLUSTER_ERRORS[$idx]}" ]; then
-            echo "  ${CLUSTER_NAMES[$idx]}: ${CLUSTER_ERRORS[$idx]}" >&2
+        if [ -n "${errors[$i]}" ]; then
+            echo "  ${clusters[$i]}: ${errors[$i]}"
         fi
     done
-fi
-
-# Exit with error code if validation errors found
-if [ "$VALIDATE" = true ] && [ $error_count -gt 0 ]; then
-    exit 1
 fi
 
 exit 0
