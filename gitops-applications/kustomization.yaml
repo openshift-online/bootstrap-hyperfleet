@@ -14,7 +14,8 @@ resources:
 
 # ADD CLUSTERS HERE
 
-- ./ocp-01-mturansk-t3.yaml
+- ./ocp-01-mturansk-t10.yaml
+
 
 - ./eks-01-mturansk-t2.yaml
 

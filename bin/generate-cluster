@@ -819,7 +819,7 @@ controlPlane:
   platform:
     aws:
       zones:
-        - ${REGION}a
+        - ${REGION}
       rootVolume:
         iops: 4000
         size: 100
@@ -838,7 +838,7 @@ compute:
           type: io1
         type: $INSTANCE_TYPE
         zones:
-          - ${REGION}a
+          - ${REGION}
 networking:
   networkType: OVNKubernetes
   clusterNetwork:

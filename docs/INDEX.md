@@ -20,6 +20,7 @@
 | Document | Purpose | Audience |
 |----------|---------|----------|
 | [architecture/ARCHITECTURE.md](./architecture/ARCHITECTURE.md) | **Visual architecture** - Diagrams with GitOps sync wave flows | Developers |
+| [architecture/NAMESPACE.md](./architecture/NAMESPACE.md) | **Namespace architecture** - Semantic naming patterns and multi-cluster strategy | Developers |
 | [architecture/KUSTOMIZATION.md](./architecture/KUSTOMIZATION.md) | **Configuration management** - Kustomize patterns and structure | Developers |
 | [architecture/REGIONALSPEC.md](./architecture/REGIONALSPEC.md) | **Regional specifications** - Cluster configuration details | Developers |
 | [eks-aws-auth-setup.md](./eks-aws-auth-setup.md) | **EKS authentication** - aws-auth ConfigMap setup procedures | Operators |
