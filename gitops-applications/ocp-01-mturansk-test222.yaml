@@ -13,19 +13,19 @@ spec:
         syncWave: "1"
       - component: operators
         path: operators/openshift-pipelines/ocp-01-mturansk-test222
-        destination: https://api.ocp-01-mturansk-test222.rosa.mturansk-test.csu2.i3.devshift.org:6443
+        destination: https://kubernetes.default.svc
         syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/ocp-01-mturansk-test222
-        destination: https://api.ocp-01-mturansk-test222.rosa.mturansk-test.csu2.i3.devshift.org:6443
+        destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/ocp-01-mturansk-test222
-        destination: https://api.ocp-01-mturansk-test222.rosa.mturansk-test.csu2.i3.devshift.org:6443
+        destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/ocp-01-mturansk-test222
-        destination: https://api.ocp-01-mturansk-test222.rosa.mturansk-test.csu2.i3.devshift.org:6443
+        destination: https://kubernetes.default.svc
         syncWave: "4"
   template:
     metadata:

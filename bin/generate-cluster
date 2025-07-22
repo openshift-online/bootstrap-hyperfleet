@@ -1143,19 +1143,19 @@ spec:
         syncWave: "1"
       - component: operators
         path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
-        destination: https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443
+        destination: https://kubernetes.default.svc
         syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/$FULL_CLUSTER_NAME
-        destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
+        destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
-        destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
+        destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/$FULL_CLUSTER_NAME
-        destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
+        destination: https://kubernetes.default.svc
         syncWave: "4"
   template:
     metadata:
