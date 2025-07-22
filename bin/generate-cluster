@@ -916,6 +916,9 @@ patches:
       - op: replace
         path: /spec/clusterName
         value: $FULL_CLUSTER_NAME
+      - op: replace
+        path: /spec/platform/aws/region
+        value: $REGION
   - target:
       kind: ManagedCluster
       version: v1

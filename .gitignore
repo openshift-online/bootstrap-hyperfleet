@@ -4,5 +4,6 @@ secrets/
 .secrets/
 .idea/
 .claude/
+.tmp/
 STATUS.md
 clusters_backup/
