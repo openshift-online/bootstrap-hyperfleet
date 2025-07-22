@@ -967,6 +967,24 @@ patches:
       - op: replace
         path: /spec/clusterName
         value: $FULL_CLUSTER_NAME
+  - target:
+      kind: ExternalSecret
+      version: v1
+      group: external-secrets.io
+      name: aws-credentials
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
+  - target:
+      kind: ExternalSecret
+      version: v1
+      group: external-secrets.io
+      name: pull-secret
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: $FULL_CLUSTER_NAME
 EOF
 }
 
@@ -1125,7 +1143,7 @@ spec:
         syncWave: "1"
       - component: operators
         path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
-        destination: $(if [ "$CLUSTER_TYPE" = "ocp" ]; then echo "https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443"; else echo "https://managed-$FULL_CLUSTER_NAME-$REGION.eks.amazonaws.com"; fi)
+        destination: https://api.$FULL_CLUSTER_NAME.rosa.mturansk-test.csu2.i3.devshift.org:6443
         syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/$FULL_CLUSTER_NAME

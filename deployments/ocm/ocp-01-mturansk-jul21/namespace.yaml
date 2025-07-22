@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-ocp-01-mturansk-jul21
-  labels:
-    name: ocm-ocp-01-mturansk-jul21
