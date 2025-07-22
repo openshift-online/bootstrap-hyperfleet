@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-01-mturansk-t3-applications
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/ocp-01-mturansk-t3
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+      - component: operators
+        path: operators/openshift-pipelines/ocp-01-mturansk-t3
+        destination: ocp-01-mturansk-t3
+        syncWave: "2"
+      - component: pipelines-hello-world
+        path: pipelines/hello-world/ocp-01-mturansk-t3
+        destination: ocp-01-mturansk-t3
+        syncWave: "3"
+      - component: pipelines-cloud-infrastructure-provisioning
+        path: pipelines/cloud-infrastructure-provisioning/ocp-01-mturansk-t3
+        destination: ocp-01-mturansk-t3
+        syncWave: "3"
+      - component: deployments-ocm
+        path: deployments/ocm/ocp-01-mturansk-t3
+        destination: ocp-01-mturansk-t3
+        syncWave: "4"
+  template:
+    metadata:
+      name: ocp-01-mturansk-t3-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false
