@@ -2,12 +2,12 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   name: hello-world-run
-  namespace: ocm-ocp-01-mturansk-5
+  namespace: ocm-ocp-01-mturansk
 spec:
   pipelineRef:
     name: hello-world-pipeline
   params:
     - name: cluster-name
-      value: ocp-01-mturansk-5
+      value: ocp-01-mturansk
     - name: region
       value: us-west-2

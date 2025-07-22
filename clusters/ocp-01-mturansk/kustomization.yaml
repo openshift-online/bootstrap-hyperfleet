@@ -12,7 +12,7 @@ generatorOptions:
 
 secretGenerator:
   - name: install-config
-    namespace: ocp-01-mturansk-5
+    namespace: ocp-01-mturansk
     files:
       - install-config.yaml
 
@@ -24,13 +24,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/clusterName
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
   - target:
       kind: ManagedCluster
       version: v1
@@ -38,13 +38,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/labels/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/labels/region
         value: us-west-2
@@ -55,13 +55,13 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/clusterDeploymentRef/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/name
-        value: ocp-01-mturansk-5-worker
+        value: ocp-01-mturansk-worker
   - target:
       kind: KlusterletAddonConfig
       version: v1
@@ -69,19 +69,19 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /metadata/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/clusterLabels/name
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/clusterNamespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/clusterName
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
   - target:
       kind: ExternalSecret
       version: v1
@@ -90,7 +90,7 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
   - target:
       kind: ExternalSecret
       version: v1
@@ -99,7 +99,7 @@ patches:
     patch: |
       - op: replace
         path: /metadata/namespace
-        value: ocp-01-mturansk-5
+        value: ocp-01-mturansk
       - op: replace
         path: /spec/target/type
         value: kubernetes.io/dockerconfigjson

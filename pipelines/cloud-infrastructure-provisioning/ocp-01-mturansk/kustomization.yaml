@@ -1,10 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ocm-ocp-01-mturansk-5
+namespace: ocm-ocp-01-mturansk
 
 commonAnnotations:
-  cluster: ocp-01-mturansk-5
+  cluster: ocp-01-mturansk
   cluster-type: ocp
   version: "v0.0.1"
 

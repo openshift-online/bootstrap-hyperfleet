@@ -2,13 +2,13 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   name: cloud-infrastructure-provisioning-run
-  namespace: ocm-ocp-01-mturansk-5
+  namespace: ocm-ocp-01-mturansk
 spec:
   pipelineRef:
     name: cloud-infrastructure-provisioning-pipeline
   params:
     - name: cluster-name
-      value: ocp-01-mturansk-5
+      value: ocp-01-mturansk
     - name: cloud-provider
       value: aws
     - name: region

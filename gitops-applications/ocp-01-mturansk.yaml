@@ -1,35 +1,35 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ocp-01-mturansk-5-applications
+  name: ocp-01-mturansk-applications
   namespace: openshift-gitops
 spec:
   generators:
   - list:
       elements:
       - component: cluster
-        path: clusters/ocp-01-mturansk-5
+        path: clusters/ocp-01-mturansk
         destination: https://kubernetes.default.svc
         syncWave: "1"
       - component: operators
-        path: operators/openshift-pipelines/ocp-01-mturansk-5
+        path: operators/openshift-pipelines/ocp-01-mturansk
         destination: https://kubernetes.default.svc
         syncWave: "2"
       - component: pipelines-hello-world
-        path: pipelines/hello-world/ocp-01-mturansk-5
+        path: pipelines/hello-world/ocp-01-mturansk
         destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
-        path: pipelines/cloud-infrastructure-provisioning/ocp-01-mturansk-5
+        path: pipelines/cloud-infrastructure-provisioning/ocp-01-mturansk
         destination: https://kubernetes.default.svc
         syncWave: "3"
       - component: deployments-ocm
-        path: deployments/ocm/ocp-01-mturansk-5
+        path: deployments/ocm/ocp-01-mturansk
         destination: https://kubernetes.default.svc
         syncWave: "4"
   template:
     metadata:
-      name: ocp-01-mturansk-5-{{component}}
+      name: ocp-01-mturansk-{{component}}
       namespace: openshift-gitops
       annotations:
         argocd.argoproj.io/sync-wave: '{{syncWave}}'
