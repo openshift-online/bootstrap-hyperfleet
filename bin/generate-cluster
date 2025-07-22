@@ -1071,6 +1071,15 @@ spec:
       value: $INSTANCE_TYPE
     - name: node-count
       value: "$REPLICAS"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
 EOF
 }
 
@@ -1149,19 +1158,19 @@ spec:
         syncWave: "1"
       - component: operators
         path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
-        destination: https://kubernetes.default.svc
+        destination: $FULL_CLUSTER_NAME
         syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/$FULL_CLUSTER_NAME
-        destination: https://kubernetes.default.svc
+        destination: $FULL_CLUSTER_NAME
         syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
-        destination: https://kubernetes.default.svc
+        destination: $FULL_CLUSTER_NAME
         syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/$FULL_CLUSTER_NAME
-        destination: https://kubernetes.default.svc
+        destination: $FULL_CLUSTER_NAME
         syncWave: "4"
   template:
     metadata:

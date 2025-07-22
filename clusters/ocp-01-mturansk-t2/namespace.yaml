@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocp-01-mturansk-t2
-  labels:
-    name: ocp-01-mturansk-t2
