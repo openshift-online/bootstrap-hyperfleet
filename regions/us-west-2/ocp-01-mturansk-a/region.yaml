@@ -1,7 +1,7 @@
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
-  name: ocp-01-mturansk-5
+  name: ocp-01-mturansk-a
   namespace: us-west-2
 spec:
   type: ocp
