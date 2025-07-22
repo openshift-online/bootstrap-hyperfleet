@@ -14,5 +14,6 @@ resources:
 
 # ADD CLUSTERS HERE
 
-- ./ocp-01-mturansk-jul21.yaml
+- ./ocp-01-mturansk-jul21.1.yaml
+
 
