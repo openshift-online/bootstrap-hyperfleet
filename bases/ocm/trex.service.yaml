@@ -43,7 +43,7 @@ spec:
           name: authentication
       initContainers:
       - name: migration
-        image: quay.io/app-sre/trex:latest
+        image: quay.io/app-sre/trex:b8ad881e56c7c0b43ef3032da2bb7a783ec857bf
         imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: service

@@ -1,8 +1,8 @@
 apiVersion: agent.open-cluster-management.io/v1
 kind: KlusterletAddonConfig
 metadata:
-  name: ocp-01-mturansk-t3
-  namespace: ocp-01-mturansk-t3
+  name: ocp-01-mturansk-t10
+  namespace: ocp-01-mturansk-t10
 spec:
   applicationManager:
     enabled: true
@@ -10,11 +10,11 @@ spec:
     enabled: true
   clusterLabels:
     cloud: Amazon
-    name: ocp-01-mturansk-t3
+    name: ocp-01-mturansk-t10
     vendor: OpenShift
     region: us-west-2
-  clusterName: ocp-01-mturansk-t3
-  clusterNamespace: ocp-01-mturansk-t3
+  clusterName: ocp-01-mturansk-t10
+  clusterNamespace: ocp-01-mturansk-t10
   policyController:
     enabled: true
   searchCollector:
