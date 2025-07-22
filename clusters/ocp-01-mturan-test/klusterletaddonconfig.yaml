@@ -1,0 +1,23 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: ocp-01-mturan-test
+  namespace: ocp-01-mturan-test
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: Amazon
+    name: ocp-01-mturan-test
+    vendor: OpenShift
+    region: us-west-2
+  clusterName: ocp-01-mturan-test
+  clusterNamespace: ocp-01-mturan-test
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true

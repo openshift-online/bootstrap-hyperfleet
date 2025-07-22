@@ -14,6 +14,8 @@ resources:
 
 # ADD CLUSTERS HERE
 
+- ./ocp-01-mturan-test.yaml
+
 
 
 
