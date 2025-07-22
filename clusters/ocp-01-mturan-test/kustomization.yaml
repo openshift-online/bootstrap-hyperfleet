@@ -101,5 +101,5 @@ patches:
         path: /metadata/namespace
         value: ocp-01-mturan-test
       - op: replace
-        path: /spec/target/type
+        path: /spec/target/template/type
         value: kubernetes.io/dockerconfigjson
