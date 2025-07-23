@@ -59,7 +59,7 @@ debug_log "Script started with args: $*"
 
 # Set defaults for cluster ID and regions
 DEFAULT_CLUSTER_ID="ocp-02"
-DEFAULT_REGIONS=("us-east-2")
+DEFAULT_REGIONS=("us-west-2")
 ALL_SUPPORTED_REGIONS=("us-east-1" "us-east-2" "us-west-2" "eu-west-1" "ap-southeast-1")
 
 # Get cluster ID from first non-option argument

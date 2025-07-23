@@ -549,7 +549,6 @@ platform:
       vpc: vpc-12345678
       subnet:
         id: subnet-87654321
-      zone: us-east-1a
     endpointAccess: PublicAndPrivate
     resourceTags:
     - key: "Environment"

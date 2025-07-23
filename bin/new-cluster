@@ -152,7 +152,7 @@ if ! validate_cluster_name "$CLUSTER_NAME"; then
 fi
 
 # Get other cluster configuration
-prompt_with_default "Region" "us-west-2a" "REGION"
+prompt_with_default "Region" "us-west-2" "REGION"
 prompt_with_default "Base Domain" "rosa.mturansk-test.csu2.i3.devshift.org" "DOMAIN"
 prompt_with_default "Instance Type" "m5.2xlarge" "INSTANCE_TYPE"
 prompt_with_default "Number of Replicas" "2" "REPLICAS"

@@ -31,7 +31,7 @@ debug_log "Script started with args: $*"
 
 # Set defaults and prompt for search parameters
 DEFAULT_CLUSTER_IDS="eks-01-mturansk-test"
-DEFAULT_REGIONS="us-east-2"
+DEFAULT_REGIONS="us-west-2"
 
 if [[ "$DISABLE_PROMPTS" == "true" ]]; then
     CLUSTER_IDS="$DEFAULT_CLUSTER_IDS"

@@ -72,7 +72,7 @@ GITOPS_OUTPUT_DIR="gitops-applications"
 
 # Defaults
 CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
-REGION=${REGION:-"us-east-2"}
+REGION=${REGION:-"us-west-2"}
 DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
 REPLICAS=${REPLICAS:-3}
