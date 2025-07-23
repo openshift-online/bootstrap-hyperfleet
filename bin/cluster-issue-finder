@@ -1,0 +1,322 @@
+#!/bin/bash
+set -euo pipefail
+
+# cluster-issue-finder - Find all cluster issues and write to JSON
+# Simple tool that discovers cluster problems and outputs structured data
+
+OUTPUT_FILE="./issues.json"
+DEBUG=false
+
+usage() {
+    cat << 'EOF'
+Usage: cluster-issue-finder [OPTIONS] [OUTPUT_FILE]
+
+Finds all cluster issues by comparing repository configs with ACM state.
+Outputs structured JSON data for use by cluster-issue-fixer.
+
+OPTIONS:
+    --debug              Enable detailed debug output
+    --help               Show this help message
+
+ARGUMENTS:
+    OUTPUT_FILE          JSON file to write (default: ./issues.json)
+
+EXAMPLES:
+    cluster-issue-finder                    # Write to ./issues.json
+    cluster-issue-finder /tmp/issues.json  # Write to custom file
+    cluster-issue-finder --debug           # Show detailed discovery process
+
+EOF
+}
+
+debug_log() {
+    [[ "$DEBUG" == "true" ]] && echo "🔍 DEBUG: $*" >&2
+}
+
+log() {
+    echo "$*" >&2
+}
+
+error_log() {
+    echo "❌ ERROR: $*" >&2
+}
+
+# Parse arguments - keep it simple
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG=true
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        --*)
+            error_log "Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            OUTPUT_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+log "🔍 Cluster Issue Finder"
+log "======================"
+debug_log "Output file: $OUTPUT_FILE"
+
+# Validate prerequisites
+debug_log "Checking prerequisites..."
+
+if ! command -v oc >/dev/null 2>&1; then
+    error_log "OpenShift CLI (oc) not found"
+    exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    error_log "jq not found - required for JSON processing"
+    exit 1
+fi
+
+if ! oc whoami >/dev/null 2>&1; then
+    error_log "Not connected to OpenShift cluster"
+    log "   Run: oc login <cluster-url>"
+    exit 1
+fi
+
+debug_log "Prerequisites validated"
+
+# Discover repository clusters
+log "📁 Discovering repository cluster configurations..."
+repo_clusters=()
+
+debug_log "Scanning clusters/ directory..."
+if [[ -d "clusters" ]]; then
+    while IFS= read -r -d '' cluster_dir; do
+        cluster_name=$(basename "$cluster_dir")
+        repo_clusters+=("$cluster_name")
+        debug_log "Found repository config: $cluster_name"
+    done < <(find clusters/ -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+fi
+
+debug_log "Scanning regions/ directory..."
+if [[ -d "regions" ]]; then
+    while IFS= read -r -d '' region_cluster; do
+        cluster_name=$(basename "$region_cluster")
+        # Avoid duplicates
+        if [[ ! " ${repo_clusters[*]} " =~ " ${cluster_name} " ]]; then
+            repo_clusters+=("$cluster_name")
+            debug_log "Found regional config: $cluster_name"
+        fi
+    done < <(find regions/ -mindepth 2 -maxdepth 2 -type d -print0 2>/dev/null || true)
+fi
+
+log "   Found ${#repo_clusters[@]} repository cluster configurations"
+
+# Discover ACM ManagedClusters
+log "🎯 Discovering ACM ManagedClusters..."
+managed_clusters=()
+
+if oc get managedclusters >/dev/null 2>&1; then
+    debug_log "Querying ACM ManagedClusters..."
+    while IFS= read -r cluster_name; do
+        if [[ "$cluster_name" != "local-cluster" ]]; then
+            managed_clusters+=("$cluster_name")
+            debug_log "Found ManagedCluster: $cluster_name"
+        fi
+    done < <(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | sort)
+    
+    log "   Found ${#managed_clusters[@]} ManagedClusters"
+else
+    debug_log "ACM not available - continuing with repository-only analysis"
+    log "   ACM not available - repository-only analysis"
+fi
+
+# Discover all unique clusters
+log "🔄 Building comprehensive cluster list..."
+all_clusters=()
+
+# Add all repo clusters
+for cluster in "${repo_clusters[@]}"; do
+    if [[ ! " ${all_clusters[*]} " =~ " ${cluster} " ]]; then
+        all_clusters+=("$cluster")
+        debug_log "Added to analysis: $cluster (from repository)"
+    fi
+done
+
+# Add all managed clusters
+for cluster in "${managed_clusters[@]}"; do
+    if [[ ! " ${all_clusters[*]} " =~ " ${cluster} " ]]; then
+        all_clusters+=("$cluster")
+        debug_log "Added to analysis: $cluster (from ACM)"
+    fi
+done
+
+log "   Analyzing ${#all_clusters[@]} total clusters"
+
+# Analyze each cluster
+log "🔍 Analyzing cluster states..."
+
+# Generate JSON output - create pretty formatted first
+temp_json=$(mktemp)
+{
+    echo "{"
+    echo "  \"generated\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+    echo "  \"total_clusters\": ${#all_clusters[@]},"
+    echo "  \"clusters\": ["
+
+    for i in "${!all_clusters[@]}"; do
+        cluster_name="${all_clusters[i]}"
+        [[ $i -gt 0 ]] && echo ","
+        
+        debug_log "Analyzing cluster: $cluster_name"
+        
+        # Check repository configuration
+        has_repo_config=false
+        if [[ " ${repo_clusters[*]} " =~ " ${cluster_name} " ]]; then
+            has_repo_config=true
+            debug_log "  ✅ Repository config exists"
+        else
+            debug_log "  ❌ No repository config"
+        fi
+        
+        # Check ManagedCluster
+        mc_exists=false
+        mc_available="N/A"
+        mc_finalizers=false
+        mc_taints=""
+        
+        if [[ " ${managed_clusters[*]} " =~ " ${cluster_name} " ]]; then
+            mc_exists=true
+            debug_log "  ✅ ManagedCluster exists"
+            
+            # Get ManagedCluster details
+            if mc_data=$(oc get managedcluster "$cluster_name" -o json 2>/dev/null); then
+                mc_available=$(echo "$mc_data" | jq -r '.status.conditions[] | select(.type=="ManagedClusterConditionAvailable") | .status // "Unknown"')
+                
+                finalizers_count=$(echo "$mc_data" | jq -r '.metadata.finalizers // [] | length')
+                [[ "$finalizers_count" -gt 0 ]] && mc_finalizers=true
+                
+                mc_taints=$(echo "$mc_data" | jq -r '.spec.taints // [] | map(.key) | join(",") // "None"')
+                [[ "$mc_taints" == "" ]] && mc_taints="None"
+                
+                debug_log "    Available: $mc_available"
+                debug_log "    Finalizers: $mc_finalizers"
+                debug_log "    Taints: $mc_taints"
+            fi
+        else
+            debug_log "  ❌ No ManagedCluster"
+        fi
+        
+        # Check namespace
+        ns_status="Not Found"
+        if oc get namespace "$cluster_name" >/dev/null 2>&1; then
+            ns_status=$(oc get namespace "$cluster_name" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            debug_log "  📦 Namespace status: $ns_status"
+        else
+            debug_log "  📦 No namespace found"
+        fi
+        
+        # Count ArgoCD applications (with timeout)
+        argo_apps=0
+        debug_log "  🔄 Checking ArgoCD applications..."
+        if timeout 10 oc get applications.argoproj.io -A >/dev/null 2>&1; then
+            argo_apps=$(timeout 10 oc get applications.argoproj.io -A -o json 2>/dev/null | jq --arg cluster "$cluster_name" '[.items[] | select(.metadata.name | contains($cluster))] | length' 2>/dev/null || echo 0)
+            debug_log "  🔄 ArgoCD apps: $argo_apps"
+        else
+            debug_log "  🔄 ArgoCD check skipped (timeout or unavailable)"
+        fi
+        
+        # Determine issues
+        issues=()
+        
+        # ORPHANED_MC: ManagedCluster exists but no repository config
+        if [[ "$mc_exists" == "true" && "$has_repo_config" == "false" ]]; then
+            issues+=("ORPHANED_MC")
+            debug_log "  ⚠️  Issue: ORPHANED_MC"
+        fi
+        
+        # MISSING_MC: Repository config exists but no ManagedCluster
+        if [[ "$has_repo_config" == "true" && "$mc_exists" == "false" ]]; then
+            issues+=("MISSING_MC")
+            debug_log "  ⚠️  Issue: MISSING_MC"
+        fi
+        
+        # STUCK_NS: Namespace stuck in Terminating
+        if [[ "$ns_status" == "Terminating" ]]; then
+            issues+=("STUCK_NS")
+            debug_log "  ⚠️  Issue: STUCK_NS"
+        fi
+        
+        # STUCK_FINALIZERS: ManagedCluster has finalizers but unavailable
+        if [[ "$mc_finalizers" == "true" && "$mc_available" != "True" ]]; then
+            issues+=("STUCK_FINALIZERS")
+            debug_log "  ⚠️  Issue: STUCK_FINALIZERS"
+        fi
+        
+        # TAINTED: ManagedCluster has taints
+        if [[ "$mc_taints" != "None" && "$mc_taints" != "" ]]; then
+            issues+=("TAINTED")
+            debug_log "  ⚠️  Issue: TAINTED"
+        fi
+        
+        issues_str="OK"
+        if [[ ${#issues[@]} -gt 0 ]]; then
+            issues_str=$(IFS=','; echo "${issues[*]}")
+            debug_log "  🔴 Total issues: ${#issues[@]} ($issues_str)"
+        else
+            debug_log "  ✅ No issues found"
+        fi
+        
+        # Output cluster JSON
+        printf '    {\n'
+        printf '      "name": "%s",\n' "$cluster_name"
+        printf '      "repository_config": %s,\n' "$has_repo_config"
+        printf '      "managed_cluster": {\n'
+        printf '        "exists": %s,\n' "$mc_exists"
+        printf '        "available": "%s",\n' "$mc_available"
+        printf '        "has_finalizers": %s,\n' "$mc_finalizers"
+        printf '        "taints": "%s"\n' "$mc_taints"
+        printf '      },\n'
+        printf '      "namespace_status": "%s",\n' "$ns_status"
+        printf '      "argocd_applications": %s,\n' "$argo_apps"
+        printf '      "issues": "%s"\n' "$issues_str"
+        printf '    }'
+    done
+    
+    echo ""
+    echo "  ]"
+    echo "}"
+} > "$temp_json"
+
+# Minify JSON using jq
+debug_log "Minifying JSON output..."
+if jq -c . < "$temp_json" > "$OUTPUT_FILE" 2>/dev/null; then
+    debug_log "JSON minified successfully"
+else
+    debug_log "jq minify failed - using pretty format"
+    mv "$temp_json" "$OUTPUT_FILE"
+fi
+
+# Cleanup temp file
+rm -f "$temp_json"
+
+# Summary
+issues_count=$(jq '.clusters[] | select(.issues != "OK") | .name' "$OUTPUT_FILE" | wc -l)
+log ""
+log "📊 Discovery Summary"
+log "==================="
+log "Total clusters analyzed: ${#all_clusters[@]}"
+log "Clusters with issues: $issues_count"
+log "Output written to: $OUTPUT_FILE"
+
+if [[ "$DEBUG" == "true" && "$issues_count" -gt 0 ]]; then
+    log ""
+    log "🔍 Issues Found:"
+    jq -r '.clusters[] | select(.issues != "OK") | "  - \(.name): \(.issues)"' "$OUTPUT_FILE"
+fi
+
+debug_log "Discovery complete"
+log "✅ Issue discovery completed successfully"
