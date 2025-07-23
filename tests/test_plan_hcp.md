@@ -80,7 +80,7 @@ aws ec2 describe-availability-zones --region us-east-1
 #### Step 2.1: Regional Specification Creation
 ```bash
 # Option A: Use new-cluster tool (interactive)
-./bin/new-cluster
+./bin/cluster-create
 # Select: hcp, region, instance type, replicas
 
 # Option B: Manual creation for testing
@@ -112,7 +112,7 @@ spec:
 #### Step 2.2: Cluster Manifest Generation
 ```bash
 # Generate complete cluster configuration with improved generator
-./bin/generate-cluster regions/us-east-1/hcp-test-YYYYMMDD/
+./bin/cluster-generate regions/us-east-1/hcp-test-YYYYMMDD/
 
 # Verify all HCP resources generated
 ls -la clusters/hcp-test-YYYYMMDD/

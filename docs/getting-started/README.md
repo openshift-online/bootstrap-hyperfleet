@@ -93,4 +93,4 @@ For advanced workflows and eliminating external dependencies:
 
 **[Gitea Installation and Usage Guide](../../operators/gitea/global/GITEA.md)** - Deploy internal git server for immediate ArgoCD sync without GitHub dependency
 
-**Use Case**: When you need to provision clusters without waiting for manual git pushes to GitHub. The enhanced `bin/generate-cluster --push-to-gitea` workflow automatically pushes configurations to internal Gitea, enabling immediate ArgoCD synchronization.
+**Use Case**: When you need to provision clusters without waiting for manual git pushes to GitHub. The enhanced `bin/cluster-generate --push-to-gitea` workflow automatically pushes configurations to internal Gitea, enabling immediate ArgoCD synchronization.

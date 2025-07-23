@@ -1,4 +1,4 @@
-# bin/new-cluster Requirements
+# bin/cluster-create Requirements
 
 ## Requirements
 
@@ -61,7 +61,7 @@ replicas: [Replicas]
 ```
 
 ### 3. Complete Cluster Configuration
-Automatically calls `bin/generate-cluster` to create:
+Automatically calls `bin/cluster-generate` to create:
 
 - **Cluster manifests**: `clusters/[Semantic Name]/`
   - **OCP**: Namespace, Hive ClusterDeployment, MachinePool, install-config

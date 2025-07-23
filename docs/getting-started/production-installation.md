@@ -133,7 +133,7 @@ regions/
 **Production Cluster Creation:**
 ```bash
 # Use standardized naming convention
-./bin/generate-cluster regions/us-east-1/prod-api/
+./bin/cluster-generate regions/us-east-1/prod-api/
 
 # Validate before deployment
 kustomize build clusters/prod-api/ | oc apply --dry-run=client -f -
@@ -178,7 +178,7 @@ spec:
 **Comprehensive Health Checking:**
 ```bash
 # Automated monitoring setup
-./bin/health-check --production --export-metrics
+./bin/monitor-health --production --export-metrics
 
 # Check cluster provisioning status
 oc get clusterdeployments -A

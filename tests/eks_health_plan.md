@@ -40,7 +40,7 @@ Following the successful health plan methodology, this plan implements EKS clust
 **Objective**: Create EKS cluster using project conventions
 
 ### Step 2.1: Regional Specification Creation - ✅ COMPLETED
-- **Approach**: Manual creation (bin/new-cluster requires interactive input)
+- **Approach**: Manual creation (bin/cluster-create requires interactive input)
 - **Created**: `regions/us-east-2/eks-03-mturansk-test/region.yaml`
 - **Configuration**:
   - Type: `eks`
@@ -56,7 +56,7 @@ Following the successful health plan methodology, this plan implements EKS clust
 - **Fields**: All required fields populated correctly
 
 ### Step 2.3: Cluster Manifest Generation - ✅ COMPLETED
-- **Command**: `./bin/generate-cluster regions/us-east-2/eks-03-mturansk-test/`
+- **Command**: `./bin/cluster-generate regions/us-east-2/eks-03-mturansk-test/`
 - **Result**: ✅ Complete directory structure created successfully
 - **Generated Components**: 
   - ✅ CAPI Cluster + AWSManagedControlPlane
@@ -267,7 +267,7 @@ kubectl apply -f .secrets/klusterlet-crd.yaml
 - ✅ **GitOps ApplicationSet**: Deployed and ready for workload automation
 
 ### Generator Improvements Implemented ✅
-- ✅ **MachinePool resource generation**: Added to `bin/generate-cluster` and `bases/clusters/eks/`
+- ✅ **MachinePool resource generation**: Added to `bin/cluster-generate` and `bases/clusters/eks/`
 - ✅ **Semantic version formatting**: Updated to use `1.28.0` format for MachinePool, `v1.28` for control plane
 - ✅ **Klusterlet CRD inclusion**: Automatic inclusion in EKS cluster generation
 - ✅ **Kubernetes version parsing**: Extract version from `region.yaml` with proper defaults

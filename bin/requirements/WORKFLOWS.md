@@ -25,10 +25,10 @@
 ./bin/bootstrap.vault-integration.sh
 
 # 4. Create first managed cluster
-./bin/new-cluster
+./bin/cluster-create
 
 # 5. Verify deployment
-./bin/health-check
+./bin/monitor-health
 
 # 6. Generate documentation
 ./bin/generate-docs
@@ -53,10 +53,10 @@
 **Option A: Interactive Creation**
 ```bash
 # 1. Create cluster interactively
-./bin/new-cluster
+./bin/cluster-create
 
 # 2. Monitor deployment
-./bin/health-check
+./bin/monitor-health
 
 # 3. Update documentation
 ./bin/update-dynamic-docs
@@ -65,7 +65,7 @@
 **Option B: From Regional Specification**
 ```bash
 # 1. Generate cluster overlay from regional spec
-./bin/generate-cluster regions/us-west-2/ocp-03/
+./bin/cluster-generate regions/us-west-2/ocp-03/
 
 # 2. Commit and push changes (triggers GitOps deployment)
 git add clusters/ocp-03/
@@ -73,7 +73,7 @@ git commit -m "Add ocp-03 cluster"
 git push
 
 # 3. Monitor deployment
-./bin/health-check
+./bin/monitor-health
 
 # 4. Update live documentation
 ./bin/update-dynamic-docs
@@ -85,11 +85,11 @@ git push
 ./bin/convert-cluster clusters/legacy-cluster-01 > regions/us-east-1/ocp-04/region.yaml
 
 # 2. Generate new semantic overlay
-./bin/generate-cluster regions/us-east-1/ocp-04/
+./bin/cluster-generate regions/us-east-1/ocp-04/
 
 # 3. Validate and deploy
 git add regions/us-east-1/ocp-04/ clusters/ocp-04/
-./bin/health-check
+./bin/monitor-health
 ```
 
 ---
@@ -101,7 +101,7 @@ git add regions/us-east-1/ocp-04/ clusters/ocp-04/
 **Daily Operations**
 ```bash
 # 1. Check overall environment health
-./bin/health-check
+./bin/monitor-health
 
 # 2. Update dynamic documentation with latest status
 ./bin/update-dynamic-docs
@@ -124,13 +124,13 @@ git commit -m "Regenerate cluster overlays"
 git push
 
 # 4. Monitor deployment
-./bin/health-check
+./bin/monitor-health
 ```
 
 **Troubleshooting Workflow**
 ```bash
 # 1. Check overall status
-./bin/health-check
+./bin/monitor-health
 
 # 2. Wait for specific CRDs if needed
 ./bin/status.sh applications.argoproj.io
@@ -166,7 +166,7 @@ git commit -m "Remove my-test-cluster"
 git push
 
 # 5. Update documentation
-./bin/health-check
+./bin/monitor-health
 ./bin/update-dynamic-docs
 ```
 
@@ -236,7 +236,7 @@ git push
 ./bin/convert-cluster clusters/cluster-01 > regions/us-east-1/ocp-primary/region.yaml
 
 # 2. Generate new semantic overlay
-./bin/generate-cluster regions/us-east-1/ocp-primary/
+./bin/cluster-generate regions/us-east-1/ocp-primary/
 
 # 3. Compare outputs to ensure consistency
 kubectl kustomize clusters/cluster-01/ > /tmp/legacy.yaml
@@ -249,7 +249,7 @@ git commit -m "Add semantic ocp-primary cluster"
 git push
 
 # 5. Verify deployment
-./bin/health-check
+./bin/monitor-health
 
 # 6. Remove legacy cluster
 git rm -r clusters/cluster-01/
@@ -267,14 +267,14 @@ done
 
 # 2. Generate semantic overlays
 for region_spec in regions/converted/*/region.yaml; do
-  ./bin/generate-cluster "$(dirname "$region_spec")"
+  ./bin/cluster-generate "$(dirname "$region_spec")"
 done
 
 # 3. Validate all conversions
 ./bin/regenerate-all-clusters
 
 # 4. Comprehensive health check
-./bin/health-check
+./bin/monitor-health
 ```
 
 ---
@@ -293,8 +293,8 @@ echo "🚀 Setting up complete OpenShift Bootstrap environment..."
 
 ./bin/bootstrap.sh
 ./bin/bootstrap.vault-integration.sh
-./bin/new-cluster
-./bin/health-check
+./bin/cluster-create
+./bin/monitor-health
 ./bin/generate-docs
 
 echo "✅ Environment setup complete!"
@@ -316,7 +316,7 @@ set -euo pipefail
 ./bin/update-dynamic-docs
 
 # Final health check
-./bin/health-check
+./bin/monitor-health
 
 echo "✅ CI validation complete"
 ```

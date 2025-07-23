@@ -82,7 +82,7 @@ oc get route multicloud-console -n open-cluster-management
 Use the interactive tool to configure your first regional cluster:
 
 ```bash
-./bin/new-cluster
+./bin/cluster-create
 ```
 
 Follow the prompts to specify:
@@ -131,7 +131,7 @@ oc get managedcluster my-first-cluster
 oc get applications -n openshift-gitops | grep my-first-cluster
 
 # Run health check
-./bin/health-check
+./bin/monitor-health
 ```
 
 ## Next Steps

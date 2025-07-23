@@ -9,7 +9,7 @@
 
 ### 1. Generate Cluster Configuration
 ```bash
-./bin/new-cluster
+./bin/cluster-create
 ```
 The interactive tool will prompt for:
 - **Cluster Name** (validates uniqueness)
@@ -36,7 +36,7 @@ The tool automatically creates:
 ## Detailed Workflow & Validation
 
 ### Interactive Configuration
-The `bin/new-cluster` tool provides guided input collection:
+The `bin/cluster-create` tool provides guided input collection:
 
 ```
 OpenShift Regional Cluster Generator
@@ -66,7 +66,7 @@ Proceed with cluster generation? (y/N): y
 ### Automated Generation Process
 1. **Validation**: Checks cluster name uniqueness and input validity
 2. **Regional Spec**: Creates `regions/[Region]/[Cluster Name]/region.yaml`
-3. **Full Generation**: Calls `bin/generate-cluster` for complete overlay creation
+3. **Full Generation**: Calls `bin/cluster-generate` for complete overlay creation
 4. **Validation**: Automatically runs validation checks:
    - `oc kustomize clusters/[cluster-name]/`
    - `oc kustomize deployments/ocm/[cluster-name]/`
@@ -102,7 +102,7 @@ replicas: [Replicas]
 **Objective**: Use automated tool to generate all required overlays and GitOps resources
 
 **Steps**:
-1. ✅ Run cluster generator: `./bin/generate-cluster regions/[AWS_REGION]/[CLUSTER_NAME]/`
+1. ✅ Run cluster generator: `./bin/cluster-generate regions/[AWS_REGION]/[CLUSTER_NAME]/`
 2. ✅ Verify cluster overlay creation: `ls -la clusters/[CLUSTER_NAME]/`
 3. ✅ Verify pipeline overlays creation
 4. ✅ Verify operators overlay creation
@@ -228,7 +228,7 @@ A cluster deployment is successful when:
 ## Next Steps
 
 After successful cluster creation:
-1. **Monitor**: Use `./bin/health-check` for status monitoring
+1. **Monitor**: Use `./bin/monitor-health` for status monitoring
 2. **Customize**: Add additional services or pipelines as needed
 3. **Scale**: Repeat process for additional regions/clusters
 4. **Maintain**: Regular health checks and updates

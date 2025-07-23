@@ -58,7 +58,7 @@ flowchart TD
     D --> D1[Check ArgoCD applications<br/>Force sync<br/>Check target cluster connectivity]
     E --> E1[Check aws-auth ConfigMap<br/>Verify RBAC<br/>Check kubeconfig]
     F --> F1[Use bin/clean-aws script<br/>Follow rollback procedures]
-    G --> G1[Run bin/health-check<br/>Check monitoring guide]
+    G --> G1[Run bin/monitor-health<br/>Check monitoring guide]
 ```
 
 **Quick Solutions:**

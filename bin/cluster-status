@@ -1,0 +1,433 @@
+#!/bin/bash
+set -euo pipefail
+
+# bin/cluster-status - Cluster State Comparison Tool
+# Compares ACM ManagedClusters with repository configurations to identify mismatches
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+DEBUG=${DEBUG:-false}
+OUTPUT_FORMAT="table"  # table|json|csv
+SHOW_ONLY_ISSUES=false
+
+# Usage information
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Compare ACM ManagedClusters with repository cluster configurations to identify:
+- Stuck terminations and finalizers
+- Orphaned ManagedClusters (no repository config)
+- Missing ManagedClusters (config exists but no cluster)
+- ArgoCD Application mismatches
+
+OPTIONS:
+    --format FORMAT       Output format: table (default), json, csv
+    --issues-only        Show only problematic clusters
+    --debug              Enable debug output
+    --help               Show this help message
+
+EXAMPLES:
+    $0                              # Basic cluster status comparison
+    $0 --issues-only                # Show only stuck/orphaned clusters
+    $0 --format json                # JSON output for automation
+    $0 --format csv > status.csv    # CSV export
+
+OUTPUT:
+    - Comparison table showing repository vs ACM state
+    - Identification of stuck terminations, finalizers, orphaned resources
+    - ArgoCD Application status for each cluster
+    - Recommended cleanup actions
+
+EOF
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --format)
+            OUTPUT_FORMAT="$2"
+            shift 2
+            ;;
+        --issues-only)
+            SHOW_ONLY_ISSUES=true
+            shift
+            ;;
+        --debug)
+            DEBUG=true
+            set -x
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Debug logging function
+debug_log() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "[DEBUG $(date '+%H:%M:%S')] $*" >&2
+    fi
+}
+
+# Check dependencies
+check_dependencies() {
+    debug_log "Checking dependencies..."
+    
+    local missing_deps=()
+    
+    command -v oc >/dev/null 2>&1 || missing_deps+=("oc")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "❌ Error: Missing required dependencies: ${missing_deps[*]}"
+        echo "   Install missing tools and try again"
+        exit 1
+    fi
+    
+    # Check OpenShift connection
+    if ! oc whoami >/dev/null 2>&1; then
+        echo "❌ Error: Not connected to OpenShift cluster"
+        echo "   Run: oc login"
+        exit 1
+    fi
+    
+    debug_log "All dependencies satisfied"
+}
+
+# Get clusters from repository
+get_repository_clusters() {
+    debug_log "Discovering clusters from repository..."
+    
+    local clusters=()
+    
+    # Scan clusters/ directory for deployed clusters
+    if [[ -d "$ROOT_DIR/clusters/" ]]; then
+        while IFS= read -r -d '' cluster_dir; do
+            local cluster_name=$(basename "$cluster_dir")
+            clusters+=("$cluster_name")
+        done < <(find "$ROOT_DIR/clusters/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+    fi
+    
+    # Scan regions/ directory for regional specifications
+    if [[ -d "$ROOT_DIR/regions/" ]]; then
+        while IFS= read -r -d '' region_dir; do
+            local region_name=$(basename "$region_dir")
+            while IFS= read -r -d '' cluster_dir; do
+                local cluster_name=$(basename "$cluster_dir")
+                # Avoid duplicates
+                if [[ ! " ${clusters[*]} " =~ " ${cluster_name} " ]]; then
+                    clusters+=("$cluster_name")
+                fi
+            done < <(find "$region_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+        done < <(find "$ROOT_DIR/regions/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+    fi
+    
+    printf '%s\n' "${clusters[@]}" | sort -u
+}
+
+# Get ManagedClusters from ACM
+get_managed_clusters() {
+    debug_log "Getting ManagedClusters from ACM..."
+    
+    if ! oc get managedclusters >/dev/null 2>&1; then
+        echo "Warning: Cannot access ManagedClusters (ACM not available?)" >&2
+        return 0
+    fi
+    
+    oc get managedclusters -o json | jq -r '.items[] | select(.metadata.name != "local-cluster") | .metadata.name' | sort
+}
+
+# Get cluster status details
+get_cluster_status() {
+    local cluster_name="$1"
+    
+    # Get ManagedCluster status
+    local mc_status="Not Found"
+    local mc_available="N/A"
+    local mc_finalizers=""
+    local mc_taint=""
+    
+    if oc get managedcluster "$cluster_name" >/dev/null 2>&1; then
+        mc_status="Exists"
+        mc_available=$(oc get managedcluster "$cluster_name" -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+        
+        # Check for finalizers
+        local finalizers=$(oc get managedcluster "$cluster_name" -o jsonpath='{.metadata.finalizers[*]}' 2>/dev/null || echo "")
+        if [[ -n "$finalizers" ]]; then
+            mc_finalizers="Yes"
+        else
+            mc_finalizers="No"
+        fi
+        
+        # Check for taints
+        local taints=$(oc get managedcluster "$cluster_name" -o jsonpath='{.spec.taints[*].effect}' 2>/dev/null || echo "")
+        if [[ -n "$taints" ]]; then
+            mc_taint="$taints"
+        else
+            mc_taint="None"
+        fi
+    fi
+    
+    # Check namespace status
+    local ns_status="Not Found"
+    if oc get namespace "$cluster_name" >/dev/null 2>&1; then
+        local phase=$(oc get namespace "$cluster_name" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        ns_status="$phase"
+    fi
+    
+    # Check repository configuration
+    local repo_config="No"
+    if [[ -d "$ROOT_DIR/clusters/$cluster_name" ]] || find "$ROOT_DIR/regions/" -name "$cluster_name" -type d >/dev/null 2>&1; then
+        repo_config="Yes"
+    fi
+    
+    # Check ArgoCD Applications
+    local argo_apps="N/A"
+    if oc get applications.argoproj.io -A >/dev/null 2>&1; then
+        argo_apps=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster_name" '.items[] | select(.metadata.name | contains($cluster)) | .metadata.name' 2>/dev/null | wc -l || echo "0")
+    fi
+    
+    echo "$cluster_name|$repo_config|$mc_status|$mc_available|$mc_finalizers|$mc_taint|$ns_status|$argo_apps"
+}
+
+# Determine if cluster has issues
+has_issues() {
+    local cluster_data="$1"
+    IFS='|' read -r cluster repo_config mc_status mc_available mc_finalizers mc_taint ns_status argo_apps <<< "$cluster_data"
+    
+    # Issue conditions:
+    # 1. ManagedCluster exists but no repo config (orphaned)
+    # 2. Repo config exists but no ManagedCluster (missing)
+    # 3. Namespace stuck in Terminating
+    # 4. ManagedCluster has finalizers but is unavailable
+    # 5. ManagedCluster has taints
+    
+    if [[ "$mc_status" == "Exists" && "$repo_config" == "No" ]]; then
+        return 0  # Orphaned ManagedCluster
+    fi
+    
+    if [[ "$repo_config" == "Yes" && "$mc_status" == "Not Found" ]]; then
+        return 0  # Missing ManagedCluster
+    fi
+    
+    if [[ "$ns_status" == "Terminating" ]]; then
+        return 0  # Stuck namespace
+    fi
+    
+    if [[ "$mc_finalizers" == "Yes" && "$mc_available" != "True" ]]; then
+        return 0  # Stuck finalizers
+    fi
+    
+    if [[ "$mc_taint" != "None" ]]; then
+        return 0  # Has taints
+    fi
+    
+    return 1  # No issues
+}
+
+# Generate issue summary
+get_issue_summary() {
+    local cluster_data="$1"
+    IFS='|' read -r cluster repo_config mc_status mc_available mc_finalizers mc_taint ns_status argo_apps <<< "$cluster_data"
+    
+    local issues=()
+    
+    if [[ "$mc_status" == "Exists" && "$repo_config" == "No" ]]; then
+        issues+=("ORPHANED_MC")
+    fi
+    
+    if [[ "$repo_config" == "Yes" && "$mc_status" == "Not Found" ]]; then
+        issues+=("MISSING_MC")
+    fi
+    
+    if [[ "$ns_status" == "Terminating" ]]; then
+        issues+=("STUCK_NS")
+    fi
+    
+    if [[ "$mc_finalizers" == "Yes" && "$mc_available" != "True" ]]; then
+        issues+=("STUCK_FINALIZERS")
+    fi
+    
+    if [[ "$mc_taint" != "None" ]]; then
+        issues+=("TAINTED")
+    fi
+    
+    if [[ ${#issues[@]} -eq 0 ]]; then
+        echo "OK"
+    else
+        IFS=','
+        echo "${issues[*]}"
+    fi
+}
+
+# Generate table output
+generate_table() {
+    local cluster_data=("$@")
+    
+    echo "| Cluster | Repo Config | ManagedCluster | Available | Finalizers | Taints | Namespace | Argo Apps | Issues |"
+    echo "|---------|-------------|----------------|-----------|------------|--------|-----------|-----------|--------|"
+    
+    for data in "${cluster_data[@]}"; do
+        IFS='|' read -r cluster repo_config mc_status mc_available mc_finalizers mc_taint ns_status argo_apps <<< "$data"
+        
+        local issues=$(get_issue_summary "$data")
+        
+        # Skip if showing only issues and no issues found
+        if [[ "$SHOW_ONLY_ISSUES" == "true" && "$issues" == "OK" ]]; then
+            continue
+        fi
+        
+        echo "| $cluster | $repo_config | $mc_status | $mc_available | $mc_finalizers | $mc_taint | $ns_status | $argo_apps | $issues |"
+    done
+}
+
+# Generate JSON output
+generate_json() {
+    local cluster_data=("$@")
+    
+    echo '{"clusters":['
+    local first=true
+    
+    for data in "${cluster_data[@]}"; do
+        IFS='|' read -r cluster repo_config mc_status mc_available mc_finalizers mc_taint ns_status argo_apps <<< "$data"
+        
+        local issues=$(get_issue_summary "$data")
+        
+        # Skip if showing only issues and no issues found
+        if [[ "$SHOW_ONLY_ISSUES" == "true" && "$issues" == "OK" ]]; then
+            continue
+        fi
+        
+        if [[ "$first" == "false" ]]; then
+            echo ","
+        fi
+        first=false
+        
+        cat <<EOF
+  {
+    "name": "$cluster",
+    "repository_config": $(if [[ "$repo_config" == "Yes" ]]; then echo "true"; else echo "false"; fi),
+    "managed_cluster": {
+      "exists": $(if [[ "$mc_status" == "Exists" ]]; then echo "true"; else echo "false"; fi),
+      "available": "$mc_available",
+      "has_finalizers": $(if [[ "$mc_finalizers" == "Yes" ]]; then echo "true"; else echo "false"; fi),
+      "taints": "$mc_taint"
+    },
+    "namespace_status": "$ns_status",
+    "argocd_applications": $argo_apps,
+    "issues": "$issues"
+  }
+EOF
+    done
+    
+    echo ']}'
+}
+
+# Generate CSV output
+generate_csv() {
+    local cluster_data=("$@")
+    
+    echo "Cluster,RepoConfig,ManagedCluster,Available,Finalizers,Taints,Namespace,ArgoApps,Issues"
+    
+    for data in "${cluster_data[@]}"; do
+        IFS='|' read -r cluster repo_config mc_status mc_available mc_finalizers mc_taint ns_status argo_apps <<< "$data"
+        
+        local issues=$(get_issue_summary "$data")
+        
+        # Skip if showing only issues and no issues found
+        if [[ "$SHOW_ONLY_ISSUES" == "true" && "$issues" == "OK" ]]; then
+            continue
+        fi
+        
+        echo "$cluster,$repo_config,$mc_status,$mc_available,$mc_finalizers,$mc_taint,$ns_status,$argo_apps,$issues"
+    done
+}
+
+# Main execution function
+main() {
+    check_dependencies
+    
+    echo "=== Cluster Status Comparison ==="
+    echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo ""
+    
+    # Get all clusters from both sources
+    local repo_clusters
+    local managed_clusters
+    repo_clusters=$(get_repository_clusters)
+    managed_clusters=$(get_managed_clusters)
+    
+    # Combine and deduplicate cluster list
+    local all_clusters
+    all_clusters=$(echo -e "$repo_clusters\n$managed_clusters" | sort -u | grep -v '^$' || true)
+    
+    if [[ -z "$all_clusters" ]]; then
+        echo "No clusters found in repository or ACM"
+        exit 0
+    fi
+    
+    # Collect cluster status data
+    local cluster_data=()
+    while IFS= read -r cluster; do
+        [[ -n "$cluster" ]] || continue
+        local status_info
+        status_info=$(get_cluster_status "$cluster")
+        cluster_data+=("$status_info")
+    done <<< "$all_clusters"
+    
+    # Generate output based on format
+    case "$OUTPUT_FORMAT" in
+        "csv")
+            generate_csv "${cluster_data[@]}"
+            ;;
+        "json")
+            generate_json "${cluster_data[@]}"
+            ;;
+        *)
+            generate_table "${cluster_data[@]}"
+            ;;
+    esac
+    
+    # Summary statistics
+    if [[ "$OUTPUT_FORMAT" == "table" ]]; then
+        echo ""
+        echo "=== Summary ==="
+        local total_clusters=${#cluster_data[@]}
+        local issues_count=0
+        
+        for data in "${cluster_data[@]}"; do
+            if has_issues "$data"; then
+                ((issues_count++))
+            fi
+        done
+        
+        echo "Total clusters: $total_clusters"
+        echo "Clusters with issues: $issues_count"
+        echo "Healthy clusters: $((total_clusters - issues_count))"
+        
+        if [[ $issues_count -gt 0 ]]; then
+            echo ""
+            echo "⚠️  Run with --issues-only to see only problematic clusters"
+            echo ""
+            echo "🔧 Recommended remediation actions:"
+            echo "   ORPHANED_MC: oc delete managedcluster <cluster-name>"
+            echo "   MISSING_MC: Create cluster configuration or provision cluster"
+            echo "   STUCK_FINALIZERS: oc patch managedcluster <cluster-name> --type=merge -p '{\"metadata\":{\"finalizers\":[]}}''"
+            echo "   STUCK_NS: oc get all,rolebindings,secrets -n <cluster-name> # Check remaining resources"
+            echo "   TAINTED: oc patch managedcluster <cluster-name> --type=json -p='[{\"op\": \"remove\", \"path\": \"/spec/taints\"}]'"
+        fi
+    fi
+}
+
+# Run main function
+main "$@"

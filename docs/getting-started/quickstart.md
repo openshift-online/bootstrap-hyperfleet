@@ -23,7 +23,7 @@ Running services across regions
 
 ### 1. 🚀 Create New Cluster
 ```bash
-./bin/new-cluster
+./bin/cluster-create
 # Interactive prompts guide you through configuration
 ```
 
@@ -35,7 +35,7 @@ Running services across regions
 
 ### 3. 📊 Monitor Status
 ```bash
-./bin/health-check
+./bin/monitor-health
 # View real-time status of all clusters and applications
 ```
 

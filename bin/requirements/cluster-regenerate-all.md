@@ -15,7 +15,7 @@ The `regenerate-all-clusters` script automates the regeneration of all cluster o
 
 #### Cluster Generation Process
 - **Directory Extraction**: Extract cluster name from specification directory
-- **Generator Invocation**: Call `./bin/generate-cluster` for each specification
+- **Generator Invocation**: Call `./bin/cluster-generate` for each specification
 - **Error Handling**: Continue processing remaining specs if one fails
 - **Progress Reporting**: Clear status for each cluster processed
 

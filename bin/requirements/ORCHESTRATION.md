@@ -406,8 +406,8 @@ orchestrate_full_setup() {
     # Provide next steps
     echo ""
     echo "🎯 Next Steps:"
-    echo "   • Monitor: ./bin/health-check"
-    echo "   • Add clusters: ./bin/new-cluster"
+    echo "   • Monitor: ./bin/monitor-health"
+    echo "   • Add clusters: ./bin/cluster-create"
     echo "   • Documentation: cat STATUS.md"
 }
 
@@ -421,7 +421,7 @@ handle_error() {
     echo "📋 Recovery options:"
     echo "   • Resume: $0 --resume"
     echo "   • Check logs: tail -f ~/.bootstrap-orchestration/workflow.log"
-    echo "   • Manual debug: ./bin/health-check"
+    echo "   • Manual debug: ./bin/monitor-health"
 }
 
 trap 'handle_error' ERR

@@ -87,7 +87,7 @@ logs_location: ".test/eks-test-logs-20250120-153000"
    - Validate External Secrets
 
 2. **Cluster Generation** (2 min)
-   - Run `bin/generate-cluster` with test specification
+   - Run `bin/cluster-generate` with test specification
    - Validate generated manifests
    - Verify resource structure
 

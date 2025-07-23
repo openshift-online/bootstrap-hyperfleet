@@ -145,13 +145,13 @@ ls operators/vault/           # → global/
 
 1. **Create regional specification:**
 ```bash
-./bin/new-cluster
+./bin/cluster-create
 ```
 
 2. **Generate complete cluster overlay:**
 ```bash
 # Automatically called by new-cluster, but can be run manually:
-./bin/generate-cluster regions/us-west-2/ocp-05/
+./bin/cluster-generate regions/us-west-2/ocp-05/
 ```
 
 3. **Deploy via GitOps:**
@@ -202,14 +202,14 @@ ApplicationSets deploy resources in ordered waves to ensure proper dependencies:
 ```mermaid
 sequenceDiagram
    participant Admin
-   participant Generator as bin/generate-cluster
+   participant Generator as bin/cluster-generate
    participant Git as Git Repository
    participant Hub as Hub Cluster
    participant ArgoCD
    participant ACM
    participant Target as Managed Cluster
    
-   Admin->>Generator: ./bin/generate-cluster regions/us-west-2/ocp-05/
+   Admin->>Generator: ./bin/cluster-generate regions/us-west-2/ocp-05/
    Generator->>Git: Create overlays + ApplicationSet
    
    Admin->>Hub: ./bin/bootstrap.sh

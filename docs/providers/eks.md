@@ -112,7 +112,7 @@ spec:
 
 ### Generated Kubernetes Resources
 
-The `bin/generate-cluster` script creates the following resources in order:
+The `bin/cluster-generate` script creates the following resources in order:
 
 #### 1. Namespace and Basic Resources
 

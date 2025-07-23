@@ -31,7 +31,7 @@
 |----------|---------|----------|
 | [operations/cluster-management.md](./operations/cluster-management.md) | **Day-to-day operations** - Managing existing clusters, scaling, upgrades | Operators |
 | [guides/monitoring.md](../guides/monitoring.md) | **Complete monitoring guide** - Status checking, health monitoring, troubleshooting | Operators |
-| [bin/new-cluster.md](../bin/new-cluster.md) | **Interactive cluster generator** - Tool documentation | Operators |
+| [bin/cluster-create.md](../bin/cluster-create.md) | **Interactive cluster generator** - Tool documentation | Operators |
 | [bin/clean-aws.md](../bin/clean-aws.md) | **AWS cleanup procedures** - Resource cleanup automation | Administrators |
 
 ## 🔐 **Security & Integration**

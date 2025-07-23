@@ -22,10 +22,10 @@ bin/status.sh              # CRD monitoring utility
 bin/wait.kube.sh           # Resource waiting utility
 
 # User Commands → No extension  
-bin/new-cluster            # User-facing cluster creation
+bin/cluster-create            # User-facing cluster creation
 bin/clean-aws              # User-facing cleanup command
-bin/health-check           # User-facing monitoring command
-bin/generate-cluster       # User-facing generation tool
+bin/monitor-health           # User-facing monitoring command
+bin/cluster-generate       # User-facing generation tool
 ```
 
 ### **Requirements File Naming**
@@ -34,7 +34,7 @@ bin/generate-cluster       # User-facing generation tool
 bin/bootstrap.sh           → bin/requirements/bootstrap.md
 bin/status.sh              → bin/requirements/status.md
 bin/wait.kube.sh           → bin/requirements/wait-kube.md
-bin/new-cluster            → bin/requirements/new-cluster.md
+bin/cluster-create            → bin/requirements/new-cluster.md
 ```
 
 ### **Why This Convention Works**
@@ -45,7 +45,7 @@ bin/new-cluster            → bin/requirements/new-cluster.md
 - The naming immediately indicates intended usage pattern
 
 **2. User Experience**
-- Commands like `./bin/new-cluster` feel natural vs `./bin/new-cluster.sh`
+- Commands like `./bin/cluster-create` feel natural vs `./bin/cluster-create.sh`
 - Users don't need to remember implementation details in command names
 - Follows Unix convention where user commands hide implementation
 
@@ -62,9 +62,9 @@ bin/new-cluster            → bin/requirements/new-cluster.md
 ## Files
 
 ### Core Cluster Management
-- **[generate-cluster.md](./generate-cluster.md)** - Requirements for `bin/generate-cluster` overlay generator
+- **[generate-cluster.md](./generate-cluster.md)** - Requirements for `bin/cluster-generate` overlay generator
 - **[convert-cluster.md](./convert-cluster.md)** - Requirements for `bin/convert-cluster` regional specification converter  
-- **[new-cluster.md](./new-cluster.md)** - Requirements for `bin/new-cluster` interactive cluster generator
+- **[new-cluster.md](./new-cluster.md)** - Requirements for `bin/cluster-create` interactive cluster generator
 - **[regenerate-all-clusters.md](./regenerate-all-clusters.md)** - Requirements for `bin/regenerate-all-clusters` bulk regeneration tool
 
 ### Bootstrap and Infrastructure
@@ -77,7 +77,7 @@ bin/new-cluster            → bin/requirements/new-cluster.md
 - **[test-find-aws-resources.md](./test-find-aws-resources.md)** - Requirements for `bin/test-find-aws-resources` validation tool
 
 ### Monitoring and Operations
-- **[health-check.md](./health-check.md)** - Requirements for `bin/health-check` comprehensive status reporter
+- **[health-check.md](./health-check.md)** - Requirements for `bin/monitor-health` comprehensive status reporter
 - **[status.md](./status.md)** - Requirements for `bin/status.sh` CRD establishment monitor
 - **[wait-kube.md](./wait-kube.md)** - Requirements for `bin/wait.kube.sh` resource readiness monitor
 
@@ -91,9 +91,9 @@ bin/new-cluster            → bin/requirements/new-cluster.md
 Each requirements file corresponds to implementation documentation in the parent `bin/` directory:
 
 ### Core Tools
-- `bin/generate-cluster.md` → References `bin/requirements/generate-cluster.md`
+- `bin/cluster-generate.md` → References `bin/requirements/generate-cluster.md`
 - `bin/convert-cluster.md` → References `bin/requirements/convert-cluster.md`
-- `bin/new-cluster.md` → References `bin/requirements/new-cluster.md`
+- `bin/cluster-create.md` → References `bin/requirements/new-cluster.md`
 - `bin/clean-aws.md` → References `bin/requirements/clean-aws.md`
 - `bin/find-aws-resources.md` → References `bin/requirements/find-aws-resources.md`
 
@@ -101,7 +101,7 @@ Each requirements file corresponds to implementation documentation in the parent
 - `bin/bootstrap.sh` → `bin/requirements/bootstrap.md`
 - `bin/bootstrap.vault-integration.sh` → `bin/requirements/bootstrap-vault-integration.md`
 - `bin/regenerate-all-clusters` → `bin/requirements/regenerate-all-clusters.md`
-- `bin/health-check` → `bin/requirements/health-check.md`
+- `bin/monitor-health` → `bin/requirements/health-check.md`
 - `bin/status.sh` → `bin/requirements/status.md`
 - `bin/wait.kube.sh` → `bin/requirements/wait-kube.md`
 - `bin/generate-docs` → `bin/requirements/generate-docs.md`
@@ -207,21 +207,21 @@ generate-docs (static content)
 **Set up a new OpenShift environment**
 ```bash
 ./bin/bootstrap.sh               # Set up hub cluster infrastructure
-./bin/new-cluster               # Create your first managed cluster
-./bin/health-check              # Verify everything is working
+./bin/cluster-create               # Create your first managed cluster
+./bin/monitor-health              # Verify everything is working
 ```
 
 **Create additional clusters**
 ```bash
-./bin/new-cluster               # Interactive cluster creation
+./bin/cluster-create               # Interactive cluster creation
 # OR
-./bin/generate-cluster regions/us-west-2/my-cluster/  # From existing spec
-./bin/health-check              # Verify cluster deployment
+./bin/cluster-generate regions/us-west-2/my-cluster/  # From existing spec
+./bin/monitor-health              # Verify cluster deployment
 ```
 
 **Monitor and troubleshoot**
 ```bash
-./bin/health-check              # Comprehensive status overview
+./bin/monitor-health              # Comprehensive status overview
 ./bin/status.sh <crd-name>      # Wait for specific CRDs
 ./bin/wait.kube.sh <resource>   # Wait for resource readiness
 ```

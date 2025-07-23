@@ -139,7 +139,7 @@ defaults:
 ```bash
 # Test conversion round-trip
 ./bin/convert-cluster clusters/overlay/ocp-02 | \
-./bin/generate-cluster - /tmp/test-cluster/
+./bin/cluster-generate - /tmp/test-cluster/
 kubectl kustomize /tmp/test-cluster/ > /tmp/generated.yaml
 
 kubectl kustomize clusters/overlay/ocp-02/ > /tmp/original.yaml
