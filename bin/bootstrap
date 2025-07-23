@@ -40,4 +40,4 @@ echo ""
 
 echo "Setting up Vault-based secret management for provisioned cluster namespaces"
 echo "Note: ExternalSecrets will be created but won't sync until clusters are fully provisioned"
-./bin/bootstrap.vault
+./bin/bootstrap-vault
