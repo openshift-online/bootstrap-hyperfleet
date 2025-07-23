@@ -174,18 +174,18 @@ remove_hub_resources() {
     
     echo "Connected to hub cluster, removing resources for: $name"
     
+    # Remove ArgoCD Applications first to prevent them from recreating cluster resources
+    execute_or_show "oc delete application -n openshift-gitops -l app.kubernetes.io/name=\"$name\" --ignore-not-found=true" "Removing ArgoCD Applications"
+    
+    # Remove ApplicationSets
+    execute_or_show "oc delete applicationset \"$name-applications\" -n openshift-gitops --ignore-not-found=true" "Removing ApplicationSet"
+    
     # Remove ManagedCluster
     execute_or_show "oc delete managedcluster \"$name\" --ignore-not-found=true" "Removing ManagedCluster"
     
     # Remove ClusterDeployment and namespace
     execute_or_show "oc delete clusterdeployment \"$name\" -n \"$name\" --ignore-not-found=true" "Removing ClusterDeployment"
     execute_or_show "oc delete namespace \"$name\" --ignore-not-found=true" "Removing namespace"
-    
-    # Remove ArgoCD Applications
-    execute_or_show "oc delete application -n openshift-gitops -l app.kubernetes.io/name=\"$name\" --ignore-not-found=true" "Removing ArgoCD Applications"
-    
-    # Remove ApplicationSets
-    execute_or_show "oc delete applicationset \"$name-applications\" -n openshift-gitops --ignore-not-found=true" "Removing ApplicationSet"
 }
 
 # Function to remove repository files
@@ -244,11 +244,11 @@ show_removal_plan() {
     if [ "$FILES_ONLY" = false ]; then
         echo ""
         echo "Hub Cluster Resources (if connected):"
+        echo "  - ArgoCD Applications with label app.kubernetes.io/name=$name"
+        echo "  - ApplicationSet: $name-applications"
         echo "  - ManagedCluster: $name"
         echo "  - ClusterDeployment: $name (namespace: $name)"
         echo "  - Namespace: $name"
-        echo "  - ArgoCD Applications with label app.kubernetes.io/name=$name"
-        echo "  - ApplicationSet: $name-applications"
     fi
     
     if [ "$HUB_ONLY" = false ]; then

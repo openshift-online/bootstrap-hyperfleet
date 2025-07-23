@@ -87,7 +87,7 @@ oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
 
 ```bash
 # Create policy for cluster secrets
-oc exec vault-0 -n vault -- vault policy write cluster-secrets - << 'EOF'
+oc exec vault-0 -n vault -- vault policy write cluster-secrets - << EOF
 path "secret/data/aws-credentials" {
   capabilities = ["read"]
 }
