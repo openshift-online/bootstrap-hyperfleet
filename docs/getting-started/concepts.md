@@ -115,12 +115,12 @@ ACM automatically manages CAPI providers for different cloud platforms:
 ## Automation Tools
 
 ### Generation Tools
-- **`bin/new-cluster`**: Interactive cluster specification creation
-- **`bin/generate-cluster`**: Complete overlay generation from specifications
+- **`bin/cluster-create`**: Interactive cluster specification creation
+- **`bin/cluster-generate`**: Complete overlay generation from specifications
 - **`bin/regenerate-all-clusters`**: Bulk regeneration for template updates
 
 ### Monitoring Tools
-- **`bin/health-check`**: Comprehensive environment status
+- **`bin/monitor-health`**: Comprehensive environment status
 - **`status.sh`**: CRD establishment monitoring
 - **`wait.kube.sh`**: Resource condition waiting
 

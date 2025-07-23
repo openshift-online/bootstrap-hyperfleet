@@ -24,7 +24,7 @@ Gitea is deployed as an internal git server to solve the ArgoCD dependency issue
 - **PostgreSQL Database**: Persistent storage for Gitea data
 - **Gitea Server**: Lightweight git server (200MB vs 4GB for GitLab)
 - **ArgoCD Integration**: Repository secret for authenticated access
-- **Enhanced bin/generate-cluster**: Automatic push capability
+- **Enhanced bin/cluster-generate**: Automatic push capability
 
 ### Network Topology
 ```
@@ -81,18 +81,18 @@ The installation automatically creates:
 
 ## Usage
 
-### Enhanced bin/generate-cluster
+### Enhanced bin/cluster-generate
 
 The enhanced script supports automatic Gitea integration:
 
 **Basic Usage (Local Only):**
 ```bash
-./bin/generate-cluster regions/us-east-2/my-cluster/
+./bin/cluster-generate regions/us-east-2/my-cluster/
 ```
 
 **Gitea Integration (Recommended):**
 ```bash
-./bin/generate-cluster --push-to-gitea regions/us-east-2/my-cluster/
+./bin/cluster-generate --push-to-gitea regions/us-east-2/my-cluster/
 ```
 
 ### Workflow Comparison
@@ -100,7 +100,7 @@ The enhanced script supports automatic Gitea integration:
 #### Traditional Workflow
 ```bash
 # 1. Generate cluster
-./bin/generate-cluster regions/us-east-2/my-cluster/
+./bin/cluster-generate regions/us-east-2/my-cluster/
 
 # 2. Manual git operations
 git add .
@@ -114,7 +114,7 @@ git push origin main
 #### Gitea Workflow  
 ```bash
 # 1. Generate and push automatically
-./bin/generate-cluster --push-to-gitea regions/us-east-2/my-cluster/
+./bin/cluster-generate --push-to-gitea regions/us-east-2/my-cluster/
 
 # 2. ArgoCD syncs immediately (no manual steps)
 ```

@@ -1,4 +1,4 @@
-# bin/generate-cluster Requirements
+# bin/cluster-generate Requirements
 
 ## Purpose
 
@@ -13,14 +13,14 @@ The `generate-cluster` tool converts simplified Regional Cluster specifications 
 ### Usage Patterns
 ```bash
 # Generate cluster overlay from regional spec
-./bin/generate-cluster regions/us-east-1/ocp-01/
+./bin/cluster-generate regions/us-east-1/ocp-01/
 
 # Generate and validate
-./bin/generate-cluster regions/ap-southeast-1/eks-01/
+./bin/cluster-generate regions/ap-southeast-1/eks-01/
 kubectl kustomize clusters/eks-01/
 
 # Generate HCP cluster
-./bin/generate-cluster regions/us-east-1/hcp-01/
+./bin/cluster-generate regions/us-east-1/hcp-01/
 ```
 
 ## Generation Logic Requirements
@@ -187,7 +187,7 @@ spec:
 ./bin/convert-cluster clusters/ocp-01 > /tmp/region.yaml
 
 # Generate back to overlay format
-./bin/generate-cluster /tmp/region.yaml /tmp/test-cluster/
+./bin/cluster-generate /tmp/region.yaml /tmp/test-cluster/
 
 # Compare outputs
 kubectl kustomize clusters/ocp-01/ > /tmp/original.yaml
@@ -214,7 +214,7 @@ argocd app create test-cluster \
 ./bin/convert-cluster clusters/ocp-02 > regions/us-east-1/ocp-01/region.yaml
 
 # Generate back to semantic naming
-./bin/generate-cluster regions/us-east-1/ocp-01/
+./bin/cluster-generate regions/us-east-1/ocp-01/
 
 # Compare outputs
 diff -r clusters/ocp-02/ clusters/ocp-01/

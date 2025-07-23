@@ -107,7 +107,7 @@ maxSize: 10
 **Phase 2**: Generate traditional Kustomize resources ✅
 ```bash  
 # Generate cluster overlays from regional specs
-./bin/generate-cluster regions/us-east-1/ocp-02/ clusters/ocp-02/
+./bin/cluster-generate regions/us-east-1/ocp-02/ clusters/ocp-02/
 ```
 
 **Phase 3**: Parallel operation ✅ ACTIVE
@@ -376,7 +376,7 @@ regions/region-name/cluster-XX/
 
 1. **✅ Eliminate Base+Patch Pattern**: OCP clusters simplified to direct configuration files
 2. **✅ Regional Specifications**: Implemented simple key-value format in `regions/`
-3. **✅ Template-based Generation**: Converter tools (`bin/convert-cluster`, `bin/generate-cluster`) implemented
+3. **✅ Template-based Generation**: Converter tools (`bin/convert-cluster`, `bin/cluster-generate`) implemented
 4. **✅ Minimal File Set**: Regional specs reduced to 1 file per cluster
 5. **✅ Base Templates**: Consolidated in `bases/clusters/` following Kustomize conventions
 
@@ -391,7 +391,7 @@ regions/region-name/cluster-XX/
 ### Related Documentation
 
 - **[Convert Cluster Tool](./bin/convert-cluster.md)** - Convert overlays to regional specs
-- **[Generate Cluster Tool](./bin/generate-cluster.md)** - Generate overlays from regional specs
+- **[Generate Cluster Tool](./bin/cluster-generate.md)** - Generate overlays from regional specs
 - **[Cluster Creation Guide](./guides/cluster-creation.md)** - End-to-end deployment workflow
 
 The regional cluster specification design has been **successfully implemented** with practical adaptations that maintain the core principles while following established Kustomize conventions.

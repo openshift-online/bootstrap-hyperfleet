@@ -31,7 +31,7 @@ which oc
 Use the interactive tool to create your cluster configuration:
 
 ```bash
-./bin/new-cluster
+./bin/cluster-create
 ```
 
 **Example interaction:**
@@ -127,7 +127,7 @@ Track the deployment as it progresses through sync waves:
 
 ```bash
 # Overall environment status
-./bin/health-check
+./bin/monitor-health
 
 # Watch ApplicationSet creation
 oc get applicationset my-first-cluster-applications -n openshift-gitops -w
@@ -241,7 +241,7 @@ Generate a complete status report:
 oc config use-context <hub-cluster-context>
 
 # Run comprehensive health check
-./bin/health-check
+./bin/monitor-health
 
 # Check specific cluster status
 grep -A 20 "my-first-cluster" STATUS.md

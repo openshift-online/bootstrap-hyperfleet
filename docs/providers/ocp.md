@@ -125,7 +125,7 @@ spec:
 
 ### Generated Kubernetes Resources
 
-The `bin/generate-cluster` script creates the following resources for OCP clusters:
+The `bin/cluster-generate` script creates the following resources for OCP clusters:
 
 #### 1. Namespace and Basic Resources
 

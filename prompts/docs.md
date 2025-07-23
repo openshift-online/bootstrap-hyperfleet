@@ -164,7 +164,7 @@ flowchart TD
 ```
 
 #### **Interactive Documentation**
-- Link `NEWREGION.md` test plan to `bin/new-cluster` tool
+- Link `NEWREGION.md` test plan to `bin/cluster-create` tool
 - Auto-update `STATUS.md` from actual cluster state
 - Generate architecture diagrams from live configuration
 

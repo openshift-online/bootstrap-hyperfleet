@@ -53,9 +53,38 @@ The project uses semantic directory organization with consistent patterns:
 
 ## Claude Memories
 
-- Don't run `bin/bootstrap.sh` from a Claude session
+- Don't run `bin/bootstrap` from a Claude session
 - When provisioning or managing OpenShift, always use `oc` client
 - Critical! Always use smart semantic naming for maximum usability and comprehensive
+
+## SRE Tool Categories
+
+**Cluster Operations** (cluster-*):
+- `cluster-create` - Generate new cluster configurations
+- `cluster-remove` - Clean cluster removal
+- `cluster-convert` - Convert cluster types
+- `cluster-list` - List available clusters
+- `cluster-status` - Compare ACM vs repository state
+- `cluster-regenerate-all` - Update all cluster configurations
+
+**AWS Resource Management** (aws-*):
+- `aws-find-resources` - Discover AWS resources for specific cluster
+- `aws-find-all-resources` - Comprehensive resource discovery with orphan detection
+- `aws-clean-resources` - Clean up AWS resources
+- `aws-test-find-resources` - Test resource discovery functionality
+
+**Monitoring & Health** (monitor-*):
+- `monitor-health` - Comprehensive cluster health checks
+- `monitor-status` - Overall environment status
+
+**Documentation** (docs-*):
+- `docs-generate` - Generate documentation
+- `docs-validate` - Validate documentation consistency
+- `docs-update` - Update dynamic documentation
+
+**Bootstrap Operations**:
+- `bootstrap` - Initial environment setup
+- `bootstrap-vault` - Vault integration setup
 
 ## Documentation Navigation
 

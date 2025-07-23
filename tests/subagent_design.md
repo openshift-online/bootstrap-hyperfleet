@@ -24,7 +24,7 @@ You are an EKS cluster testing specialist. Your task is to autonomously execute 
 
 TEST PLAN: Execute all phases from test_plan_eks.md systematically:
 1. Prerequisites validation (Vault, ACM, AWS credentials)
-2. Cluster generation using bin/generate-cluster
+2. Cluster generation using bin/cluster-generate
 3. CAPI provisioning verification
 4. ACM integration and attachment
 5. Workload deployment validation

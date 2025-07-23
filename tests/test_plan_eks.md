@@ -71,7 +71,7 @@ aws service-quotas get-service-quota --service-code ec2 --quota-code L-0263D0A3 
 #### Step 2.1: Regional Specification Creation
 ```bash
 # Option A: Use new-cluster tool (interactive)
-./bin/new-cluster
+./bin/cluster-create
 # Select: eks, region, instance type, replicas
 
 # Option B: Manual creation for testing
@@ -101,7 +101,7 @@ spec:
 #### Step 2.2: Cluster Manifest Generation
 ```bash
 # Generate complete cluster configuration
-./bin/generate-cluster regions/us-west-2/eks-test-YYYYMMDD/
+./bin/cluster-generate regions/us-west-2/eks-test-YYYYMMDD/
 
 # Verify all required resources generated
 ls -la clusters/eks-test-YYYYMMDD/

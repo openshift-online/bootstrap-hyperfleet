@@ -10,7 +10,7 @@
 ### Morning Health Check
 ```bash
 # Complete environment overview
-./bin/health-check
+./bin/monitor-health
 
 # Quick cluster status
 oc get managedcluster
@@ -25,7 +25,7 @@ oc get applications -n openshift-gitops | grep -E "(OutOfSync|Unknown|Degraded)"
 ### Weekly Maintenance
 ```bash
 # Update STATUS.md with current state
-./bin/health-check
+./bin/monitor-health
 
 # Check cluster resource usage
 oc adm top nodes --use-protocol-buffers
@@ -84,7 +84,7 @@ oc describe clusterdeployment cluster-name -n cluster-name
 vim regions/us-east-1/cluster-name/region.yaml
 
 # Regenerate cluster configuration
-./bin/generate-cluster regions/us-east-1/cluster-name/
+./bin/cluster-generate regions/us-east-1/cluster-name/
 
 # Apply changes via GitOps
 git add . && git commit -m "Update cluster-name configuration" && git push
@@ -316,7 +316,7 @@ done
 cat > maintenance.sh << 'EOF'
 #!/bin/bash
 # Daily maintenance tasks
-./bin/health-check
+./bin/monitor-health
 oc get applications -n openshift-gitops | grep -E "(OutOfSync|Unknown|Degraded)" | mail -s "ArgoCD Sync Issues" admin@company.com
 EOF
 

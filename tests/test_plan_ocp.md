@@ -76,7 +76,7 @@ aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A 
 #### Step 2.1: Regional Specification Creation
 ```bash
 # Option A: Use new-cluster tool (interactive)
-./bin/new-cluster
+./bin/cluster-create
 # Select: ocp, region, instance type, replicas
 
 # Option B: Manual creation for testing
@@ -107,7 +107,7 @@ spec:
 #### Step 2.2: Cluster Manifest Generation
 ```bash
 # Generate complete cluster configuration
-./bin/generate-cluster regions/us-east-1/ocp-test-YYYYMMDD/
+./bin/cluster-generate regions/us-east-1/ocp-test-YYYYMMDD/
 
 # Verify generated structure
 ls -la clusters/ocp-test-YYYYMMDD/

@@ -10,7 +10,7 @@
 ### Quick Status
 ```bash
 # Complete environment health check
-./bin/health-check
+./bin/monitor-health
 
 # Hub cluster status
 oc get managedcluster
@@ -24,10 +24,10 @@ oc get cluster.cluster.x-k8s.io -A  # EKS clusters
 ### Cluster Creation
 ```bash
 # Interactive cluster creation
-./bin/new-cluster
+./bin/cluster-create
 
 # Generate cluster from existing specification
-./bin/generate-cluster regions/us-east-1/cluster-name/
+./bin/cluster-generate regions/us-east-1/cluster-name/
 
 # Regenerate all clusters (after base template changes)
 ./bin/regenerate-all-clusters
@@ -54,7 +54,7 @@ oc patch applicationset APPSET-NAME -n openshift-gitops --type='merge' \
 ### Health Checks
 ```bash
 # Comprehensive status report
-./bin/health-check
+./bin/monitor-health
 
 # ArgoCD application status
 oc get applications -n openshift-gitops
@@ -259,12 +259,12 @@ Add these to your shell profile for convenience:
 
 ```bash
 # Health and status
-alias hc='./bin/health-check'
+alias hc='./bin/monitor-health'
 alias apps='oc get applications -n openshift-gitops'
 alias clusters='oc get managedcluster'
 
 # Common operations
-alias new-cluster='./bin/new-cluster'
+alias new-cluster='./bin/cluster-create'
 alias bootstrap='./bin/bootstrap.sh'
 alias clean-aws='./bin/clean-aws'
 
