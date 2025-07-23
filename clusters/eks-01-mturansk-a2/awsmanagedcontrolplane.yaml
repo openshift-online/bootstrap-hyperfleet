@@ -1,0 +1,17 @@
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: AWSManagedControlPlane
+metadata:
+  name: eks-01-mturansk-a2
+  namespace: eks-01-mturansk-a2
+spec:
+  region: us-west-2
+  sshKeyName: ""
+  version: v1.28
+  baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
+  vpc:
+    availabilityZoneUsageLimit: 2
+    availabilityZoneSelection: Ordered
+  logging:
+    enable: false
+  associateOIDCProvider: true
+  eksClusterName: eks-01-mturansk-a2
