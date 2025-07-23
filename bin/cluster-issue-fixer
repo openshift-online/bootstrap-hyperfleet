@@ -6,7 +6,7 @@ set -euo pipefail
 
 INPUT_FILE="./issues.json"
 DRY_RUN=false
-DEBUG=false
+DEBUG=true
 
 # Counters for summary
 TOTAL_ISSUES=0
@@ -161,7 +161,20 @@ get_fix_command() {
             echo "oc apply -k clusters/$cluster_name/"
             ;;
         "STUCK_NS")
-            echo "oc patch namespace $cluster_name --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'"
+            echo "# Comprehensive cleanup of namespace and cluster-scoped resources
+echo 'Step 1: Checking namespace resources...'
+oc get all,rolebindings,secrets,configmaps -n $cluster_name --no-headers 2>/dev/null | wc -l | xargs -I {} echo 'Found {} resources in namespace'
+
+echo 'Step 2: Cleaning up namespace-scoped resources...'
+oc delete rolebindings --all -n $cluster_name --ignore-not-found
+oc delete secrets --all -n $cluster_name --ignore-not-found --field-selector type!=kubernetes.io/service-account-token
+
+echo 'Step 3: Cleaning up cluster-scoped ACM resources...'
+oc get clusterroles | grep $cluster_name | awk '{print \$1}' | xargs -r oc delete clusterrole --ignore-not-found
+oc get clusterrolebindings | grep $cluster_name | awk '{print \$1}' | xargs -r oc delete clusterrolebinding --ignore-not-found
+
+echo 'Step 4: Removing namespace finalizers...'
+oc patch namespace $cluster_name --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'"
             ;;
         "STUCK_FINALIZERS")
             echo "oc patch managedcluster $cluster_name --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'"
@@ -188,7 +201,7 @@ get_fix_description() {
             echo "Apply cluster manifests from repository"
             ;;
         "STUCK_NS")
-            echo "Remove finalizers from stuck namespace"
+            echo "Clean up namespace and cluster-scoped ACM resources, then remove finalizers"
             ;;
         "STUCK_FINALIZERS")
             echo "Remove finalizers from unavailable ManagedCluster"
@@ -214,7 +227,7 @@ get_fix_warning() {
             echo "This creates cluster resources - ensure cluster should exist"
             ;;
         "STUCK_NS")
-            echo "This forces namespace deletion - ensure no important resources remain"
+            echo "This will delete ALL ACM cluster-scoped resources (ClusterRoles, ClusterRoleBindings) and namespace resources"
             ;;
         "STUCK_FINALIZERS")
             echo "This allows cleanup but may leave orphaned resources"
@@ -305,10 +318,8 @@ echo "$clusters_with_issues" | while IFS= read -r cluster_json; do
         fi
 
 
-        read -p "Apply this fix? [y/N]: " yea
-        echo "wtf" $yea
-
-        case $yea in
+        read -p "Apply this fix? [y/N]: " response
+        case "$response" in
             [yY]|[yY][eE][sS])
                 log "   ✅ Applying fix..."
                 if execute_fix "$cluster_name" "$issue_type" "$fix_command"; then

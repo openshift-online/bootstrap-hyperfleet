@@ -5,7 +5,7 @@ set -euo pipefail
 # Simple tool that discovers cluster problems and outputs structured data
 
 OUTPUT_FILE="./issues.json"
-DEBUG=false
+DEBUG=true
 
 usage() {
     cat << 'EOF'

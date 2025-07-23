@@ -228,11 +228,11 @@ fi
 echo ""
 echo "Generated regional specification at: $SPEC_DIR/region.yaml"
 
-# Run generate-cluster to create full cluster configuration
-echo "Running bin/generate-cluster to create cluster configuration..."
+# Run cluster-generate to create full cluster configuration
+echo "Running bin/cluster-generate to create cluster configuration..."
 echo ""
 
-if ! ./bin/generate-cluster "$SPEC_DIR"; then
+if ! ./bin/cluster-generate "$SPEC_DIR"; then
     echo "Error: Failed to generate cluster configuration" >&2
     echo "Cleaning up regional specification..."
     rm -rf "$SPEC_DIR"

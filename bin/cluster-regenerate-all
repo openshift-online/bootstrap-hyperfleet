@@ -25,8 +25,8 @@ for spec_file in $region_specs; do
     
     echo "Processing $spec_dir ($cluster_name)..."
     
-    # Run generate-cluster for this specification
-    if ! ./bin/generate-cluster "$spec_dir"; then
+    # Run cluster-generate for this specification
+    if ! ./bin/cluster-generate "$spec_dir"; then
         echo "ERROR: Failed to generate cluster for $spec_dir"
         continue
     fi
