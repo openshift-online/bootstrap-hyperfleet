@@ -14,6 +14,7 @@ CLUSTER_PATTERN=""
 REGION_FILTER=""
 REFRESH_CACHE=false
 DETAILED_BREAKDOWN=false
+ORPHAN_DISCOVERY=false
 
 # Temporary and cache directories
 TEMP_DIR="/tmp/find-all-aws-resources-$$"
@@ -32,6 +33,7 @@ OPTIONS:
     --cluster-pattern PAT  Only process clusters matching pattern
     --region REGION        Only process specified region
     --detailed             Include detailed resource breakdown
+    --orphan-discovery     Discover ALL AWS resources and identify orphans
     --refresh              Refresh cache (re-run discovery)
     --debug                Enable debug output
     --help                 Show this help message
@@ -42,15 +44,21 @@ EXAMPLES:
     $0 --format csv > resources.csv       # CSV export
     $0 --cluster-pattern "ocp-*"          # Only OCP clusters
     $0 --region us-west-2                 # Single region
+    $0 --orphan-discovery                 # Find ALL resources and orphans
     $0 --detailed --include-costs         # Full analysis
 
 OUTPUT:
-    Generates comprehensive tables showing resource usage across all clusters:
+    Standard mode: Generates comprehensive tables showing resource usage across all clusters:
     - Master summary table with resource counts per cluster
     - Regional distribution summary
     - Resource type breakdown
     - Cost analysis (optional)
     - Detailed resource listings (optional)
+    
+    Orphan discovery mode: Saves complete resource inventory to .tmp/aws_resources.md:
+    - ALL AWS resources discovered in target regions
+    - Cross-reference analysis with repository clusters
+    - Identification of potential orphaned resources
 
 EOF
 }
@@ -76,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --detailed)
             DETAILED_BREAKDOWN=true
+            shift
+            ;;
+        --orphan-discovery)
+            ORPHAN_DISCOVERY=true
             shift
             ;;
         --refresh)
@@ -573,11 +585,218 @@ generate_detailed_breakdown() {
     done
 }
 
+# Get target regions for orphan discovery
+get_target_regions() {
+    local regions=()
+    
+    if [[ -n "$REGION_FILTER" ]]; then
+        regions+=("$REGION_FILTER")
+    else
+        # Default regions from repository analysis
+        regions+=("us-east-1" "us-west-2" "eu-west-1" "ap-southeast-1")
+        
+        # Also discover regions from repository structure
+        if [[ -d "regions/" ]]; then
+            while IFS= read -r -d '' region_dir; do
+                local region_name=$(basename "$region_dir")
+                if [[ ! " ${regions[*]} " =~ " ${region_name} " ]]; then
+                    regions+=("$region_name")
+                fi
+            done < <(find "regions/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+        fi
+    fi
+    
+    printf '%s\n' "${regions[@]}"
+}
+
+# Discover ALL AWS resources in a region (no filtering)
+discover_all_resources_in_region() {
+    local region="$1"
+    local output_file="$2"
+    
+    debug_log "Discovering ALL resources in region: $region"
+    
+    echo "## Region: $region" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # EC2 Instances (all running instances)
+    echo "### EC2 Instances" >> "$output_file"
+    echo "" >> "$output_file"
+    if aws ec2 describe-instances --region "$region" \
+        --filters "Name=instance-state-name,Values=running,stopped,stopping,pending" \
+        --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]||`no-name`]' \
+        --output table >> "$output_file" 2>/dev/null; then
+        echo "✅ EC2 instances discovered in $region"
+    else
+        echo "❌ Failed to discover EC2 instances in $region" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+    
+    # EBS Volumes (all volumes)
+    echo "### EBS Volumes" >> "$output_file"
+    echo "" >> "$output_file"
+    if aws ec2 describe-volumes --region "$region" \
+        --query 'Volumes[*].[VolumeId,Size,VolumeType,State,Encrypted,Attachments[0].InstanceId||`unattached`,Tags[?Key==`Name`].Value|[0]||`no-name`]' \
+        --output table >> "$output_file" 2>/dev/null; then
+        echo "✅ EBS volumes discovered in $region"
+    else
+        echo "❌ Failed to discover EBS volumes in $region" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+    
+    # Load Balancers (ALB/NLB)
+    echo "### Load Balancers (ALB/NLB)" >> "$output_file"
+    echo "" >> "$output_file"
+    if aws elbv2 describe-load-balancers --region "$region" \
+        --query 'LoadBalancers[*].[LoadBalancerArn,LoadBalancerName,Type,State.Code,VpcId]' \
+        --output table >> "$output_file" 2>/dev/null; then
+        echo "✅ Load balancers discovered in $region"
+    else
+        echo "❌ Failed to discover load balancers in $region" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+    
+    # VPCs
+    echo "### VPCs" >> "$output_file"
+    echo "" >> "$output_file"
+    if aws ec2 describe-vpcs --region "$region" \
+        --query 'Vpcs[*].[VpcId,CidrBlock,State,IsDefault,Tags[?Key==`Name`].Value|[0]||`no-name`]' \
+        --output table >> "$output_file" 2>/dev/null; then
+        echo "✅ VPCs discovered in $region"
+    else
+        echo "❌ Failed to discover VPCs in $region" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+    
+    # Security Groups
+    echo "### Security Groups" >> "$output_file"
+    echo "" >> "$output_file"
+    if aws ec2 describe-security-groups --region "$region" \
+        --query 'SecurityGroups[*].[GroupId,GroupName,VpcId,Description]' \
+        --output table >> "$output_file" 2>/dev/null; then
+        echo "✅ Security groups discovered in $region"
+    else
+        echo "❌ Failed to discover security groups in $region" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+}
+
+# Get known cluster identifiers from repository
+get_known_clusters() {
+    local cluster_identifiers=()
+    
+    # From regions/ directory
+    if [[ -d "regions/" ]]; then
+        while IFS= read -r -d '' cluster_dir; do
+            local cluster_name=$(basename "$cluster_dir")
+            cluster_identifiers+=("$cluster_name")
+        done < <(find "regions/" -mindepth 2 -maxdepth 2 -type d -print0 2>/dev/null || true)
+    fi
+    
+    # From clusters/ directory  
+    if [[ -d "clusters/" ]]; then
+        while IFS= read -r -d '' cluster_dir; do
+            local cluster_name=$(basename "$cluster_dir")
+            cluster_identifiers+=("$cluster_name")
+        done < <(find "clusters/" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+    fi
+    
+    # Remove duplicates and output
+    printf '%s\n' "${cluster_identifiers[@]}" | sort -u
+}
+
+# Perform orphan resource discovery
+perform_orphan_discovery() {
+    local output_file=".tmp/aws_resources.md"
+    
+    debug_log "Starting comprehensive AWS resource discovery..."
+    
+    # Ensure .tmp directory exists
+    mkdir -p .tmp
+    
+    # Initialize output file
+    cat > "$output_file" <<EOF
+# Comprehensive AWS Resource Discovery
+
+**Generated**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
+**Mode**: Orphan Resource Discovery  
+**Repository**: $(pwd)
+
+This report shows ALL AWS resources discovered in target regions and cross-references them with known clusters in this repository.
+
+EOF
+    
+    # Get target regions
+    local regions
+    regions=$(get_target_regions)
+    
+    echo "**Target Regions**: $(echo "$regions" | tr '\n' ' ')" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # Discover all resources in each region
+    while IFS= read -r region; do
+        [[ -n "$region" ]] || continue
+        echo "Discovering resources in region: $region"
+        discover_all_resources_in_region "$region" "$output_file"
+    done <<< "$regions"
+    
+    # Cross-reference analysis
+    echo "" >> "$output_file"
+    echo "---" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "## Cross-Reference Analysis" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # Known clusters from repository
+    echo "### Known Clusters (from repository)" >> "$output_file"
+    echo "" >> "$output_file"
+    local known_clusters
+    known_clusters=$(get_known_clusters)
+    
+    if [[ -n "$known_clusters" ]]; then
+        echo "$known_clusters" | while IFS= read -r cluster; do
+            echo "- $cluster" >> "$output_file"
+        done
+    else
+        echo "No cluster configurations found in repository" >> "$output_file"
+    fi
+    echo "" >> "$output_file"
+    
+    # Analysis notes
+    echo "### Orphan Resource Analysis" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "**Resources to Review**:" >> "$output_file"
+    echo "- Resources without cluster tags or with unrecognized cluster names" >> "$output_file"
+    echo "- Resources in regions not actively used by repository clusters" >> "$output_file"
+    echo "- Resources with 'no-name' tags that may be unmanaged" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "**Manual Review Required**:" >> "$output_file"
+    echo "- Check resource names/tags against known cluster identifiers above" >> "$output_file"
+    echo "- Verify resources are still needed for active workloads" >> "$output_file"
+    echo "- Consider cleanup of resources not associated with active clusters" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    echo ""
+    echo "✅ Comprehensive resource discovery completed"
+    echo "📄 Report saved to: $output_file"
+    echo ""
+    echo "Review the report to identify potential orphaned resources that may need cleanup."
+}
+
 # Main execution function
 main() {
     setup
     check_dependencies
     check_repository
+    
+    # Handle orphan discovery mode
+    if [[ "$ORPHAN_DISCOVERY" == "true" ]]; then
+        echo "=== Comprehensive AWS Resource Discovery (Orphan Mode) ==="
+        echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo ""
+        perform_orphan_discovery
+        return 0
+    fi
     
     echo "=== Multi-Cluster AWS Resource Inventory ==="
     echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"

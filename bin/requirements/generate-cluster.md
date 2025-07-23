@@ -65,7 +65,11 @@ clusters/eks-XX/
 ├── awsmanagedmachinepool.yaml       # 20 lines - EKS workers
 ├── managedcluster.yaml              # 14 lines - ACM registration
 ├── klusterletaddonconfig.yaml       # 21 lines - ACM config
+├── external-secrets.yaml            # External secrets config
+├── acm-integration-pipeline.yaml    # Pipeline integration
 └── kustomization.yaml               # 15 lines - resource list
+
+# Note: klusterlet-crd.yaml NOT generated - CRD managed by ACM hub
 ```
 
 ### HCP Cluster Output
