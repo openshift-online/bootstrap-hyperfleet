@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cloud-infrastructure-provisioning-run
+  namespace: ocm-eks-01-mturansk-a
+spec:
+  pipelineRef:
+    name: cloud-infrastructure-provisioning-pipeline
+  params:
+    - name: cluster-name
+      value: eks-01-mturansk-a
+    - name: cloud-provider
+      value: aws
+    - name: region
+      value: ap-southeast-1
+    - name: instance-type
+      value: m5.2xlarge
+    - name: node-count
+      value: "2"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
