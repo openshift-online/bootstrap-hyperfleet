@@ -771,8 +771,6 @@ controlPlane:
   replicas: 3
   platform:
     aws:
-      zones:
-        - ${REGION}
       rootVolume:
         iops: 4000
         size: 100
@@ -790,8 +788,6 @@ compute:
           size: 100
           type: io1
         type: $INSTANCE_TYPE
-        zones:
-          - ${REGION}
 networking:
   networkType: OVNKubernetes
   clusterNetwork:
