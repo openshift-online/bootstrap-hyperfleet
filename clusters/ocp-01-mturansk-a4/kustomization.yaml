@@ -1,0 +1,108 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - klusterletaddonconfig.yaml
+  - ../../bases/clusters
+
+# This will disable name hashing for all generators in this file
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: install-config
+    namespace: ocp-01-mturansk-a4
+    files:
+      - install-config.yaml
+
+patches:
+  - target:
+      kind: ClusterDeployment
+      version: v1
+      group: hive.openshift.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/clusterName
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/platform/aws/region
+        value: us-west-2
+  - target:
+      kind: ManagedCluster
+      version: v1
+      group: cluster.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/labels/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/labels/region
+        value: us-west-2
+  - target:
+      kind: MachinePool
+      version: v1
+      group: hive.openshift.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/clusterDeploymentRef/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/name
+        value: ocp-01-mturansk-a4-worker
+  - target:
+      kind: KlusterletAddonConfig
+      version: v1
+      group: agent.open-cluster-management.io
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /metadata/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/clusterLabels/name
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/clusterNamespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/clusterName
+        value: ocp-01-mturansk-a4
+  - target:
+      kind: ExternalSecret
+      version: v1
+      group: external-secrets.io
+      name: aws-credentials
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+  - target:
+      kind: ExternalSecret
+      version: v1
+      group: external-secrets.io
+      name: pull-secret
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-a4
+      - op: replace
+        path: /spec/target/template/type
+        value: kubernetes.io/dockerconfigjson
