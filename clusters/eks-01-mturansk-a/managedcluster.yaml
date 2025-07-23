@@ -1,0 +1,12 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: eks-01-mturansk-a
+  namespace: eks-01-mturansk-a
+  labels:
+    name: eks-01-mturansk-a
+    cloud: Amazon
+    region: ap-southeast-1
+    vendor: EKS
+spec:
+  hubAcceptsClient: true
