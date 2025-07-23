@@ -1,0 +1,245 @@
+#!/bin/bash
+set -euo pipefail
+
+# cleanup-stuck-acm-clusters - Clean up ACM clusters stuck in termination
+# Fixes clusters where ManagedCluster and namespace finalizers are stuck
+
+# List of stuck clusters
+STUCK_CLUSTERS=(
+    "ocp-01-mturansk-t10"
+    "ocp-01-mturansk-t2"
+    "ocp-01-mturansk-t3"
+)
+
+log() {
+    echo "$(date '+%H:%M:%S') $*"
+}
+
+error_log() {
+    echo "$(date '+%H:%M:%S') ❌ ERROR: $*" >&2
+}
+
+success_log() {
+    echo "$(date '+%H:%M:%S') ✅ $*"
+}
+
+warning_log() {
+    echo "$(date '+%H:%M:%S') ⚠️  $*"
+}
+
+# Check prerequisites
+check_prerequisites() {
+    log "Checking prerequisites..."
+    
+    if ! command -v oc >/dev/null 2>&1; then
+        error_log "OpenShift CLI (oc) not found"
+        exit 1
+    fi
+    
+    if ! oc whoami >/dev/null 2>&1; then
+        error_log "Not connected to OpenShift cluster"
+        log "   Run: oc login <cluster-url>"
+        exit 1
+    fi
+    
+    success_log "Prerequisites validated"
+}
+
+# Clean up a single cluster
+cleanup_cluster() {
+    local cluster_name="$1"
+    
+    log "🔧 Cleaning up cluster: $cluster_name"
+    
+    # Step 1: Check current state
+    log "  📊 Checking current state..."
+    
+    local mc_exists=false
+    local ns_exists=false
+    
+    if oc get managedcluster "$cluster_name" >/dev/null 2>&1; then
+        mc_exists=true
+        log "    ManagedCluster exists"
+        
+        # Show current finalizers
+        local mc_finalizers
+        mc_finalizers=$(oc get managedcluster "$cluster_name" -o jsonpath='{.metadata.finalizers[*]}' 2>/dev/null || echo "")
+        if [[ -n "$mc_finalizers" ]]; then
+            log "    ManagedCluster finalizers: $mc_finalizers"
+        else
+            log "    ManagedCluster has no finalizers"
+        fi
+        
+        # Show taints
+        local mc_taints
+        mc_taints=$(oc get managedcluster "$cluster_name" -o jsonpath='{.spec.taints[*].key}' 2>/dev/null || echo "")
+        if [[ -n "$mc_taints" ]]; then
+            log "    ManagedCluster taints: $mc_taints"
+        fi
+    else
+        log "    ManagedCluster not found"
+    fi
+    
+    if oc get namespace "$cluster_name" >/dev/null 2>&1; then
+        ns_exists=true
+        local ns_phase
+        ns_phase=$(oc get namespace "$cluster_name" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        log "    Namespace exists (phase: $ns_phase)"
+        
+        # Show namespace finalizers
+        local ns_finalizers
+        ns_finalizers=$(oc get namespace "$cluster_name" -o jsonpath='{.metadata.finalizers[*]}' 2>/dev/null || echo "")
+        if [[ -n "$ns_finalizers" ]]; then
+            log "    Namespace finalizers: $ns_finalizers"
+        else
+            log "    Namespace has no finalizers"
+        fi
+    else
+        log "    Namespace not found"
+    fi
+    
+    # Step 2: Clean up ArgoCD resources first (prevents recreation)
+    log "  🔄 Step 1: Cleaning up ArgoCD resources..."
+    
+    # Check for ApplicationSet
+    local appset_name="${cluster_name}-applications"
+    if oc get applicationset "$appset_name" -n openshift-gitops >/dev/null 2>&1; then
+        log "    Found ApplicationSet: $appset_name"
+        
+        # Delete ApplicationSet to stop recreation
+        if oc delete applicationset "$appset_name" -n openshift-gitops --ignore-not-found; then
+            success_log "    ApplicationSet deleted"
+        else
+            warning_log "    Failed to delete ApplicationSet"
+        fi
+    fi
+    
+    # Check for ArgoCD Application
+    local app_name="${cluster_name}-cluster"
+    if oc get application "$app_name" -n openshift-gitops >/dev/null 2>&1; then
+        log "    Found ArgoCD Application: $app_name"
+        
+        # Remove ArgoCD finalizers to allow deletion
+        if oc patch application "$app_name" -n openshift-gitops --type=merge -p '{"metadata":{"finalizers":[]}}'; then
+            success_log "    ArgoCD Application finalizers removed"
+        else
+            warning_log "    Failed to remove ArgoCD Application finalizers"
+        fi
+    fi
+    
+    # Brief pause for ArgoCD to stop reconciling
+    sleep 3
+    
+    # Step 3: Remove ManagedCluster finalizers (after ArgoCD cleanup)
+    if [[ "$mc_exists" == "true" ]]; then
+        log "  🔄 Step 2: Removing ManagedCluster finalizers..."
+        
+        if oc patch managedcluster "$cluster_name" --type=merge -p '{"metadata":{"finalizers":[]}}'; then
+            success_log "    ManagedCluster finalizers removed"
+            
+            # Brief pause to let ACM controllers react
+            sleep 2
+        else
+            error_log "    Failed to remove ManagedCluster finalizers"
+            return 1
+        fi
+    fi
+    
+    # Step 4: Remove namespace finalizers
+    if [[ "$ns_exists" == "true" ]]; then
+        log "  🔄 Step 3: Removing namespace finalizers..."
+        
+        if oc patch namespace "$cluster_name" --type=merge -p '{"metadata":{"finalizers":[]}}'; then
+            success_log "    Namespace finalizers removed"
+            
+            # Wait for namespace to actually delete
+            log "    Waiting for namespace deletion..."
+            local wait_count=0
+            while oc get namespace "$cluster_name" >/dev/null 2>&1 && [[ $wait_count -lt 30 ]]; do
+                sleep 1
+                ((wait_count++))
+                echo -n "."
+            done
+            echo ""
+            
+            if oc get namespace "$cluster_name" >/dev/null 2>&1; then
+                warning_log "    Namespace still exists after cleanup"
+            else
+                success_log "    Namespace successfully deleted"
+            fi
+        else
+            error_log "    Failed to remove namespace finalizers"
+            return 1
+        fi
+    fi
+    
+    # Step 5: Verify ManagedCluster cleanup
+    if [[ "$mc_exists" == "true" ]]; then
+        log "  🔍 Step 4: Verifying ManagedCluster status..."
+        
+        if oc get managedcluster "$cluster_name" >/dev/null 2>&1; then
+            local mc_finalizers_after
+            mc_finalizers_after=$(oc get managedcluster "$cluster_name" -o jsonpath='{.metadata.finalizers[*]}' 2>/dev/null || echo "")
+            
+            if [[ -z "$mc_finalizers_after" ]]; then
+                success_log "    ManagedCluster cleanup successful"
+                log "    Note: ManagedCluster still exists but has no finalizers"
+            else
+                warning_log "    ManagedCluster still has finalizers: $mc_finalizers_after"
+            fi
+        else
+            success_log "    ManagedCluster successfully deleted"
+        fi
+    fi
+    
+    success_log "✅ Cluster $cluster_name cleanup completed"
+    echo ""
+}
+
+# Main execution
+main() {
+    log "🧹 ACM Stuck Cluster Cleanup"
+    log "============================="
+    log "Cleaning up ${#STUCK_CLUSTERS[@]} stuck clusters"
+    echo ""
+    
+    check_prerequisites
+    echo ""
+    
+    local success_count=0
+    local failure_count=0
+    
+    for cluster in "${STUCK_CLUSTERS[@]}"; do
+        if cleanup_cluster "$cluster"; then
+            ((success_count++))
+        else
+            ((failure_count++))
+            error_log "Failed to clean up cluster: $cluster"
+            echo ""
+        fi
+    done
+    
+    # Final summary
+    log "📊 Cleanup Summary"
+    log "=================="
+    log "Total clusters: ${#STUCK_CLUSTERS[@]}"
+    log "Successfully cleaned: $success_count"
+    log "Failed: $failure_count"
+    
+    if [[ $failure_count -eq 0 ]]; then
+        success_log "All clusters cleaned up successfully!"
+        echo ""
+        log "🔍 Next steps:"
+        log "   1. Run cluster-issue-finder to verify cleanup"
+        log "   2. Remove any remaining ManagedCluster resources if needed:"
+        for cluster in "${STUCK_CLUSTERS[@]}"; do
+            log "      oc delete managedcluster $cluster --ignore-not-found"
+        done
+    else
+        warning_log "Some clusters failed cleanup - manual intervention may be required"
+        exit 1
+    fi
+}
+
+# Run main function
+main "$@"
