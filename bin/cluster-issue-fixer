@@ -1,0 +1,353 @@
+#!/bin/bash
+set -euo pipefail
+
+# cluster-issue-fixer - Fix cluster issues from JSON input
+# Simple tool that reads issue data and guides user through fixes
+
+INPUT_FILE="./issues.json"
+DRY_RUN=false
+DEBUG=false
+
+# Counters for summary
+TOTAL_ISSUES=0
+FIXES_APPLIED=0
+FIXES_SKIPPED=0
+
+usage() {
+    cat << 'EOF'
+Usage: cluster-issue-fixer [OPTIONS] [INPUT_FILE]
+
+Reads cluster issues from JSON and guides user through interactive fixes.
+Works with output from cluster-issue-finder.
+
+OPTIONS:
+    --dry-run            Show fixes without executing (safe preview)
+    --debug              Enable detailed debug output
+    --help               Show this help message
+
+ARGUMENTS:
+    INPUT_FILE           JSON file to read (default: ./issues.json)
+
+EXAMPLES:
+    cluster-issue-fixer                     # Read from ./issues.json
+    cluster-issue-fixer --dry-run           # Preview fixes without executing
+    cluster-issue-fixer --debug issues.json # Debug mode with custom file
+
+WORKFLOW:
+    1. Run: cluster-issue-finder
+    2. Run: cluster-issue-fixer --dry-run    # Preview
+    3. Run: cluster-issue-fixer              # Apply fixes
+
+EOF
+}
+
+debug_log() {
+    [[ "$DEBUG" == "true" ]] && echo "🔍 DEBUG: $*" >&2
+}
+
+log() {
+    echo "$*" >&2
+}
+
+error_log() {
+    echo "❌ ERROR: $*" >&2
+}
+
+success_log() {
+    echo "✅ $*" >&2
+}
+
+warning_log() {
+    echo "⚠️  $*" >&2
+}
+
+# Parse arguments - keep it simple
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --debug)
+            DEBUG=true
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        --*)
+            error_log "Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            INPUT_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+log "🔧 Cluster Issue Fixer"
+log "======================"
+debug_log "Input file: $INPUT_FILE"
+[[ "$DRY_RUN" == "true" ]] && log "🔍 DRY RUN MODE - No changes will be made"
+
+# Validate prerequisites
+debug_log "Checking prerequisites..."
+
+if [[ ! -f "$INPUT_FILE" ]]; then
+    error_log "Input file not found: $INPUT_FILE"
+    log "   Run: cluster-issue-finder $INPUT_FILE"
+    exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    error_log "jq not found - required for JSON processing"
+    exit 1
+fi
+
+if ! command -v oc >/dev/null 2>&1; then
+    error_log "OpenShift CLI (oc) not found"
+    exit 1
+fi
+
+if [[ "$DRY_RUN" == "false" ]] && ! oc whoami >/dev/null 2>&1; then
+    error_log "Not connected to OpenShift cluster"
+    log "   Run: oc login <cluster-url> or use --dry-run"
+    exit 1
+fi
+
+debug_log "Prerequisites validated"
+
+# Load and validate JSON
+debug_log "Loading issue data from $INPUT_FILE..."
+
+if ! issue_data=$(cat "$INPUT_FILE"); then
+    error_log "Failed to read input file: $INPUT_FILE"
+    exit 1
+fi
+
+if ! echo "$issue_data" | jq empty 2>/dev/null; then
+    error_log "Invalid JSON in input file: $INPUT_FILE"
+    exit 1
+fi
+
+debug_log "JSON data loaded and validated"
+
+# Get clusters with issues
+debug_log "Filtering clusters with issues..."
+clusters_with_issues=$(echo "$issue_data" | jq -c '.clusters[] | select(.issues != "OK")')
+
+if [[ -z "$clusters_with_issues" ]]; then
+    success_log "No cluster issues found - all clusters healthy!"
+    exit 0
+fi
+
+issue_count=$(echo "$clusters_with_issues" | wc -l)
+log "📋 Found $issue_count clusters with issues"
+
+# Get fix command for issue type
+get_fix_command() {
+    local cluster_name="$1"
+    local issue_type="$2"
+    
+    debug_log "Getting fix command for $cluster_name issue: $issue_type"
+    
+    case "$issue_type" in
+        "ORPHANED_MC")
+            echo "oc delete managedcluster $cluster_name"
+            ;;
+        "MISSING_MC")
+            echo "oc apply -k clusters/$cluster_name/"
+            ;;
+        "STUCK_NS")
+            echo "oc patch namespace $cluster_name --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'"
+            ;;
+        "STUCK_FINALIZERS")
+            echo "oc patch managedcluster $cluster_name --type=merge -p '{\"metadata\":{\"finalizers\":[]}}'"
+            ;;
+        "TAINTED")
+            echo "oc patch managedcluster $cluster_name --type=json -p='[{\"op\": \"remove\", \"path\": \"/spec/taints\"}]'"
+            ;;
+        *)
+            debug_log "No fix command available for issue type: $issue_type"
+            echo ""
+            ;;
+    esac
+}
+
+# Get fix description
+get_fix_description() {
+    local issue_type="$1"
+    
+    case "$issue_type" in
+        "ORPHANED_MC")
+            echo "Remove orphaned ManagedCluster (no repository config)"
+            ;;
+        "MISSING_MC")
+            echo "Apply cluster manifests from repository"
+            ;;
+        "STUCK_NS")
+            echo "Remove finalizers from stuck namespace"
+            ;;
+        "STUCK_FINALIZERS")
+            echo "Remove finalizers from unavailable ManagedCluster"
+            ;;
+        "TAINTED")
+            echo "Remove taints from ManagedCluster"
+            ;;
+        *)
+            echo "Unknown issue type: $issue_type"
+            ;;
+    esac
+}
+
+# Get warning message
+get_fix_warning() {
+    local issue_type="$1"
+    
+    case "$issue_type" in
+        "ORPHANED_MC")
+            echo "This permanently removes the cluster from ACM management"
+            ;;
+        "MISSING_MC")
+            echo "This creates cluster resources - ensure cluster should exist"
+            ;;
+        "STUCK_NS")
+            echo "This forces namespace deletion - ensure no important resources remain"
+            ;;
+        "STUCK_FINALIZERS")
+            echo "This allows cleanup but may leave orphaned resources"
+            ;;
+        "TAINTED")
+            echo "Only remove taints if cluster health issues are resolved"
+            ;;
+        *)
+            echo "Proceed with caution"
+            ;;
+    esac
+}
+
+# Execute fix
+execute_fix() {
+    local cluster_name="$1"
+    local issue_type="$2"
+    local fix_command="$3"
+    
+    debug_log "Executing fix for $cluster_name ($issue_type): $fix_command"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "   🔍 DRY RUN: Would execute: $fix_command"
+        return 0
+    fi
+    
+    log "   🔧 Executing: $fix_command"
+    
+    if eval "$fix_command"; then
+        success_log "   ✅ Fix command completed successfully"
+        return 0
+    else
+        error_log "   ❌ Fix command failed"
+        return 1
+    fi
+}
+
+# Process each cluster with issues
+echo "$clusters_with_issues" | while IFS= read -r cluster_json; do
+    cluster_name=$(echo "$cluster_json" | jq -r '.name')
+    issues=$(echo "$cluster_json" | jq -r '.issues')
+    
+    debug_log "Processing cluster: $cluster_name with issues: $issues"
+    
+    # Split issues by comma and process each
+    IFS=',' read -ra issue_array <<< "$issues"
+    
+    for issue_type in "${issue_array[@]}"; do
+        TOTAL_ISSUES=$((TOTAL_ISSUES + 1))
+        
+        debug_log "Processing issue: $issue_type for cluster: $cluster_name"
+        
+        fix_command=$(get_fix_command "$cluster_name" "$issue_type")
+        description=$(get_fix_description "$issue_type")
+        warning=$(get_fix_warning "$issue_type")
+        
+        if [[ -z "$fix_command" ]]; then
+            warning_log "No fix available for $cluster_name issue: $issue_type"
+            FIXES_SKIPPED=$((FIXES_SKIPPED + 1))
+            continue
+        fi
+        
+        # Show issue details
+        echo ""
+        log "🔧 ISSUE FOUND: $issue_type"
+        log "   Cluster: $cluster_name"
+        log "   Problem: $description"
+        echo ""
+        log "   Recommended Fix:"
+        log "   $fix_command"
+        echo ""
+        log "   ⚠️  Warning: $warning"
+        echo ""
+        
+        if [[ "$DEBUG" == "true" ]]; then
+            debug_log "Issue Analysis:"
+            debug_log "  Cluster: $cluster_name"
+            debug_log "  Issue Type: $issue_type"
+            debug_log "  Fix Command: $fix_command"
+            debug_log "  Description: $description"
+            echo ""
+        fi
+        
+        # Get user confirmation (skip in dry-run)
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log "   🔍 DRY RUN: Would prompt for user confirmation"
+            continue
+        fi
+
+
+        read -p "Apply this fix? [y/N]: " yea
+        echo "wtf" $yea
+
+        case $yea in
+            [yY]|[yY][eE][sS])
+                log "   ✅ Applying fix..."
+                if execute_fix "$cluster_name" "$issue_type" "$fix_command"; then
+                    FIXES_APPLIED=$((FIXES_APPLIED + 1))
+                    
+                    # Brief pause for user to see result
+                    sleep 1
+                else
+                    log "   ❌ Fix failed - continuing with next issue"
+                fi
+                ;;
+            *)
+                log "   ⏭️  Skipped - moving to next issue"
+                FIXES_SKIPPED=$((FIXES_SKIPPED + 1))
+                ;;
+        esac
+    done
+done
+
+# Show summary
+echo ""
+log "📊 Session Summary"
+log "=================="
+log "Issues Found: $TOTAL_ISSUES"
+log "Fixes Applied: $FIXES_APPLIED"
+log "Fixes Skipped: $FIXES_SKIPPED"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    log ""
+    log "🔍 Dry run completed - no changes were made"
+    log "   Remove --dry-run flag to apply fixes interactively"
+else
+    log ""
+    if [[ "$FIXES_APPLIED" -gt 0 ]]; then
+        success_log "✅ Session completed - $FIXES_APPLIED fixes applied"
+        log "   Run cluster-issue-finder again to check for remaining issues"
+    else
+        warning_log "No fixes were applied"
+    fi
+fi
+
+debug_log "Fixer session complete"

@@ -357,9 +357,9 @@ generate_csv() {
 main() {
     check_dependencies
     
-    echo "=== Cluster Status Comparison ==="
-    echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    echo ""
+#    echo "=== Cluster Status Comparison ==="
+#    echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+#    echo ""
     
     # Get all clusters from both sources
     local repo_clusters
