@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Create a comprehensive AWS resource inventory tool that automatically discovers and catalogs all AWS resources used by **every cluster** in this OpenShift Bootstrap repository. Generates a unified table showing resource usage across all clusters and regions.
+Create a comprehensive AWS resource inventory tool that automatically discovers and catalogs **ALL AWS resources** in target regions, including both cluster-managed resources and orphaned/untracked resources. Cross-references with this OpenShift Bootstrap repository to identify resources that may need cleanup or management.
 
 ## Functional Requirements
 
@@ -11,8 +11,10 @@ Create a comprehensive AWS resource inventory tool that automatically discovers 
 Automate the discovery of AWS resources for all clusters defined in the repository by:
 1. **Auto-discovering clusters** from `regions/` and `clusters/` directories
 2. **Running `find-aws-resources`** for each cluster and region combination
-3. **Aggregating results** into comprehensive tables showing resource usage patterns
-4. **Providing cost analysis** and resource utilization insights
+3. **Discovering ALL resources** in target regions (orphan detection mode)
+4. **Cross-referencing** to identify untracked/orphaned resources
+5. **Aggregating results** into comprehensive tables showing resource usage patterns
+6. **Providing cost analysis** and resource utilization insights
 
 ### Repository Analysis
 
@@ -342,6 +344,67 @@ trap "rm -rf $TEMP_DIR" EXIT
 CACHE_DIR="${HOME}/.cache/bootstrap-aws-resources"
 mkdir -p "$CACHE_DIR"
 ```
+
+### Orphan Resource Discovery
+
+#### Core Concept
+Orphan resources are AWS resources that exist in target regions but are not tracked by any cluster configuration in this repository. They may be:
+- Resources from deleted clusters that weren't properly cleaned up
+- Manually created resources outside GitOps workflows
+- Failed cluster deployments that left infrastructure behind
+- Shared infrastructure not tagged with cluster identifiers
+- Resources created by previous tools or processes
+
+#### Implementation Strategy
+```bash
+#!/bin/bash
+# Orphan Resource Discovery Implementation
+
+discover_all_resources() {
+    local region="$1"
+    local output_file=".tmp/aws_resources.md"
+    
+    echo "=== Comprehensive AWS Resource Discovery ===" >> "$output_file"
+    echo "Region: $region" >> "$output_file"
+    echo "Generated: $(date)" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # Get ALL resources by type (no filtering)
+    discover_ec2_instances "$region" >> "$output_file"
+    discover_ebs_volumes "$region" >> "$output_file"
+    discover_load_balancers "$region" >> "$output_file"
+    discover_vpcs_subnets "$region" >> "$output_file"
+    discover_security_groups "$region" >> "$output_file"
+    discover_iam_resources >> "$output_file"
+    
+    # Cross-reference with repository
+    cross_reference_resources "$output_file"
+}
+
+cross_reference_resources() {
+    local output_file="$1"
+    
+    echo "" >> "$output_file"
+    echo "## Cross-Reference Analysis" >> "$output_file"
+    echo "" >> "$output_file"
+    
+    # Get known clusters from repository
+    echo "### Known Clusters (from repository):" >> "$output_file"
+    find regions/ clusters/ -name "kustomization.yaml" -o -name "*.yaml" | \
+        xargs grep -l "cluster" | sort | uniq >> "$output_file"
+    
+    echo "" >> "$output_file"
+    echo "### Potential Orphaned Resources:" >> "$output_file"
+    echo "Resources not matching known cluster patterns will be flagged for review." >> "$output_file"
+}
+```
+
+#### Output Format
+- **Single output file**: `.tmp/aws_resources.md`
+- **Complete inventory**: All discovered resources by type
+- **Cross-reference section**: Known clusters vs discovered resources
+- **Read-only operation**: No deletions, only discovery and reporting
+- **Simple format**: Markdown tables for easy review
 
 ### Design Principles
 

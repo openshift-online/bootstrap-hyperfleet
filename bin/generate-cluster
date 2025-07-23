@@ -289,31 +289,10 @@ spec:
       property: .dockerconfigjson
 EOF
 
-    # Generate Klusterlet CRD for managed cluster (critical for ACM import)
-    # Extract from hub and remove hub-specific metadata to avoid conflicts
-    if oc get crd klusterlets.operator.open-cluster-management.io >/dev/null 2>&1; then
-        echo "Extracting Klusterlet CRD for managed cluster deployment"
-        oc get crd klusterlets.operator.open-cluster-management.io -o yaml | \
-        sed '/resourceVersion:/d; /uid:/d; /generation:/d; /creationTimestamp:/d; /managedFields:/d; /ownerReferences:/d; /selfLink:/d' | \
-        sed '/^  annotations:/,/^[[:space:]]*[^[:space:]]/{ /^[[:space:]]*[^[:space:]]/!d; }' | \
-        sed '/kubectl.kubernetes.io\/last-applied-configuration/d' > "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml"
-        
-        # Add comment explaining purpose
-        sed -i '1i# Klusterlet CRD for ACM integration on managed cluster\n# Auto-generated from hub cluster, metadata cleaned for deployment' "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml"
-    else
-        echo "Warning: Could not find Klusterlet CRD on hub cluster"
-        cat > "$CLUSTER_OUTPUT_DIR/klusterlet-crd.yaml" << EOF
-# Placeholder - Klusterlet CRD not found on hub cluster
-# This will need to be manually provided for ACM integration
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: klusterlet-crd-missing
-  namespace: $FULL_CLUSTER_NAME
-data:
-  note: "Klusterlet CRD required for ACM integration"
-EOF
-    fi
+    # Note: Klusterlet CRD is NOT generated for cluster deployment
+    # The CRD is managed by ACM hub cluster during import process
+    # Including it in cluster deployment causes "AlreadyExists" conflicts
+    echo "Skipping Klusterlet CRD generation - managed by ACM hub cluster"
 
     # Generate kustomization.yaml
     cat > "$CLUSTER_OUTPUT_DIR/kustomization.yaml" << EOF
@@ -337,26 +316,6 @@ EOF
 
     # Generate ACM Integration Pipeline for automated post-provisioning
     cat > "$CLUSTER_OUTPUT_DIR/acm-integration-pipeline.yaml" << EOF
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: klusterlet-crd-$FULL_CLUSTER_NAME
-  namespace: $FULL_CLUSTER_NAME
-data:
-  klusterlet-crd.yaml: |
-EOF
-
-    # Create clean Klusterlet CRD for embedding in ConfigMap
-    if oc get crd klusterlets.operator.open-cluster-management.io >/dev/null 2>&1; then
-        # Create a temporary clean CRD file with proper indentation
-        oc get crd klusterlets.operator.open-cluster-management.io -o yaml | \
-        sed '/resourceVersion:/d; /uid:/d; /generation:/d; /creationTimestamp:/d; /managedFields:/d; /ownerReferences:/d; /selfLink:/d' | \
-        sed '/kubectl.kubernetes.io\/last-applied-configuration/d' | \
-        sed 's/^/    /' >> "$CLUSTER_OUTPUT_DIR/acm-integration-pipeline.yaml"
-    fi
-
-    cat >> "$CLUSTER_OUTPUT_DIR/acm-integration-pipeline.yaml" << EOF
 ---
 apiVersion: tekton.dev/v1beta1
 kind: Task
@@ -443,16 +402,13 @@ spec:
       echo "Configuring access to managed cluster..."
       aws eks update-kubeconfig --name \$CLUSTER_NAME --region \$REGION --kubeconfig /tmp/managed-kubeconfig
       
-      echo "Installing Klusterlet CRD on managed cluster..."
+      echo "Skipping Klusterlet CRD installation - managed by ACM hub cluster"
       export KUBECONFIG=/tmp/managed-kubeconfig
-      kubectl apply -f /workspace/klusterlet-crd/klusterlet-crd.yaml
       
       echo "Waiting for EKS worker nodes to be ready..."
       kubectl wait --for=condition=Ready nodes --all --timeout=600s
       
     volumeMounts:
-    - name: klusterlet-crd
-      mountPath: /workspace/klusterlet-crd
       
   - name: apply-acm-import
     image: registry.redhat.io/ubi9/ubi:latest
@@ -541,9 +497,6 @@ spec:
   - name: aws-credentials
     secret:
       secretName: aws-credentials
-  - name: klusterlet-crd
-    configMap:
-      name: klusterlet-crd-$FULL_CLUSTER_NAME
 ---
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
