@@ -1185,9 +1185,9 @@ push_to_gitea() {
     
     # Gitea configuration
     local GITEA_URL="http://gitea.gitea-system.svc.cluster.local:3000"
-    local GITEA_REPO_URL="http://bootstrap:bootstrap123@gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git"
-    local GITEA_USER="bootstrap"
-    local GITEA_PASS="bootstrap123"
+    local GITEA_REPO_URL="http://mturansk:acmeprototype321#@gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git"
+    local GITEA_USER="mturansk"
+    local GITEA_PASS="acmeprototype321#"
     
     # Create a temporary job to push to Gitea from inside the cluster
     echo "Creating push job for cluster: $FULL_CLUSTER_NAME"

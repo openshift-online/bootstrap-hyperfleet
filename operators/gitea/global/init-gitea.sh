@@ -2,9 +2,9 @@
 set -e
 
 GITEA_URL="http://gitea.gitea-system.svc.cluster.local:3000"
-ADMIN_USER="admin"
-ADMIN_PASS="bootstrap123"
-ADMIN_EMAIL="admin@bootstrap.local"
+ADMIN_USER="mturansk"
+ADMIN_PASS="acmeprototype321#"
+ADMIN_EMAIL="mturansk@redhat.com"
 
 echo "Initializing Gitea repository and admin user..."
 
@@ -13,7 +13,7 @@ oc apply -f - <<EOF
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: gitea-init
+  name: gitea-init3
   namespace: gitea-system
 spec:
   template:

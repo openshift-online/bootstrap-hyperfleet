@@ -31,7 +31,7 @@ spec:
           echo "Completing Gitea installation..."
           curl -X POST http://gitea.gitea-system.svc.cluster.local:3000/install \\
             -H "Content-Type: application/x-www-form-urlencoded" \\
-            -d "db_type=PostgreSQL&db_host=gitea-db.gitea-system.svc.cluster.local&db_port=5432&db_user=gitea&db_passwd=giteapassword123&db_name=gitea&ssl_mode=disable&db_schema=&charset=utf8&app_name=Gitea%3A+Git+with+a+cup+of+tea&repo_root_path=%2Ftmp%2Fgitea%2Frepositories&lfs_root_path=%2Ftmp%2Fgitea%2Fdata%2Flfs&run_user=gitea&domain=gitea.gitea-system.svc.cluster.local&ssh_port=22&http_port=3000&app_url=http%3A%2F%2Fgitea.gitea-system.svc.cluster.local%3A3000%2F&log_root_path=%2Ftmp%2Fgitea%2Flog&smtp_addr=&smtp_port=587&smtp_from=&smtp_user=&smtp_passwd=&enable_federated_avatar=on&enable_open_id_sign_in=on&enable_open_id_sign_up=on&default_allow_create_organization=on&default_enable_timetracking=on&no_reply_address=noreply.localhost&password_algorithm=pbkdf2&admin_name=admin&admin_passwd=bootstrap123&admin_confirm_passwd=bootstrap123&admin_email=admin%40bootstrap.local"
+            -d "db_type=PostgreSQL&db_host=gitea-db.gitea-system.svc.cluster.local&db_port=5432&db_user=gitea&db_passwd=giteapassword123&db_name=gitea&ssl_mode=disable&db_schema=&charset=utf8&app_name=Gitea%3A+Git+with+a+cup+of+tea&repo_root_path=%2Ftmp%2Fgitea%2Frepositories&lfs_root_path=%2Ftmp%2Fgitea%2Fdata%2Flfs&run_user=gitea&domain=gitea.gitea-system.svc.cluster.local&ssh_port=22&http_port=3000&app_url=http%3A%2F%2Fgitea.gitea-system.svc.cluster.local%3A3000%2F&log_root_path=%2Ftmp%2Fgitea%2Flog&smtp_addr=&smtp_port=587&smtp_from=&smtp_user=&smtp_passwd=&enable_federated_avatar=on&enable_open_id_sign_in=on&enable_open_id_sign_up=on&default_allow_create_organization=on&default_enable_timetracking=on&no_reply_address=noreply.localhost&password_algorithm=pbkdf2&admin_name=mturansk&admin_passwd=acmeprototype321#&admin_confirm_passwd=acmeprototype321#&admin_email=mturansk%40redhat.com"
           
           sleep 5
           
@@ -41,7 +41,7 @@ spec:
           echo "Creating bootstrap organization..."
           curl -X POST http://gitea.gitea-system.svc.cluster.local:3000/api/v1/orgs \\
             -H "Content-Type: application/json" \\
-            -u "admin:bootstrap123" \\
+            -u "mturansk:acmeprototype321#" \\
             -d '{
               "username": "bootstrap",
               "full_name": "Bootstrap Organization",
@@ -51,7 +51,7 @@ spec:
           echo "Creating bootstrap repository..."
           curl -X POST http://gitea.gitea-system.svc.cluster.local:3000/api/v1/orgs/bootstrap/repos \\
             -H "Content-Type: application/json" \\
-            -u "admin:bootstrap123" \\
+            -u "mturansk:acmeprototype321#" \\
             -d '{
               "name": "bootstrap", 
               "description": "Bootstrap cluster configurations",

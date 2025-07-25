@@ -3,7 +3,7 @@ set -e
 
 GITEA_URL="http://localhost:3000"
 ADMIN_USER="admin"
-ADMIN_PASS="bootstrap123"
+ADMIN_PASS="acmeprototype321#"
 ADMIN_EMAIL="admin@bootstrap.local"
 
 echo "Setting up Gitea initial configuration..."

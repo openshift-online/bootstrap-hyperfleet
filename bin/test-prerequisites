@@ -1,0 +1,447 @@
+#!/bin/bash
+# Test Prerequisites Validation Tool
+# Validates all prerequisites before OCP cluster provisioning tests
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Configuration
+CHECK_QUOTAS=false
+CHECK_DNS=false
+VERBOSE=false
+EXIT_ON_FAILURE=true
+
+# Counters
+CHECKS_PASSED=0
+CHECKS_FAILED=0
+CHECKS_WARNING=0
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[PASS]${NC} $*"; ((CHECKS_PASSED++)); }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; ((CHECKS_WARNING++)); }
+log_error() { echo -e "${RED}[FAIL]${NC} $*"; ((CHECKS_FAILED++)); }
+
+# Check hub cluster connection
+check_hub_connection() {
+    log_info "Checking hub cluster connection..."
+    
+    if ! oc whoami &>/dev/null; then
+        log_error "Not connected to hub cluster. Please run: oc login"
+        return 1
+    fi
+    
+    local current_context=$(oc config current-context 2>/dev/null || echo "unknown")
+    log_success "Connected to hub cluster: $current_context"
+    
+    # Check if we can access cluster resources
+    if ! oc get nodes &>/dev/null; then
+        log_error "Cannot access cluster resources. Check permissions."
+        return 1
+    fi
+    
+    log_success "Cluster resource access confirmed"
+    return 0
+}
+
+# Check required tools
+check_required_tools() {
+    log_info "Checking required tools..."
+    
+    local tools=(oc kubectl)
+    local optional_tools=(dig aws)
+    
+    for tool in "${tools[@]}"; do
+        if ! command -v "$tool" &>/dev/null; then
+            log_error "Required tool not found: $tool"
+            return 1
+        else
+            local version=$($tool version --client=true 2>/dev/null | head -1 || echo "unknown")
+            if [[ "$VERBOSE" == "true" ]]; then
+                log_success "$tool available: $version"
+            else
+                log_success "$tool available"
+            fi
+        fi
+    done
+    
+    for tool in "${optional_tools[@]}"; do
+        if ! command -v "$tool" &>/dev/null; then
+            log_warn "Optional tool not found: $tool (some checks will be skipped)"
+        else
+            log_success "$tool available"
+        fi
+    done
+    
+    return 0
+}
+
+# Check Vault integration
+check_vault_integration() {
+    log_info "Checking Vault ClusterSecretStore..."
+    
+    if ! oc get clustersecretstore vault-cluster-store &>/dev/null; then
+        log_error "Vault ClusterSecretStore 'vault-cluster-store' not found"
+        return 1
+    fi
+    
+    local vault_status=$(oc get clustersecretstore vault-cluster-store -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+    if [[ "$vault_status" != "True" ]]; then
+        log_error "Vault ClusterSecretStore not ready: $vault_status"
+        
+        if [[ "$VERBOSE" == "true" ]]; then
+            log_info "ClusterSecretStore conditions:"
+            oc get clustersecretstore vault-cluster-store -o yaml | grep -A 20 "conditions:" || true
+        fi
+        return 1
+    fi
+    
+    log_success "Vault ClusterSecretStore ready"
+    
+    # Test ExternalSecrets functionality if any exist
+    local external_secrets=$(oc get externalsecrets -A --no-headers 2>/dev/null | wc -l || echo "0")
+    if [[ "$external_secrets" -gt 0 ]]; then
+        local ready_secrets=$(oc get externalsecrets -A --no-headers 2>/dev/null | grep -c "True" || echo "0")
+        if [[ "$ready_secrets" -lt "$external_secrets" ]]; then
+            log_warn "Some ExternalSecrets not ready: $ready_secrets/$external_secrets"
+        else
+            log_success "All ExternalSecrets ready: $ready_secrets/$external_secrets"
+        fi
+    fi
+    
+    return 0
+}
+
+# Check Hive operator
+check_hive_operator() {
+    log_info "Checking Hive operator..."
+    
+    if ! oc get pods -n hive &>/dev/null; then
+        log_error "Cannot access hive namespace"
+        return 1
+    fi
+    
+    local hive_pods=$(oc get pods -n hive --no-headers 2>/dev/null | grep -E "(hive-operator|hive-controllers)" || true)
+    if [[ -z "$hive_pods" ]]; then
+        log_error "No Hive operator pods found"
+        return 1
+    fi
+    
+    local total_hive_pods=$(echo "$hive_pods" | wc -l)
+    local running_hive_pods=$(echo "$hive_pods" | grep -c "Running" || echo "0")
+    
+    if [[ "$running_hive_pods" -lt "$total_hive_pods" ]]; then
+        log_error "Hive operator pods not all running: $running_hive_pods/$total_hive_pods"
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$hive_pods"
+        fi
+        return 1
+    fi
+    
+    log_success "Hive operator running: $running_hive_pods pods"
+    
+    # Check Hive CRDs
+    local hive_crds=$(oc get crd | grep -c "hive.openshift.io" || echo "0")
+    if [[ "$hive_crds" -lt 5 ]]; then  # Expect at least ClusterDeployment, ClusterImageSet, etc.
+        log_warn "Few Hive CRDs found: $hive_crds"
+    else
+        log_success "Hive CRDs available: $hive_crds"
+    fi
+    
+    # Check ClusterImageSets
+    local cluster_imagesets=$(oc get clusterimageset --no-headers 2>/dev/null | wc -l || echo "0")
+    if [[ "$cluster_imagesets" -eq 0 ]]; then
+        log_warn "No ClusterImageSets found (required for OCP provisioning)"
+    else
+        log_success "ClusterImageSets available: $cluster_imagesets"
+    fi
+    
+    return 0
+}
+
+# Check ACM MultiClusterHub
+check_acm_hub() {
+    log_info "Checking ACM MultiClusterHub..."
+    
+    if ! oc get multiclusterhub -n open-cluster-management &>/dev/null; then
+        log_error "ACM MultiClusterHub not found"
+        return 1
+    fi
+    
+    local acm_status=$(oc get multiclusterhub multiclusterhub -n open-cluster-management -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+    if [[ "$acm_status" != "Running" ]]; then
+        log_error "ACM MultiClusterHub not running: $acm_status"
+        return 1
+    fi
+    
+    log_success "ACM MultiClusterHub running"
+    
+    # Check ACM operator pods
+    local acm_pods=$(oc get pods -n open-cluster-management --no-headers 2>/dev/null | wc -l || echo "0")
+    local running_acm_pods=$(oc get pods -n open-cluster-management --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    
+    if [[ "$running_acm_pods" -lt "$acm_pods" ]]; then
+        log_warn "Some ACM pods not running: $running_acm_pods/$acm_pods"
+    else
+        log_success "ACM pods running: $running_acm_pods"
+    fi
+    
+    # Check current cluster capacity
+    local managed_clusters=$(oc get managedcluster --no-headers 2>/dev/null | wc -l || echo "0")
+    log_info "Current managed clusters: $managed_clusters"
+    
+    return 0
+}
+
+# Check OpenShift GitOps
+check_gitops() {
+    log_info "Checking OpenShift GitOps..."
+    
+    if ! oc get deployment openshift-gitops-server -n openshift-gitops &>/dev/null; then
+        log_error "OpenShift GitOps server not found"
+        return 1
+    fi
+    
+    local gitops_ready=$(oc get deployment openshift-gitops-server -n openshift-gitops -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    local gitops_desired=$(oc get deployment openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+    
+    if [[ "$gitops_ready" -lt "$gitops_desired" ]]; then
+        log_error "GitOps server not ready: $gitops_ready/$gitops_desired replicas"
+        return 1
+    fi
+    
+    log_success "OpenShift GitOps server ready"
+    
+    # Check applications
+    local total_apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | wc -l || echo "0")
+    local synced_apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep -c "Synced" || echo "0")
+    
+    if [[ "$total_apps" -gt 0 ]]; then
+        if [[ "$synced_apps" -lt "$total_apps" ]]; then
+            log_warn "Some ArgoCD applications not synced: $synced_apps/$total_apps"
+        else
+            log_success "ArgoCD applications synced: $synced_apps/$total_apps"
+        fi
+    else
+        log_info "No ArgoCD applications found"
+    fi
+    
+    return 0
+}
+
+# Check AWS credentials and quotas
+check_aws_integration() {
+    if ! command -v aws &>/dev/null; then
+        log_warn "AWS CLI not available, skipping AWS checks"
+        return 0
+    fi
+    
+    log_info "Checking AWS integration..."
+    
+    # Test AWS credentials
+    if ! aws sts get-caller-identity &>/dev/null; then
+        log_warn "AWS credentials not configured or invalid"
+        return 0
+    fi
+    
+    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null || echo "unknown")
+    local aws_user=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null | cut -d'/' -f2 || echo "unknown")
+    log_success "AWS credentials valid: $aws_user (Account: $aws_account)"
+    
+    if [[ "$CHECK_QUOTAS" == "true" ]]; then
+        log_info "Checking AWS service quotas..."
+        
+        # Check EC2 instance limits for common regions
+        local regions=(us-east-1 us-west-2)
+        for region in "${regions[@]}"; do
+            log_info "Checking quotas in $region..."
+            
+            # Running On-Demand instances (L-1216C47A)
+            local ec2_quota=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --region "$region" --query 'Quota.Value' --output text 2>/dev/null || echo "unknown")
+            if [[ "$ec2_quota" != "unknown" && "$ec2_quota" -lt 20 ]]; then
+                log_warn "Low EC2 instance quota in $region: $ec2_quota (recommend ≥20 for OCP)"
+            elif [[ "$ec2_quota" != "unknown" ]]; then
+                log_success "EC2 instance quota in $region: $ec2_quota"
+            fi
+        done
+    fi
+    
+    return 0
+}
+
+# Check DNS delegation
+check_dns_delegation() {
+    if ! command -v dig &>/dev/null; then
+        log_warn "dig command not available, skipping DNS checks"
+        return 0
+    fi
+    
+    log_info "Checking DNS delegation..."
+    
+    local test_domain="rosa.mturansk-test.csu2.i3.devshift.org"
+    
+    if [[ "$CHECK_DNS" == "true" ]]; then
+        log_info "Checking DNS delegation for $test_domain..."
+        
+        # Check NS records
+        local ns_records=$(dig NS "$test_domain" +short 2>/dev/null || true)
+        if [[ -z "$ns_records" ]]; then
+            log_warn "No NS records found for $test_domain"
+        else
+            local ns_count=$(echo "$ns_records" | wc -l)
+            log_success "NS records found for $test_domain: $ns_count records"
+            if [[ "$VERBOSE" == "true" ]]; then
+                echo "$ns_records" | while read ns; do
+                    log_info "  NS: $ns"
+                done
+            fi
+        fi
+        
+        # Test DNS resolution
+        if dig A "test.$test_domain" +short &>/dev/null; then
+            log_success "DNS resolution working for $test_domain"
+        else
+            log_warn "DNS resolution may not be working for $test_domain"
+        fi
+    else
+        log_info "DNS checks skipped (use --check-dns to enable)"
+    fi
+    
+    return 0
+}
+
+# Check cluster capacity
+check_cluster_capacity() {
+    log_info "Checking cluster capacity..."
+    
+    # Check node resources
+    local total_nodes=$(oc get nodes --no-headers 2>/dev/null | wc -l || echo "0")
+    local ready_nodes=$(oc get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
+    
+    if [[ "$ready_nodes" -lt "$total_nodes" ]]; then
+        log_warn "Some nodes not ready: $ready_nodes/$total_nodes"
+    else
+        log_success "All nodes ready: $ready_nodes/$total_nodes"
+    fi
+    
+    # Check resource usage if verbose
+    if [[ "$VERBOSE" == "true" ]]; then
+        log_info "Checking resource usage..."
+        if command -v kubectl &>/dev/null; then
+            if oc adm top nodes &>/dev/null; then
+                log_info "Node resource usage:"
+                oc adm top nodes
+            else
+                log_warn "Cannot get node resource usage (metrics-server may not be available)"
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
+# Generate summary report
+generate_summary() {
+    echo
+    echo "============================================"
+    echo "           PREREQUISITES SUMMARY"
+    echo "============================================"
+    echo -e "${GREEN}Checks Passed:${NC}  $CHECKS_PASSED"
+    echo -e "${YELLOW}Warnings:${NC}      $CHECKS_WARNING"
+    echo -e "${RED}Checks Failed:${NC} $CHECKS_FAILED"
+    echo "============================================"
+    
+    if [[ "$CHECKS_FAILED" -eq 0 ]]; then
+        echo -e "${GREEN}✅ Environment ready for OCP cluster provisioning tests${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Environment not ready - $CHECKS_FAILED critical issues found${NC}"
+        return 1
+    fi
+}
+
+# Usage
+usage() {
+    cat << EOF
+Test Prerequisites Validation Tool
+
+Usage: $0 [OPTIONS]
+
+Options:
+  --check-quotas           Check AWS service quotas (requires AWS CLI)
+  --check-dns             Check DNS delegation for test domains
+  --verbose               Show detailed information
+  --no-exit-on-failure    Continue even if critical checks fail
+  --help                  Show this help message
+
+Examples:
+  $0                      Run basic prerequisite checks
+  $0 --check-quotas       Include AWS quota validation
+  $0 --check-dns --verbose Include DNS checks with detailed output
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --check-quotas)
+            CHECK_QUOTAS=true
+            shift
+            ;;
+        --check-dns)
+            CHECK_DNS=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --no-exit-on-failure)
+            EXIT_ON_FAILURE=false
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Main execution
+main() {
+    echo "OCP Cluster Provisioning - Prerequisites Check"
+    echo "=============================================="
+    echo
+    
+    # Run all checks
+    check_hub_connection || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_required_tools || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_vault_integration || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_hive_operator || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_acm_hub || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_gitops || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_aws_integration || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_dns_delegation || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    check_cluster_capacity || [[ "$EXIT_ON_FAILURE" == "false" ]]
+    
+    # Generate summary
+    generate_summary
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

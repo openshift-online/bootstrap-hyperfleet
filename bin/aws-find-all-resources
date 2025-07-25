@@ -155,10 +155,10 @@ check_dependencies() {
         exit 1
     fi
     
-    # Check for find-aws-resources tool
-    if [[ ! -x "${SCRIPT_DIR}/find-aws-resources" ]]; then
-        echo "❌ Error: find-aws-resources tool not found or not executable"
-        echo "   Expected: ${SCRIPT_DIR}/find-aws-resources"
+    # Check for aws-find-resources tool
+    if [[ ! -x "${SCRIPT_DIR}/aws-find-resources" ]]; then
+        echo "❌ Error: aws-find-resources tool not found or not executable"
+        echo "   Expected: ${SCRIPT_DIR}/aws-find-resources"
         exit 1
     fi
     
@@ -301,9 +301,9 @@ discover_all_cluster_resources() {
             continue
         fi
         
-        # Run find-aws-resources for this cluster
-        debug_log "Running find-aws-resources for $cluster in $region"
-        if "${SCRIPT_DIR}/find-aws-resources" "$cluster" "$region" > "$temp_file" 2>&1; then
+        # Run aws-find-resources for this cluster
+        debug_log "Running aws-find-resources for $cluster in $region"
+        if "${SCRIPT_DIR}/aws-find-resources" "$cluster" > "$temp_file" 2>&1; then
             echo "✅ Resources discovered for $cluster"
             # Cache successful results
             cp "$temp_file" "$cache_file"
