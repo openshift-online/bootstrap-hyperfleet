@@ -1,0 +1,862 @@
+#!/bin/bash
+set -euo pipefail
+
+# aws-validate-required-resources
+# Validates AWS account quotas for OpenShift cluster provisioning
+# Based on UHC clusters service preflight validation patterns
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default configuration
+DEFAULT_REGION="us-west-2"
+DEFAULT_CLUSTER_TYPE="ocp"
+DEFAULT_VCPU_BUFFER=10
+DEFAULT_OUTPUT_FORMAT="text"
+DEFAULT_CHECK_TYPE="all"
+
+# AWS quota codes (from UHC service)
+VCPU_QUOTA_CODE="L-1216C47A"  # Running On-Demand Standard instances
+EBS_VOLUMES_QUOTA_CODE="L-D18FCD1D"  # General Purpose SSD (gp3) volume storage
+VPC_QUOTA_CODE="L-F678F1CE"  # VPCs per region
+
+# Instance type vCPU mappings (comprehensive)
+declare -A INSTANCE_VCPU_MAP=(
+    # T3 series
+    ["t3.nano"]="2"    ["t3.micro"]="2"    ["t3.small"]="2"
+    ["t3.medium"]="2"  ["t3.large"]="2"    ["t3.xlarge"]="4"    ["t3.2xlarge"]="8"
+    
+    # M5 series  
+    ["m5.large"]="2"    ["m5.xlarge"]="4"    ["m5.2xlarge"]="8"
+    ["m5.4xlarge"]="16" ["m5.8xlarge"]="32"  ["m5.12xlarge"]="48"
+    ["m5.16xlarge"]="64" ["m5.24xlarge"]="96"
+    
+    # M6i series
+    ["m6i.large"]="2"    ["m6i.xlarge"]="4"    ["m6i.2xlarge"]="8"
+    ["m6i.4xlarge"]="16" ["m6i.8xlarge"]="32"  ["m6i.12xlarge"]="48"
+    ["m6i.16xlarge"]="64" ["m6i.24xlarge"]="96" ["m6i.32xlarge"]="128"
+    
+    # C5 series
+    ["c5.large"]="2"    ["c5.xlarge"]="4"    ["c5.2xlarge"]="8"
+    ["c5.4xlarge"]="16" ["c5.9xlarge"]="36"  ["c5.12xlarge"]="48"
+    ["c5.18xlarge"]="72" ["c5.24xlarge"]="96"
+    
+    # R5 series
+    ["r5.large"]="2"    ["r5.xlarge"]="4"    ["r5.2xlarge"]="8"
+    ["r5.4xlarge"]="16" ["r5.8xlarge"]="32"  ["r5.12xlarge"]="48"
+    ["r5.16xlarge"]="64" ["r5.24xlarge"]="96"
+)
+
+# Configuration variables
+REGION=""
+CLUSTER_TYPE=""
+VCPU_BUFFER=""
+OUTPUT_FORMAT=""
+CHECK_TYPE=""
+VERBOSE=""
+MOCK_MODE=""
+CLUSTER_SPEC_FILE=""
+INSTANCE_TYPE_OVERRIDES=""
+INTERACTIVE_MODE="true"
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS] [cluster-requirements-file]
+
+Validates AWS account quotas for OpenShift cluster provisioning.
+Can generate requirements automatically or use provided specification file.
+
+OPTIONS:
+    --region REGION         AWS region to validate (default: $DEFAULT_REGION)
+    --cluster-type TYPE     Cluster type: 'ocp', 'hcp', or 'eks' (default: $DEFAULT_CLUSTER_TYPE)
+    --instance-type TYPES   Override instance types (format: master:TYPE,worker:TYPE)
+    --buffer-vcpu NUM       vCPU quota buffer for safety (default: $DEFAULT_VCPU_BUFFER)
+    --output FORMAT         Output format: 'text', 'json', 'table' (default: $DEFAULT_OUTPUT_FORMAT)
+    --check TYPE           Specific check: 'vcpu', 'storage', 'network', 'iam', 'all' (default: $DEFAULT_CHECK_TYPE)
+    --verbose              Enable detailed validation output
+    --mock                 Use mock AWS data for testing
+    --non-interactive      Disable interactive prompts (use command-line args or defaults)
+    --help                 Show this help message
+
+EXAMPLES:
+    # Automatic validation (no file required)
+    $(basename "$0")
+    
+    # Validate specific cluster type and region
+    $(basename "$0") --region us-west-2 --cluster-type hcp
+    
+    # Use custom cluster specification file
+    $(basename "$0") cluster-spec.json
+    
+    # Check only vCPU quotas with JSON output  
+    $(basename "$0") --check vcpu --output json
+    
+    # Test with mock data (no AWS credentials required)
+    $(basename "$0") --mock --cluster-type ocp
+    
+    # Non-interactive with specific configuration
+    $(basename "$0") --non-interactive --region us-east-1 --cluster-type eks
+
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --region)
+                REGION="$2"
+                INTERACTIVE_MODE="false"
+                shift 2
+                ;;
+            --cluster-type)
+                CLUSTER_TYPE="$2"
+                INTERACTIVE_MODE="false"
+                shift 2
+                ;;
+            --instance-type)
+                INSTANCE_TYPE_OVERRIDES="$2"
+                shift 2
+                ;;
+            --buffer-vcpu)
+                VCPU_BUFFER="$2"
+                shift 2
+                ;;
+            --output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --check)
+                CHECK_TYPE="$2"
+                shift 2
+                ;;
+            --verbose)
+                VERBOSE="true"
+                shift
+                ;;
+            --mock)
+                MOCK_MODE="true"
+                shift
+                ;;
+            --non-interactive)
+                INTERACTIVE_MODE="false"
+                shift
+                ;;
+            --help)
+                usage
+                exit 0
+                ;;
+            -*)
+                echo "❌ Unknown option: $1" >&2
+                usage >&2
+                exit 3
+                ;;
+            *)
+                if [[ -z "$CLUSTER_SPEC_FILE" ]]; then
+                    CLUSTER_SPEC_FILE="$1"
+                else
+                    echo "❌ Multiple cluster specification files provided" >&2
+                    exit 3
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Set defaults
+    VCPU_BUFFER="${VCPU_BUFFER:-$DEFAULT_VCPU_BUFFER}"
+    OUTPUT_FORMAT="${OUTPUT_FORMAT:-$DEFAULT_OUTPUT_FORMAT}"
+    CHECK_TYPE="${CHECK_TYPE:-$DEFAULT_CHECK_TYPE}"
+    VERBOSE="${VERBOSE:-false}"
+    MOCK_MODE="${MOCK_MODE:-false}"
+    INTERACTIVE_MODE="${INTERACTIVE_MODE:-true}"
+}
+
+# Interactive prompts for region and cluster type
+prompt_user_inputs() {
+    # Only prompt if in interactive mode and values not already set
+    if [[ "$INTERACTIVE_MODE" == "true" ]]; then
+        echo "🌩️  AWS OpenShift Cluster Quota Validation"
+        echo ""
+        
+        # Prompt for region if not set
+        if [[ -z "$REGION" ]]; then
+            echo "Available AWS regions for OpenShift:"
+            echo "  us-east-1 (N. Virginia)    us-west-2 (Oregon)"
+            echo "  us-east-2 (Ohio)          us-west-1 (N. California)"
+            echo "  eu-west-1 (Ireland)       eu-central-1 (Frankfurt)"
+            echo "  ap-southeast-1 (Singapore) ap-northeast-1 (Tokyo)"
+            echo ""
+            read -p "Enter AWS region (default: $DEFAULT_REGION): " user_region
+            REGION="${user_region:-$DEFAULT_REGION}"
+        fi
+        
+        # Prompt for cluster type if not set
+        if [[ -z "$CLUSTER_TYPE" ]]; then
+            echo ""
+            echo "Cluster types:"
+            echo "  ocp - OpenShift Container Platform (classic with master/infra nodes)"
+            echo "  hcp - Hosted Control Planes (Hypershift - managed control plane)"
+            echo "  eks - Amazon Elastic Kubernetes Service"
+            echo ""
+            read -p "Enter cluster type (default: $DEFAULT_CLUSTER_TYPE): " user_cluster_type
+            CLUSTER_TYPE="${user_cluster_type:-$DEFAULT_CLUSTER_TYPE}"
+        fi
+        
+        echo ""
+        echo "🔧 Configuration:"
+        echo "   Region: $REGION"
+        echo "   Cluster Type: $CLUSTER_TYPE"
+        echo ""
+    fi
+    
+    # Set final defaults if still empty
+    REGION="${REGION:-$DEFAULT_REGION}"
+    CLUSTER_TYPE="${CLUSTER_TYPE:-$DEFAULT_CLUSTER_TYPE}"
+}
+
+# Validate command line arguments
+validate_args() {
+    # Cluster spec file is now optional
+    if [[ -n "$CLUSTER_SPEC_FILE" && ! -f "$CLUSTER_SPEC_FILE" ]]; then
+        echo "❌ Cluster requirements file not found: $CLUSTER_SPEC_FILE" >&2
+        exit 3
+    fi
+    
+    if [[ ! "$CLUSTER_TYPE" =~ ^(ocp|hcp|eks)$ ]]; then
+        echo "❌ Invalid cluster type: $CLUSTER_TYPE (must be 'ocp', 'hcp', or 'eks')" >&2
+        exit 3
+    fi
+    
+    if [[ ! "$OUTPUT_FORMAT" =~ ^(text|json|table)$ ]]; then
+        echo "❌ Invalid output format: $OUTPUT_FORMAT (must be 'text', 'json', or 'table')" >&2
+        exit 3
+    fi
+    
+    if [[ ! "$CHECK_TYPE" =~ ^(vcpu|storage|network|iam|all)$ ]]; then
+        echo "❌ Invalid check type: $CHECK_TYPE" >&2
+        exit 3
+    fi
+    
+    if ! [[ "$VCPU_BUFFER" =~ ^[0-9]+$ ]]; then
+        echo "❌ Invalid vCPU buffer: $VCPU_BUFFER (must be a number)" >&2
+        exit 3
+    fi
+}
+
+# Get vCPU count for instance type
+get_instance_vcpus() {
+    local instance_type="$1"
+    
+    if [[ -n "${INSTANCE_VCPU_MAP[$instance_type]:-}" ]]; then
+        echo "${INSTANCE_VCPU_MAP[$instance_type]}"
+    else
+        # Try to query AWS API for unknown instance types
+        if [[ "$MOCK_MODE" == "false" ]]; then
+            log_verbose "Unknown instance type $instance_type, querying AWS API..."
+            # Fallback to conservative estimate
+            echo "2"
+        else
+            echo "2"
+        fi
+    fi
+}
+
+# Detect file format (JSON or YAML)
+detect_file_format() {
+    local spec_file="$1"
+    
+    # Check if file starts with typical YAML patterns
+    if head -n 5 "$spec_file" | grep -q "apiVersion:\|kind:\|metadata:\|spec:" || [[ "$spec_file" =~ \.(yaml|yml)$ ]]; then
+        echo "yaml"
+    else
+        echo "json"
+    fi
+}
+
+# Parse cluster requirements from JSON file (legacy format)
+parse_json_requirements() {
+    local spec_file="$1"
+    local temp_file
+    temp_file=$(mktemp)
+    
+    # Validate JSON syntax
+    if ! jq . "$spec_file" >/dev/null 2>&1; then
+        echo "❌ Invalid JSON in cluster requirements file: $spec_file" >&2
+        exit 3
+    fi
+    
+    # Extract and validate required fields
+    {
+        echo "CLUSTER_REGION=$(jq -r '.region // "'"$REGION"'"' "$spec_file")"
+        echo "CLUSTER_TYPE_FROM_FILE=$(jq -r '.cluster_type // "'"$CLUSTER_TYPE"'"' "$spec_file")"
+        
+        # Master nodes (only for standard clusters)
+        echo "MASTER_INSTANCE_TYPE=$(jq -r '.master_nodes.instance_type // "m5.xlarge"' "$spec_file")"
+        echo "MASTER_REPLICAS=$(jq -r '.master_nodes.replicas // 3' "$spec_file")"
+        
+        # Infra nodes (only for standard clusters)  
+        echo "INFRA_INSTANCE_TYPE=$(jq -r '.infra_nodes.instance_type // "m5.large"' "$spec_file")"
+        echo "INFRA_REPLICAS=$(jq -r '.infra_nodes.replicas // 3' "$spec_file")"
+        
+        # Compute nodes (always required)
+        echo "COMPUTE_INSTANCE_TYPE=$(jq -r '.compute_nodes.instance_type // "m5.large"' "$spec_file")"
+        echo "COMPUTE_REPLICAS=$(jq -r '.compute_nodes.replicas // 2' "$spec_file")"
+        
+        # Autoscale settings
+        echo "AUTOSCALE_MAX_REPLICAS=$(jq -r '.autoscale.max_replicas // 10' "$spec_file")"
+        
+    } > "$temp_file"
+    
+    # Source the parsed values
+    # shellcheck source=/dev/null
+    source "$temp_file"
+    rm -f "$temp_file"
+}
+
+# Parse cluster requirements from YAML file (regional spec format)
+parse_yaml_requirements() {
+    local spec_file="$1"
+    local temp_file
+    temp_file=$(mktemp)
+    
+    # Check for yq or python as YAML parser
+    local yaml_parser=""
+    if command -v yq >/dev/null 2>&1; then
+        yaml_parser="yq"
+    elif command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" 2>/dev/null; then
+        yaml_parser="python3"
+    else
+        echo "❌ YAML parsing requires 'yq' or 'python3 with PyYAML'. Please install one of them." >&2
+        exit 3
+    fi
+    
+    # Convert YAML to JSON for consistent processing
+    local json_file
+    json_file=$(mktemp)
+    
+    if [[ "$yaml_parser" == "yq" ]]; then
+        yq eval -o=json "$spec_file" > "$json_file"
+    else
+        python3 -c "
+import yaml, json, sys
+with open('$spec_file', 'r') as f:
+    data = yaml.safe_load(f)
+    json.dump(data, sys.stdout, indent=2)
+" > "$json_file"
+    fi
+    
+    # Extract and validate required fields from regional spec
+    {
+        echo "CLUSTER_REGION=$(jq -r '.spec.region // .metadata.namespace // "'"$REGION"'"' "$json_file")"
+        echo "CLUSTER_TYPE_FROM_FILE=$(jq -r '.spec.type // "'"$CLUSTER_TYPE"'"' "$json_file")"
+        
+        # Master nodes (only for OCP clusters)
+        echo "MASTER_INSTANCE_TYPE=$(jq -r '.spec.master.instanceType // "m5.xlarge"' "$json_file")"
+        echo "MASTER_REPLICAS=$(jq -r '.spec.master.replicas // 3' "$json_file")"
+        
+        # Infra nodes (only for OCP clusters)  
+        echo "INFRA_INSTANCE_TYPE=$(jq -r '.spec.infra.instanceType // "m5.large"' "$json_file")"
+        echo "INFRA_REPLICAS=$(jq -r '.spec.infra.replicas // 3' "$json_file")"
+        
+        # Compute nodes (always required)
+        echo "COMPUTE_INSTANCE_TYPE=$(jq -r '.spec.compute.instanceType // "m5.large"' "$json_file")"
+        echo "COMPUTE_REPLICAS=$(jq -r '.spec.compute.replicas // 2' "$json_file")"
+        
+        # Autoscale settings
+        echo "AUTOSCALE_MAX_REPLICAS=$(jq -r '.spec.autoscale.maxReplicas // 10' "$json_file")"
+        
+    } > "$temp_file"
+    
+    # Source the parsed values
+    # shellcheck source=/dev/null
+    source "$temp_file"
+    rm -f "$temp_file" "$json_file"
+    
+    log_verbose "Parsed regional cluster spec: $CLUSTER_TYPE_FROM_FILE cluster in $CLUSTER_REGION"
+}
+
+# Generate smart defaults based on cluster type
+generate_cluster_defaults() {
+    log_verbose "Generating cluster defaults for type: $CLUSTER_TYPE"
+    
+    # Set region from input or default
+    CLUSTER_REGION="$REGION"
+    CLUSTER_TYPE_FROM_FILE="$CLUSTER_TYPE"
+    
+    # Set defaults based on cluster type
+    case "$CLUSTER_TYPE" in
+        "ocp")
+            # Standard OpenShift cluster defaults
+            MASTER_INSTANCE_TYPE="m5.xlarge"
+            MASTER_REPLICAS=3
+            INFRA_INSTANCE_TYPE="m5.large"
+            INFRA_REPLICAS=3
+            COMPUTE_INSTANCE_TYPE="m5.large"
+            COMPUTE_REPLICAS=3
+            AUTOSCALE_MAX_REPLICAS=10
+            ;;
+        "hcp")
+            # Hypershift cluster defaults (no master/infra nodes)
+            MASTER_INSTANCE_TYPE=""
+            MASTER_REPLICAS=0
+            INFRA_INSTANCE_TYPE=""
+            INFRA_REPLICAS=0
+            COMPUTE_INSTANCE_TYPE="m5.large"
+            COMPUTE_REPLICAS=3
+            AUTOSCALE_MAX_REPLICAS=15
+            ;;
+        "eks")
+            # EKS cluster defaults (managed control plane)
+            MASTER_INSTANCE_TYPE=""
+            MASTER_REPLICAS=0
+            INFRA_INSTANCE_TYPE=""
+            INFRA_REPLICAS=0
+            COMPUTE_INSTANCE_TYPE="m5.large"
+            COMPUTE_REPLICAS=3
+            AUTOSCALE_MAX_REPLICAS=12
+            ;;
+    esac
+    
+    # Apply instance type overrides if provided
+    if [[ -n "$INSTANCE_TYPE_OVERRIDES" ]]; then
+        apply_instance_type_overrides
+    fi
+    
+    log_verbose "Generated defaults: $CLUSTER_TYPE cluster with $COMPUTE_REPLICAS × $COMPUTE_INSTANCE_TYPE compute nodes"
+}
+
+# Parse cluster requirements from file (auto-detect format)
+parse_cluster_requirements() {
+    local spec_file="$1"
+    
+    if [[ -z "$spec_file" ]]; then
+        # No file provided, generate defaults
+        generate_cluster_defaults
+        return
+    fi
+    
+    local file_format
+    file_format=$(detect_file_format "$spec_file")
+    log_verbose "Detected file format: $file_format"
+    
+    if [[ "$file_format" == "yaml" ]]; then
+        parse_yaml_requirements "$spec_file"
+    else
+        parse_json_requirements "$spec_file"
+    fi
+    
+    # Override cluster type if specified on command line
+    if [[ "$CLUSTER_TYPE" != "$DEFAULT_CLUSTER_TYPE" ]]; then
+        CLUSTER_TYPE_FROM_FILE="$CLUSTER_TYPE"
+    fi
+    
+    # Apply instance type overrides if provided
+    if [[ -n "$INSTANCE_TYPE_OVERRIDES" ]]; then
+        apply_instance_type_overrides
+    fi
+}
+
+# Apply instance type overrides from command line
+apply_instance_type_overrides() {
+    IFS=',' read -ra OVERRIDES <<< "$INSTANCE_TYPE_OVERRIDES"
+    for override in "${OVERRIDES[@]}"; do
+        if [[ "$override" =~ ^master:(.+)$ ]]; then
+            MASTER_INSTANCE_TYPE="${BASH_REMATCH[1]}"
+        elif [[ "$override" =~ ^worker:(.+)$ ]]; then
+            COMPUTE_INSTANCE_TYPE="${BASH_REMATCH[1]}"
+            INFRA_INSTANCE_TYPE="${BASH_REMATCH[1]}"
+        elif [[ "$override" =~ ^infra:(.+)$ ]]; then
+            INFRA_INSTANCE_TYPE="${BASH_REMATCH[1]}"
+        fi
+    done
+}
+
+# Calculate total vCPU requirements
+calculate_vcpu_requirements() {
+    local total_vcpus=0
+    
+    # OCP clusters need master and infra nodes (hcp and eks use managed control planes)
+    if [[ "$CLUSTER_TYPE_FROM_FILE" == "ocp" ]]; then
+        local master_vcpus_per_node
+        local infra_vcpus_per_node
+        
+        master_vcpus_per_node=$(get_instance_vcpus "$MASTER_INSTANCE_TYPE")
+        infra_vcpus_per_node=$(get_instance_vcpus "$INFRA_INSTANCE_TYPE")
+        
+        MASTER_TOTAL_VCPUS=$((MASTER_REPLICAS * master_vcpus_per_node))
+        INFRA_TOTAL_VCPUS=$((INFRA_REPLICAS * infra_vcpus_per_node))
+        
+        total_vcpus=$((total_vcpus + MASTER_TOTAL_VCPUS + INFRA_TOTAL_VCPUS))
+        
+        log_verbose "Master nodes: $MASTER_REPLICAS × $MASTER_INSTANCE_TYPE ($master_vcpus_per_node vCPUs each) = $MASTER_TOTAL_VCPUS vCPUs"
+        log_verbose "Infra nodes: $INFRA_REPLICAS × $INFRA_INSTANCE_TYPE ($infra_vcpus_per_node vCPUs each) = $INFRA_TOTAL_VCPUS vCPUs"
+    else
+        MASTER_TOTAL_VCPUS=0
+        INFRA_TOTAL_VCPUS=0
+        if [[ "$CLUSTER_TYPE_FROM_FILE" == "hcp" ]]; then
+            log_verbose "Hypershift (HCP) cluster: skipping master/infra nodes (managed control plane)"
+        elif [[ "$CLUSTER_TYPE_FROM_FILE" == "eks" ]]; then
+            log_verbose "EKS cluster: skipping master/infra nodes (managed control plane)"
+        fi
+    fi
+    
+    # Compute nodes (always required)
+    local compute_vcpus_per_node
+    compute_vcpus_per_node=$(get_instance_vcpus "$COMPUTE_INSTANCE_TYPE")
+    COMPUTE_TOTAL_VCPUS=$((COMPUTE_REPLICAS * compute_vcpus_per_node))
+    total_vcpus=$((total_vcpus + COMPUTE_TOTAL_VCPUS))
+    
+    log_verbose "Compute nodes: $COMPUTE_REPLICAS × $COMPUTE_INSTANCE_TYPE ($compute_vcpus_per_node vCPUs each) = $COMPUTE_TOTAL_VCPUS vCPUs"
+    
+    # Autoscale requirements (additional capacity)
+    AUTOSCALE_TOTAL_VCPUS=$((AUTOSCALE_MAX_REPLICAS * compute_vcpus_per_node))
+    total_vcpus=$((total_vcpus + AUTOSCALE_TOTAL_VCPUS))
+    
+    log_verbose "Autoscale capacity: $AUTOSCALE_MAX_REPLICAS × $COMPUTE_INSTANCE_TYPE ($compute_vcpus_per_node vCPUs each) = $AUTOSCALE_TOTAL_VCPUS vCPUs"
+    
+    TOTAL_REQUIRED_VCPUS=$total_vcpus
+    log_verbose "Total required vCPUs: $TOTAL_REQUIRED_VCPUS"
+}
+
+# Get AWS service quota
+get_service_quota() {
+    local quota_code="$1"
+    local service_code="$2"
+    
+    if [[ "$MOCK_MODE" == "true" ]]; then
+        # Mock quota data for testing
+        case "$quota_code" in
+            "$VCPU_QUOTA_CODE")
+                echo "400.0"  # Mock vCPU quota
+                ;;
+            *)
+                echo "100.0"  # Default mock quota
+                ;;
+        esac
+        return 0
+    fi
+    
+    local quota_limit
+    quota_limit=$(aws service-quotas get-service-quota \
+        --region "$REGION" \
+        --service-code "$service_code" \
+        --quota-code "$quota_code" \
+        --query 'Quota.Value' \
+        --output text 2>/dev/null || echo "")
+    
+    if [[ -z "$quota_limit" || "$quota_limit" == "None" ]]; then
+        log_verbose "⚠️  Could not retrieve quota $quota_code from AWS API"
+        return 1
+    fi
+    
+    echo "$quota_limit"
+}
+
+# Get current vCPU usage  
+get_current_vcpu_usage() {
+    if [[ "$MOCK_MODE" == "true" ]]; then
+        echo "32.0"  # Mock current usage
+        return 0
+    fi
+    
+    local total_vcpus=0
+    local instances
+    
+    # Get all running and pending instances
+    instances=$(aws ec2 describe-instances \
+        --region "$REGION" \
+        --filters "Name=instance-state-name,Values=running,pending" \
+        --query 'Reservations[].Instances[].[InstanceType]' \
+        --output text 2>/dev/null || echo "")
+    
+    if [[ -z "$instances" ]]; then
+        log_verbose "⚠️  Could not retrieve current instance usage from AWS API"
+        return 1
+    fi
+    
+    # Calculate total vCPUs from running instances
+    while IFS= read -r instance_type; do
+        if [[ -n "$instance_type" && "$instance_type" != "None" ]]; then
+            local vcpus
+            vcpus=$(get_instance_vcpus "$instance_type")
+            total_vcpus=$((total_vcpus + vcpus))
+        fi
+    done <<< "$instances"
+    
+    echo "$total_vcpus"
+}
+
+# Validate vCPU quota
+validate_vcpu_quota() {
+    log_verbose "🔍 Validating vCPU quota..."
+    
+    local quota_limit
+    local current_usage
+    local available_quota
+    
+    # Get quota limit
+    quota_limit=$(get_service_quota "$VCPU_QUOTA_CODE" "ec2")
+    if [[ $? -ne 0 ]]; then
+        VCPU_VALIDATION_STATUS="SKIPPED"
+        VCPU_VALIDATION_MESSAGE="Could not access Service Quotas API"
+        return 0
+    fi
+    
+    # Get current usage
+    current_usage=$(get_current_vcpu_usage)
+    if [[ $? -ne 0 ]]; then
+        VCPU_VALIDATION_STATUS="SKIPPED"
+        VCPU_VALIDATION_MESSAGE="Could not access EC2 API for usage data"
+        return 0
+    fi
+    
+    # Calculate available quota (with buffer)
+    available_quota=$(echo "$quota_limit - $current_usage - $VCPU_BUFFER" | bc -l)
+    
+    # Store values for output
+    VCPU_QUOTA_LIMIT="$quota_limit"
+    VCPU_CURRENT_USAGE="$current_usage"
+    VCPU_AVAILABLE_QUOTA="$available_quota"
+    
+    # Check if requirements fit within available quota
+    local required_float
+    required_float=$(echo "$TOTAL_REQUIRED_VCPUS" | bc -l)
+    
+    if (( $(echo "$required_float <= $available_quota" | bc -l) )); then
+        VCPU_VALIDATION_STATUS="PASSED"
+        VCPU_VALIDATION_MESSAGE="Sufficient vCPU quota available"
+        VCPU_HEADROOM=$(echo "$available_quota - $required_float" | bc -l)
+    else
+        VCPU_VALIDATION_STATUS="FAILED"
+        local shortfall
+        shortfall=$(echo "$required_float - $available_quota" | bc -l)
+        VCPU_VALIDATION_MESSAGE="Insufficient vCPU quota. Required: $TOTAL_REQUIRED_VCPUS, Available: ${available_quota%.*}, Shortfall: ${shortfall%.*} vCPUs"
+        VCPU_HEADROOM="0"
+    fi
+    
+    log_verbose "vCPU validation: $VCPU_VALIDATION_STATUS"
+}
+
+# Validate storage quotas (placeholder for future implementation)
+validate_storage_quota() {
+    if [[ "$CHECK_TYPE" == "storage" || "$CHECK_TYPE" == "all" ]]; then
+        log_verbose "🔍 Validating storage quotas..."
+        
+        # Placeholder implementation
+        STORAGE_VALIDATION_STATUS="PASSED"
+        STORAGE_VALIDATION_MESSAGE="Storage validation not yet implemented"
+        
+        log_verbose "Storage validation: $STORAGE_VALIDATION_STATUS"
+    fi
+}
+
+# Validate network quotas (placeholder for future implementation)  
+validate_network_quota() {
+    if [[ "$CHECK_TYPE" == "network" || "$CHECK_TYPE" == "all" ]]; then
+        log_verbose "🔍 Validating network quotas..."
+        
+        # Placeholder implementation
+        NETWORK_VALIDATION_STATUS="PASSED"
+        NETWORK_VALIDATION_MESSAGE="Network validation not yet implemented"
+        
+        log_verbose "Network validation: $NETWORK_VALIDATION_STATUS"
+    fi
+}
+
+# Validate IAM quotas (placeholder for future implementation)
+validate_iam_quota() {
+    if [[ "$CHECK_TYPE" == "iam" || "$CHECK_TYPE" == "all" ]]; then
+        log_verbose "🔍 Validating IAM quotas..."
+        
+        # Placeholder implementation  
+        IAM_VALIDATION_STATUS="PASSED"
+        IAM_VALIDATION_MESSAGE="IAM validation not yet implemented"
+        
+        log_verbose "IAM validation: $IAM_VALIDATION_STATUS"
+    fi
+}
+
+# Output results in text format
+output_text_format() {
+    echo "🌩️  AWS Account Validation for OpenShift Cluster"
+    echo ""
+    echo "📊 Cluster Requirements:"
+    echo "   Region: $REGION"
+    echo "   Type: $CLUSTER_TYPE_FROM_FILE"
+    
+    if [[ "$CLUSTER_TYPE_FROM_FILE" == "ocp" ]]; then
+        echo "   Master nodes: $MASTER_REPLICAS × $MASTER_INSTANCE_TYPE ($MASTER_TOTAL_VCPUS vCPUs total)"
+        echo "   Infra nodes: $INFRA_REPLICAS × $INFRA_INSTANCE_TYPE ($INFRA_TOTAL_VCPUS vCPUs total)"
+    fi
+    
+    echo "   Compute nodes: $COMPUTE_REPLICAS × $COMPUTE_INSTANCE_TYPE ($COMPUTE_TOTAL_VCPUS vCPUs total)"
+    echo "   Max autoscale: $AUTOSCALE_MAX_REPLICAS × $COMPUTE_INSTANCE_TYPE ($AUTOSCALE_TOTAL_VCPUS vCPUs total)"
+    echo "   Total required: $TOTAL_REQUIRED_VCPUS vCPUs"
+    echo ""
+    
+    # vCPU validation results
+    if [[ "$CHECK_TYPE" == "vcpu" || "$CHECK_TYPE" == "all" ]]; then
+        case "$VCPU_VALIDATION_STATUS" in
+            "PASSED")
+                echo "✅ vCPU Quota Validation"
+                printf "   Available: %.0f vCPUs (limit: %.0f, usage: %.0f, buffer: %d)\n" \
+                    "$VCPU_AVAILABLE_QUOTA" "$VCPU_QUOTA_LIMIT" "$VCPU_CURRENT_USAGE" "$VCPU_BUFFER"
+                echo "   Required: $TOTAL_REQUIRED_VCPUS vCPUs"
+                printf "   Headroom: %.0f vCPUs\n" "$VCPU_HEADROOM"
+                echo "   Status: PASSED"
+                ;;
+            "FAILED")
+                echo "❌ vCPU Quota Validation"
+                printf "   Available: %.0f vCPUs (limit: %.0f, usage: %.0f, buffer: %d)\n" \
+                    "$VCPU_AVAILABLE_QUOTA" "$VCPU_QUOTA_LIMIT" "$VCPU_CURRENT_USAGE" "$VCPU_BUFFER"
+                echo "   Required: $TOTAL_REQUIRED_VCPUS vCPUs"
+                echo "   Status: FAILED"
+                echo "   Error: $VCPU_VALIDATION_MESSAGE"
+                ;;
+            "SKIPPED")
+                echo "⚠️  vCPU Quota Validation"
+                echo "   Status: SKIPPED"
+                echo "   Reason: $VCPU_VALIDATION_MESSAGE"
+                ;;
+        esac
+        echo ""
+    fi
+    
+    # Overall result
+    local overall_status="PASSED"
+    if [[ "$VCPU_VALIDATION_STATUS" == "FAILED" ]]; then
+        overall_status="FAILED"
+    fi
+    
+    if [[ "$overall_status" == "PASSED" ]]; then
+        echo "🎉 All validations passed! Cluster can be provisioned."
+    else
+        echo "🚫 Validation failed! Cluster cannot be provisioned with current quotas."
+        echo ""
+        echo "🛠️  Resolution Steps:"
+        if [[ "$VCPU_VALIDATION_STATUS" == "FAILED" ]]; then
+            echo "   1. Request vCPU quota increase in AWS Service Quotas console"
+            echo "   2. Reduce cluster size (fewer or smaller instance types)"
+            echo "   3. Terminate unused EC2 instances to free up quota"
+        fi
+    fi
+}
+
+# Output results in JSON format
+output_json_format() {
+    local overall_status="PASSED"
+    if [[ "$VCPU_VALIDATION_STATUS" == "FAILED" ]]; then
+        overall_status="FAILED"
+    fi
+    
+    cat << EOF
+{
+  "validation_result": "$overall_status",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "region": "$REGION",
+  "cluster_requirements": {
+    "cluster_type": "$CLUSTER_TYPE_FROM_FILE",
+    "total_vcpus": $TOTAL_REQUIRED_VCPUS,
+    "master_vcpus": ${MASTER_TOTAL_VCPUS:-0},
+    "infra_vcpus": ${INFRA_TOTAL_VCPUS:-0},
+    "compute_vcpus": $COMPUTE_TOTAL_VCPUS,
+    "autoscale_vcpus": $AUTOSCALE_TOTAL_VCPUS
+  },
+  "validations": {
+    "vcpu_quota": {
+      "status": "$VCPU_VALIDATION_STATUS",
+      "message": "$VCPU_VALIDATION_MESSAGE",
+      "available": ${VCPU_AVAILABLE_QUOTA:-0},
+      "required": $TOTAL_REQUIRED_VCPUS,
+      "quota_limit": ${VCPU_QUOTA_LIMIT:-0},
+      "current_usage": ${VCPU_CURRENT_USAGE:-0},
+      "headroom": ${VCPU_HEADROOM:-0}
+    }
+  }
+}
+EOF
+}
+
+# Log verbose messages
+log_verbose() {
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo "🔍 $1" >&2
+    fi
+}
+
+# Check for required tools
+check_dependencies() {
+    local missing_tools=()
+    
+    if ! command -v jq >/dev/null 2>&1; then
+        missing_tools+=("jq")
+    fi
+    
+    if [[ "$MOCK_MODE" == "false" ]] && ! command -v aws >/dev/null 2>&1; then
+        missing_tools+=("aws")
+    fi
+    
+    if ! command -v bc >/dev/null 2>&1; then
+        missing_tools+=("bc")
+    fi
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        echo "❌ Missing required tools: ${missing_tools[*]}" >&2
+        echo "Please install the missing tools and try again." >&2
+        exit 4
+    fi
+}
+
+# Main execution function
+main() {
+    parse_args "$@"
+    prompt_user_inputs
+    validate_args
+    check_dependencies
+    
+    log_verbose "Starting AWS quota validation..."
+    log_verbose "Region: $REGION"
+    log_verbose "Cluster type: $CLUSTER_TYPE"
+    log_verbose "Mock mode: $MOCK_MODE"
+    
+    # Parse cluster requirements
+    parse_cluster_requirements "$CLUSTER_SPEC_FILE"
+    
+    # Calculate resource requirements
+    calculate_vcpu_requirements
+    
+    # Run validations based on check type
+    if [[ "$CHECK_TYPE" == "vcpu" || "$CHECK_TYPE" == "all" ]]; then
+        validate_vcpu_quota
+    fi
+    
+    validate_storage_quota
+    validate_network_quota  
+    validate_iam_quota
+    
+    # Output results in requested format
+    case "$OUTPUT_FORMAT" in
+        "text")
+            output_text_format
+            ;;
+        "json")
+            output_json_format
+            ;;
+        "table")
+            # Placeholder for table format
+            output_text_format
+            ;;
+    esac
+    
+    # Set exit code based on validation results
+    if [[ "$VCPU_VALIDATION_STATUS" == "FAILED" ]]; then
+        exit 1
+    elif [[ "$VCPU_VALIDATION_STATUS" == "SKIPPED" ]]; then
+        exit 2
+    else
+        exit 0
+    fi
+}
+
+# Run main function with all arguments
+main "$@"

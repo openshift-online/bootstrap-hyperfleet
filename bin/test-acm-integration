@@ -1,0 +1,614 @@
+#!/bin/bash
+# Test ACM Integration Tool
+# Tests ACM ManagedCluster integration and klusterlet deployment
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Configuration
+CLUSTER_NAME=""
+TIMEOUT=1200  # 20 minutes default
+VERBOSE=false
+SKIP_KLUSTERLET_CHECK=false
+FORCE_REIMPORT=false
+
+# Test counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_WARNED=0
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[PASS]${NC} $*"; ((TESTS_PASSED++)); }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; ((TESTS_WARNED++)); }
+log_error() { echo -e "${RED}[FAIL]${NC} $*"; ((TESTS_FAILED++)); }
+
+# Log with timestamp
+log_with_time() {
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp=$(date '+%H:%M:%S')
+    echo -e "[$timestamp] $level $message"
+}
+
+log_info_time() { log_with_time "${BLUE}[INFO]${NC}" "$@"; }
+log_success_time() { log_with_time "${GREEN}[SUCCESS]${NC}" "$@"; }
+log_warn_time() { log_with_time "${YELLOW}[WARN]${NC}" "$@"; }
+log_error_time() { log_with_time "${RED}[ERROR]${NC}" "$@"; }
+
+# Detect cluster type
+detect_cluster_type() {
+    local cluster_name="$1"
+    
+    # Check for OCP (Hive ClusterDeployment)
+    if oc get clusterdeployment "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "ocp"
+    # Check for EKS (CAPI Cluster)
+    elif oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "eks"
+    # Check for HCP (HostedCluster)
+    elif oc get hostedcluster "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "hcp"
+    else
+        echo "unknown"
+    fi
+}
+
+# Check if cluster is provisioned
+check_cluster_provisioned() {
+    local cluster_name="$1"
+    local cluster_type="$2"
+    
+    log_info "Checking if cluster is provisioned..."
+    
+    case "$cluster_type" in
+        ocp)
+            local cd_ready=$(oc get clusterdeployment "$cluster_name" -n "$cluster_name" \
+                -o jsonpath='{.status.conditions[?(@.type=="ClusterReadyCondition")].status}' 2>/dev/null || echo "Unknown")
+            if [[ "$cd_ready" != "True" ]]; then
+                log_error "OCP cluster not ready: $cd_ready"
+                return 1
+            fi
+            ;;
+        eks)
+            local cluster_ready=$(oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" \
+                -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+            if [[ "$cluster_ready" != "True" ]]; then
+                log_error "EKS cluster not ready: $cluster_ready"
+                return 1
+            fi
+            ;;
+        hcp)
+            local hc_available=$(oc get hostedcluster "$cluster_name" -n "$cluster_name" \
+                -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+            if [[ "$hc_available" != "True" ]]; then
+                log_error "HCP cluster not available: $hc_available"
+                return 1
+            fi
+            ;;
+        *)
+            log_error "Unknown cluster type: $cluster_type"
+            return 1
+            ;;
+    esac
+    
+    log_success "Cluster is provisioned and ready"
+    return 0
+}
+
+# Check ManagedCluster resource
+check_managed_cluster() {
+    local cluster_name="$1"
+    
+    log_info "Checking ManagedCluster resource..."
+    
+    if ! oc get managedcluster "$cluster_name" &>/dev/null; then
+        log_error "ManagedCluster resource not found: $cluster_name"
+        return 1
+    fi
+    
+    log_success "ManagedCluster resource exists"
+    
+    # Check ManagedCluster labels
+    local cluster_labels=$(oc get managedcluster "$cluster_name" -o jsonpath='{.metadata.labels}' 2>/dev/null || echo "{}")
+    if [[ "$VERBOSE" == "true" ]]; then
+        log_info "ManagedCluster labels: $cluster_labels"
+    fi
+    
+    # Check ManagedCluster spec
+    local hub_accepts=$(oc get managedcluster "$cluster_name" -o jsonpath='{.spec.hubAcceptsClient}' 2>/dev/null || echo "false")
+    if [[ "$hub_accepts" != "true" ]]; then
+        log_warn "Hub does not accept client: $hub_accepts"
+    else
+        log_success "Hub accepts client: $hub_accepts"
+    fi
+    
+    return 0
+}
+
+# Monitor ManagedCluster availability
+monitor_managed_cluster_availability() {
+    local cluster_name="$1"
+    local timeout="$2"
+    
+    log_info_time "Monitoring ManagedCluster availability..."
+    log_info_time "Timeout: ${timeout}s ($((timeout / 60)) minutes)"
+    
+    local elapsed=0
+    local last_status=""
+    
+    while [[ $elapsed -lt $timeout ]]; do
+        # Get ManagedCluster conditions
+        local available_status=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+        local joined_status=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterJoined")].status}' 2>/dev/null || echo "Unknown")
+        local hub_accepted_status=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="HubAcceptedManagedCluster")].status}' 2>/dev/null || echo "Unknown")
+        
+        # Check if fully available
+        if [[ "$available_status" == "True" && "$joined_status" == "True" && "$hub_accepted_status" == "True" ]]; then
+            log_success_time "ManagedCluster fully available!"
+            return 0
+        fi
+        
+        # Log status updates
+        local current_status="Available:$available_status Joined:$joined_status Accepted:$hub_accepted_status"
+        if [[ "$current_status" != "$last_status" ]]; then
+            log_info_time "ManagedCluster status: $current_status (elapsed: ${elapsed}s)"
+            last_status="$current_status"
+        fi
+        
+        sleep 30
+        elapsed=$((elapsed + 30))
+    done
+    
+    log_error_time "Timeout waiting for ManagedCluster availability after ${timeout}s"
+    return 1
+}
+
+# Check cluster import secret
+check_import_secret() {
+    local cluster_name="$1"
+    
+    log_info "Checking cluster import secret..."
+    
+    local import_secret_name="${cluster_name}-import"
+    if ! oc get secret "$import_secret_name" -n "$cluster_name" &>/dev/null; then
+        log_warn "Import secret not found: $import_secret_name"
+        log_info "This is normal for auto-imported clusters"
+        return 0
+    fi
+    
+    log_success "Import secret exists: $import_secret_name"
+    
+    # Check if import secret has required keys
+    local import_keys=$(oc get secret "$import_secret_name" -n "$cluster_name" -o jsonpath='{.data}' 2>/dev/null | jq -r 'keys[]' 2>/dev/null || echo "")
+    if [[ -n "$import_keys" ]]; then
+        if [[ "$VERBOSE" == "true" ]]; then
+            log_info "Import secret keys: $(echo "$import_keys" | tr '\n' ' ')"
+        fi
+        log_success "Import secret contains required data"
+    else
+        log_warn "Import secret appears empty"
+    fi
+    
+    return 0
+}
+
+# Check ManagedClusterInfo
+check_managed_cluster_info() {
+    local cluster_name="$1"
+    
+    log_info "Checking ManagedClusterInfo..."
+    
+    if ! oc get managedclusterinfo "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        log_warn "ManagedClusterInfo not found (may still be populating)"
+        return 0
+    fi
+    
+    log_success "ManagedClusterInfo exists"
+    
+    # Check cluster info details
+    local kube_vendor=$(oc get managedclusterinfo "$cluster_name" -n "$cluster_name" \
+        -o jsonpath='{.status.kubeVendor}' 2>/dev/null || echo "Unknown")
+    local kube_version=$(oc get managedclusterinfo "$cluster_name" -n "$cluster_name" \
+        -o jsonpath='{.status.version}' 2>/dev/null || echo "Unknown")
+    local node_count=$(oc get managedclusterinfo "$cluster_name" -n "$cluster_name" \
+        -o jsonpath='{.status.nodeList}' 2>/dev/null | jq 'length' 2>/dev/null || echo "Unknown")
+    
+    log_success "Cluster vendor: $kube_vendor"
+    log_success "Cluster version: $kube_version"
+    log_success "Node count: $node_count"
+    
+    return 0
+}
+
+# Extract managed cluster kubeconfig
+extract_managed_cluster_kubeconfig() {
+    local cluster_name="$1"
+    local cluster_type="$2"
+    
+    local temp_kubeconfig="/tmp/${cluster_name}-kubeconfig-$$"
+    
+    case "$cluster_type" in
+        ocp)
+            if oc get secret "${cluster_name}-admin-kubeconfig" -n "$cluster_name" \
+               -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d > "$temp_kubeconfig"; then
+                echo "$temp_kubeconfig"
+                return 0
+            fi
+            ;;
+        eks)
+            if command -v aws &>/dev/null; then
+                local region=$(oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" \
+                    -o jsonpath='{.spec.infrastructureRef.region}' 2>/dev/null || echo "us-east-1")
+                if aws eks update-kubeconfig --name "$cluster_name" --region "$region" --kubeconfig "$temp_kubeconfig" &>/dev/null; then
+                    echo "$temp_kubeconfig"
+                    return 0
+                fi
+            fi
+            ;;
+        hcp)
+            if oc get secret "${cluster_name}-kubeconfig" -n "$cluster_name" \
+               -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d > "$temp_kubeconfig"; then
+                echo "$temp_kubeconfig"
+                return 0
+            fi
+            ;;
+    esac
+    
+    rm -f "$temp_kubeconfig" 2>/dev/null || true
+    return 1
+}
+
+# Check klusterlet deployment on managed cluster
+check_klusterlet_deployment() {
+    local cluster_name="$1"
+    local cluster_type="$2"
+    
+    if [[ "$SKIP_KLUSTERLET_CHECK" == "true" ]]; then
+        log_info "Skipping klusterlet deployment check (--skip-klusterlet-check)"
+        return 0
+    fi
+    
+    log_info "Checking klusterlet deployment on managed cluster..."
+    
+    # Extract managed cluster kubeconfig
+    local managed_kubeconfig
+    if ! managed_kubeconfig=$(extract_managed_cluster_kubeconfig "$cluster_name" "$cluster_type"); then
+        log_warn "Could not extract managed cluster kubeconfig - skipping klusterlet check"
+        return 0
+    fi
+    
+    # Check klusterlet namespace
+    if ! KUBECONFIG="$managed_kubeconfig" oc get namespace open-cluster-management-agent &>/dev/null; then
+        log_error "Klusterlet namespace not found: open-cluster-management-agent"
+        rm -f "$managed_kubeconfig"
+        return 1
+    fi
+    
+    log_success "Klusterlet namespace exists: open-cluster-management-agent"
+    
+    # Check klusterlet pods
+    local klusterlet_pods=$(KUBECONFIG="$managed_kubeconfig" oc get pods -n open-cluster-management-agent --no-headers 2>/dev/null || echo "")
+    if [[ -z "$klusterlet_pods" ]]; then
+        log_error "No klusterlet pods found"
+        rm -f "$managed_kubeconfig"
+        return 1
+    fi
+    
+    local total_pods=$(echo "$klusterlet_pods" | wc -l)
+    local running_pods=$(echo "$klusterlet_pods" | grep -c "Running" || echo "0")
+    
+    if [[ "$running_pods" -lt "$total_pods" ]]; then
+        log_error "Some klusterlet pods not running: $running_pods/$total_pods"
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "$klusterlet_pods" | grep -v "Running"
+        fi
+        rm -f "$managed_kubeconfig"
+        return 1
+    fi
+    
+    log_success "All klusterlet pods running: $running_pods/$total_pods"
+    
+    # Check klusterlet resource
+    if KUBECONFIG="$managed_kubeconfig" oc get klusterlet klusterlet &>/dev/null; then
+        local klusterlet_available=$(KUBECONFIG="$managed_kubeconfig" oc get klusterlet klusterlet \
+            -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+        local klusterlet_applied=$(KUBECONFIG="$managed_kubeconfig" oc get klusterlet klusterlet \
+            -o jsonpath='{.status.conditions[?(@.type=="Applied")].status}' 2>/dev/null || echo "Unknown")
+        
+        if [[ "$klusterlet_available" == "True" && "$klusterlet_applied" == "True" ]]; then
+            log_success "Klusterlet resource healthy: Available=$klusterlet_available Applied=$klusterlet_applied"
+        else
+            log_warn "Klusterlet resource not fully healthy: Available=$klusterlet_available Applied=$klusterlet_applied"
+        fi
+    else
+        log_warn "Klusterlet resource not found (pods may still be starting)"
+    fi
+    
+    rm -f "$managed_kubeconfig"
+    return 0
+}
+
+# Check ACM addon configurations
+check_addon_configurations() {
+    local cluster_name="$1"
+    
+    log_info "Checking ACM addon configurations..."
+    
+    # Check KlusterletAddonConfig
+    if ! oc get klusterletaddonconfig "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        log_error "KlusterletAddonConfig not found: $cluster_name"
+        return 1
+    fi
+    
+    log_success "KlusterletAddonConfig exists"
+    
+    # Check addon status
+    local addon_config=$(oc get klusterletaddonconfig "$cluster_name" -n "$cluster_name" -o yaml 2>/dev/null || echo "")
+    if [[ -n "$addon_config" ]]; then
+        # Check enabled addons
+        local app_mgr_enabled=$(echo "$addon_config" | grep -A5 "applicationManager:" | grep "enabled:" | awk '{print $2}' || echo "false")
+        local policy_enabled=$(echo "$addon_config" | grep -A5 "policyController:" | grep "enabled:" | awk '{print $2}' || echo "false")
+        local search_enabled=$(echo "$addon_config" | grep -A5 "searchCollector:" | grep "enabled:" | awk '{print $2}' || echo "false")
+        
+        if [[ "$VERBOSE" == "true" ]]; then
+            log_info "Addon configurations:"
+            log_info "  Application Manager: $app_mgr_enabled"
+            log_info "  Policy Controller: $policy_enabled" 
+            log_info "  Search Collector: $search_enabled"
+        fi
+        
+        if [[ "$app_mgr_enabled" == "true" ]]; then
+            log_success "Application Manager addon enabled"
+        else
+            log_warn "Application Manager addon not enabled"
+        fi
+    fi
+    
+    return 0
+}
+
+# Force cluster reimport if needed
+force_cluster_reimport() {
+    local cluster_name="$1"
+    
+    if [[ "$FORCE_REIMPORT" != "true" ]]; then
+        return 0
+    fi
+    
+    log_info "Forcing cluster reimport..."
+    
+    # Delete and recreate ManagedCluster to trigger reimport
+    if oc delete managedcluster "$cluster_name" --timeout=60s &>/dev/null; then
+        log_info "Deleted existing ManagedCluster"
+        sleep 10
+        
+        # Reapply cluster configuration to recreate ManagedCluster
+        if oc apply -k "$ROOT_DIR/clusters/$cluster_name/" &>/dev/null; then
+            log_success "ManagedCluster recreated"
+            sleep 30  # Allow time for recreation
+        else
+            log_error "Failed to recreate ManagedCluster"
+            return 1
+        fi
+    else
+        log_warn "Could not delete existing ManagedCluster"
+    fi
+    
+    return 0
+}
+
+# Generate ACM integration summary
+generate_summary() {
+    echo
+    echo "============================================"
+    echo "       ACM INTEGRATION SUMMARY"
+    echo "============================================"
+    echo -e "${GREEN}Tests Passed:${NC}  $TESTS_PASSED"
+    echo -e "${YELLOW}Warnings:${NC}     $TESTS_WARNED"
+    echo -e "${RED}Tests Failed:${NC} $TESTS_FAILED"
+    echo "============================================"
+    
+    if [[ "$TESTS_FAILED" -eq 0 ]]; then
+        echo -e "${GREEN}✅ ACM integration successful${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ ACM integration failed - $TESTS_FAILED critical issues${NC}"
+        return 1
+    fi
+}
+
+# Show current ACM status
+show_acm_status() {
+    local cluster_name="$1"
+    
+    echo "ACM Integration Status:"
+    echo "======================"
+    echo "Cluster: $cluster_name"
+    
+    # ManagedCluster status
+    if oc get managedcluster "$cluster_name" &>/dev/null; then
+        local available=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+        local joined=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterJoined")].status}' 2>/dev/null || echo "Unknown")
+        local accepted=$(oc get managedcluster "$cluster_name" \
+            -o jsonpath='{.status.conditions[?(@.type=="HubAcceptedManagedCluster")].status}' 2>/dev/null || echo "Unknown")
+        
+        echo "ManagedCluster: Available=$available Joined=$joined Accepted=$accepted"
+    else
+        echo "ManagedCluster: NOT FOUND"
+    fi
+    
+    # ManagedClusterInfo status
+    if oc get managedclusterinfo "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        local vendor=$(oc get managedclusterinfo "$cluster_name" -n "$cluster_name" \
+            -o jsonpath='{.status.kubeVendor}' 2>/dev/null || echo "Unknown")
+        local version=$(oc get managedclusterinfo "$cluster_name" -n "$cluster_name" \
+            -o jsonpath='{.status.version}' 2>/dev/null || echo "Unknown")
+        echo "Cluster Info: Vendor=$vendor Version=$version"
+    else
+        echo "ManagedClusterInfo: NOT FOUND"
+    fi
+    
+    # KlusterletAddonConfig status
+    if oc get klusterletaddonconfig "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "KlusterletAddonConfig: EXISTS"
+    else
+        echo "KlusterletAddonConfig: NOT FOUND"
+    fi
+}
+
+# Usage
+usage() {
+    cat << EOF
+Test ACM Integration Tool
+
+Usage: $0 --cluster CLUSTER_NAME [OPTIONS]
+
+Required:
+  --cluster NAME           Name of the test cluster to test ACM integration
+
+Options:
+  --timeout SECONDS        Integration timeout in seconds (default: 1200)
+  --verbose                Show detailed integration information
+  --skip-klusterlet-check  Skip checking klusterlet on managed cluster
+  --force-reimport         Force cluster reimport by recreating ManagedCluster
+  --status                 Show current ACM integration status and exit
+  --help                   Show this help message
+
+Examples:
+  $0 --cluster test-ocp-1234                    Test ACM integration
+  $0 --cluster test-ocp-1234 --timeout 1800     Test with 30-minute timeout
+  $0 --cluster test-eks-1234 --skip-klusterlet-check  Skip klusterlet check for EKS
+  $0 --cluster test-ocp-1234 --status           Show current status
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --cluster)
+            CLUSTER_NAME="$2"
+            shift 2
+            ;;
+        --timeout)
+            TIMEOUT="$2"
+            shift 2
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --skip-klusterlet-check)
+            SKIP_KLUSTERLET_CHECK=true
+            shift
+            ;;
+        --force-reimport)
+            FORCE_REIMPORT=true
+            shift
+            ;;
+        --status)
+            if [[ -z "$CLUSTER_NAME" ]]; then
+                log_error "Cluster name required for status check"
+                exit 1
+            fi
+            show_acm_status "$CLUSTER_NAME"
+            exit 0
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$CLUSTER_NAME" ]]; then
+    log_error "Cluster name is required"
+    usage
+    exit 1
+fi
+
+# Main execution
+main() {
+    log_info "Test ACM Integration Tool"
+    echo "========================="
+    echo "Cluster: $CLUSTER_NAME"
+    echo "Timeout: ${TIMEOUT}s ($((TIMEOUT / 60)) minutes)"
+    echo "Verbose: $VERBOSE"
+    echo "Skip Klusterlet: $SKIP_KLUSTERLET_CHECK"
+    echo "Force Reimport: $FORCE_REIMPORT"
+    echo
+    
+    # Detect cluster type
+    local cluster_type=$(detect_cluster_type "$CLUSTER_NAME")
+    if [[ "$cluster_type" == "unknown" ]]; then
+        log_error "Could not detect cluster type for: $CLUSTER_NAME"
+        exit 1
+    fi
+    log_info "Detected cluster type: $cluster_type"
+    
+    # Check if cluster is provisioned
+    if ! check_cluster_provisioned "$CLUSTER_NAME" "$cluster_type"; then
+        log_error "Cluster not provisioned - run test-cluster-provision first"
+        exit 1
+    fi
+    
+    # Force reimport if requested
+    force_cluster_reimport "$CLUSTER_NAME" || true
+    
+    # Run ACM integration tests
+    check_managed_cluster "$CLUSTER_NAME" || true
+    check_import_secret "$CLUSTER_NAME" || true
+    check_addon_configurations "$CLUSTER_NAME" || true
+    
+    # Monitor ManagedCluster availability
+    if ! monitor_managed_cluster_availability "$CLUSTER_NAME" "$TIMEOUT"; then
+        log_error "ManagedCluster availability check failed"
+    fi
+    
+    # Check cluster info and klusterlet
+    check_managed_cluster_info "$CLUSTER_NAME" || true
+    check_klusterlet_deployment "$CLUSTER_NAME" "$cluster_type" || true
+    
+    # Generate summary
+    if generate_summary; then
+        echo
+        echo "Next steps:"
+        echo "1. Test GitOps sync: ./bin/test-gitops-sync --cluster $CLUSTER_NAME"
+        echo "2. Clean up cluster: ./bin/test-cleanup --cluster $CLUSTER_NAME"
+        echo
+        echo "ACM Console: Check managed cluster status in ACM console"
+        exit 0
+    else
+        echo
+        echo "Troubleshooting:"
+        echo "1. Check ManagedCluster conditions: oc describe managedcluster $CLUSTER_NAME"
+        echo "2. Check import secret: oc get secret ${CLUSTER_NAME}-import -n $CLUSTER_NAME"
+        echo "3. Force reimport: $0 --cluster $CLUSTER_NAME --force-reimport"
+        exit 1
+    fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

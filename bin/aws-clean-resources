@@ -1,13 +1,41 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== AWS Resource Cleanup ==="
-echo "This script finds orphaned cluster resources and prompts for deletion"
-echo ""
-
 # Parse command line arguments
 DEBUG=${DEBUG:-false}
-DISABLE_PROMPTS=false
+SKIP_CHECKS=false
+INPUT_FILE=""
+
+# Error trap for debugging
+trap 'debug_log "Script error on line $LINENO"' ERR
+
+usage() {
+    cat <<EOF
+Usage: $0 <input-file.json> [OPTIONS]
+
+DESCRIPTION:
+    Process a JSON resource file (from aws-find-resources) and interactively
+    select resources for deletion. Creates a deletion list in {input-file}-delete-me.json
+
+ARGUMENTS:
+    input-file.json    JSON file containing AWS resources (required)
+
+OPTIONS:
+    --debug           Enable debug output
+    --skip-checks     Skip all y/N prompts and force delete all resources
+    --help            Show this help
+
+EXAMPLES:
+    $0 .tmp/aws-resources.json
+    $0 cluster-resources.json --debug
+    $0 cluster-resources.json --skip-checks
+
+OUTPUT:
+    - Interactive resource selection with AWS details
+    - Creates {input-file}-delete-me.json with selected resources
+EOF
+    exit 0
+}
 
 for arg in "$@"; do
     case $arg in
@@ -15,8 +43,23 @@ for arg in "$@"; do
             DEBUG=true
             set -x
             ;;
-        --disable-prompts)
-            DISABLE_PROMPTS=true
+        --skip-checks)
+            SKIP_CHECKS=true
+            ;;
+        --help)
+            usage
+            ;;
+        --*)
+            echo "Unknown option: $arg"
+            usage
+            ;;
+        *)
+            if [[ -z "$INPUT_FILE" ]]; then
+                INPUT_FILE="$arg"
+            else
+                echo "Error: Multiple input files specified"
+                usage
+            fi
             ;;
     esac
 done
@@ -27,634 +70,863 @@ debug_log() {
     fi
 }
 
-debug_log "Script started with args: $*"
-
-# Set defaults and prompt for search parameters
-DEFAULT_CLUSTER_IDS="eks-01-mturansk-test"
-DEFAULT_REGIONS="us-west-2"
-
-if [[ "$DISABLE_PROMPTS" == "true" ]]; then
-    CLUSTER_IDS="$DEFAULT_CLUSTER_IDS"
-    REGIONS="$DEFAULT_REGIONS"
-    debug_log "Using defaults - Cluster IDs: '$CLUSTER_IDS', Regions: '$REGIONS'"
-    echo "Using defaults: cluster IDs='$CLUSTER_IDS', regions='$REGIONS'"
+echo "=== AWS Resource Cleanup ==="
+if [[ "$SKIP_CHECKS" == "true" ]]; then
+    echo "This script processes a JSON resource file and automatically deletes ALL resources (--skip-checks enabled)"
 else
-    debug_log "Prompting for cluster IDs..."
-    read -p "Enter cluster IDs to search for (default: $DEFAULT_CLUSTER_IDS): " CLUSTER_IDS
-    CLUSTER_IDS="${CLUSTER_IDS:-$DEFAULT_CLUSTER_IDS}"
-    debug_log "User entered cluster IDs: '$CLUSTER_IDS'"
-
-    debug_log "Prompting for regions..."
-    read -p "Enter AWS regions to search (default: $DEFAULT_REGIONS): " REGIONS
-    REGIONS="${REGIONS:-$DEFAULT_REGIONS}"
-    debug_log "User entered regions: '$REGIONS'"
+    echo "This script processes a JSON resource file and prompts for deletion"
 fi
 echo ""
 
-# Validate inputs
-debug_log "Validating inputs..."
-if [[ -z "$CLUSTER_IDS" || -z "$REGIONS" ]]; then
-    echo "Error: Both cluster IDs and regions are required"
-    debug_log "ERROR: Missing required inputs"
+debug_log "Script started with input file: $INPUT_FILE, SKIP_CHECKS: $SKIP_CHECKS"
+
+# Validate input file
+if [[ -z "$INPUT_FILE" ]]; then
+    echo "Error: Input file is required"
+    usage
+fi
+
+if [[ ! -f "$INPUT_FILE" ]]; then
+    echo "Error: Input file '$INPUT_FILE' not found"
     exit 1
 fi
 
-# Convert inputs to arrays
-debug_log "Converting inputs to arrays..."
-IFS=' ' read -ra CLUSTER_ARRAY <<< "$CLUSTER_IDS"
-IFS=' ' read -ra REGION_ARRAY <<< "$REGIONS"
+if ! jq empty "$INPUT_FILE" 2>/dev/null; then
+    echo "Error: Input file '$INPUT_FILE' is not valid JSON"
+    exit 1
+fi
 
-debug_log "Cluster array: ${CLUSTER_ARRAY[*]}"
-debug_log "Region array: ${REGION_ARRAY[*]}"
+debug_log "Input file validation passed"
 
-echo "Searching for resources with cluster patterns: ${CLUSTER_IDS}"
-echo "In regions: ${REGIONS}"
+# Create output file path
+OUTPUT_FILE="${INPUT_FILE%.*}-delete-me.json"
+debug_log "Output file will be: $OUTPUT_FILE"
+
+# Extract region from input file
+REGION=$(jq -r '.REGION' "$INPUT_FILE" 2>/dev/null || echo "unknown")
+debug_log "Detected region: $REGION"
+
+echo "Processing resources from: $INPUT_FILE"
+echo "Target region: $REGION"
 echo ""
 
-# Temporary files for resource collection
-RESOURCES_FILE=$(mktemp)
-debug_log "Created temporary file: $RESOURCES_FILE"
-trap "debug_log 'Cleaning up temporary file: $RESOURCES_FILE'; rm -f $RESOURCES_FILE" EXIT
+# Initialize selected resources array
+selected_resources='[]'
 
-# Function to find and store resources
-find_resources() {
-    echo "Discovering resources..."
-    debug_log "Starting resource discovery..."
-    debug_log "Resources will be saved to: $RESOURCES_FILE"
+# Function to get additional AWS details for a resource
+get_resource_details() {
+    local resource_type="$1"
+    local resource_id="$2"
+    local region="$3"
     
-    for region in "${REGION_ARRAY[@]}"; do
-        debug_log "Processing region: $region"
-        for cluster_id in "${CLUSTER_ARRAY[@]}"; do
-            debug_log "Searching for cluster pattern: $cluster_id in region: $region"
+    debug_log "Getting details for $resource_type: $resource_id in $region"
+    
+    case "$resource_type" in
+        "EC2_INSTANCES")
+            aws ec2 describe-instances --region "$region" --instance-ids "$resource_id" \
+                --query 'Reservations[0].Instances[0].[InstanceType,State.Name,LaunchTime,PrivateIpAddress,PublicIpAddress||`none`,Tags[?Key==`Name`].Value|[0]||`unnamed`]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown unknown unknown"
+            ;;
+        "EBS_VOLUMES")
+            aws ec2 describe-volumes --region "$region" --volume-ids "$resource_id" \
+                --query 'Volumes[0].[Size,VolumeType,State,Encrypted,Iops||`0`,Attachments[0].InstanceId||`unattached`]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown unknown unknown"
+            ;;
+        "APPLICATION_LOAD_BALANCERS"|"CLASSIC_LOAD_BALANCERS")
+            if [[ "$resource_type" == "APPLICATION_LOAD_BALANCERS" ]]; then
+                aws elbv2 describe-load-balancers --region "$region" --load-balancer-arns "$resource_id" \
+                    --query 'LoadBalancers[0].[Type,State.Code,CreatedTime,Scheme]' \
+                    --output text 2>/dev/null || echo "unknown unknown unknown unknown"
+            else
+                aws elb describe-load-balancers --region "$region" --load-balancer-names "$resource_id" \
+                    --query 'LoadBalancerDescriptions[0].[Scheme,CreatedTime,VPCId||`classic`]' \
+                    --output text 2>/dev/null || echo "unknown unknown unknown"
+            fi
+            ;;
+        "VPCS")
+            aws ec2 describe-vpcs --region "$region" --vpc-ids "$resource_id" \
+                --query 'Vpcs[0].[CidrBlock,State,IsDefault,Tags[?Key==`Name`].Value|[0]||`unnamed`]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown"
+            ;;
+        "SUBNETS")
+            aws ec2 describe-subnets --region "$region" --subnet-ids "$resource_id" \
+                --query 'Subnets[0].[CidrBlock,AvailabilityZone,State,MapPublicIpOnLaunch,Tags[?Key==`Name`].Value|[0]||`unnamed`]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown unknown"
+            ;;
+        "SECURITY_GROUPS")
+            aws ec2 describe-security-groups --region "$region" --group-ids "$resource_id" \
+                --query 'SecurityGroups[0].[GroupName,Description,length(IpPermissions),length(IpPermissionsEgress)]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown"
+            ;;
+        "NAT_GATEWAYS")
+            aws ec2 describe-nat-gateways --region "$region" --nat-gateway-ids "$resource_id" \
+                --query 'NatGateways[0].[State,NatGatewayAddresses[0].PublicIp||`none`,CreateTime]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown"
+            ;;
+        "INTERNET_GATEWAYS")
+            aws ec2 describe-internet-gateways --region "$region" --internet-gateway-ids "$resource_id" \
+                --query 'InternetGateways[0].[Attachments[0].State||`detached`,Tags[?Key==`Name`].Value|[0]||`unnamed`]' \
+                --output text 2>/dev/null || echo "unknown unknown"
+            ;;
+        "ROUTE_TABLES")
+            aws ec2 describe-route-tables --region "$region" --route-table-ids "$resource_id" \
+                --query 'RouteTables[0].[length(Associations),length(Routes),Tags[?Key==`Name`].Value|[0]||`unnamed`]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown"
+            ;;
+        "ELASTIC_IPS")
+            aws ec2 describe-addresses --region "$region" --allocation-ids "$resource_id" \
+                --query 'Addresses[0].[PublicIp,InstanceId||`unassociated`,NetworkInterfaceId||`none`,Domain]' \
+                --output text 2>/dev/null || echo "unknown unknown unknown unknown"
+            ;;
+        *)
+            echo "details-not-implemented"
+            ;;
+    esac
+}
+
+# Function to process each resource type from JSON
+process_resource_type() {
+    local resource_type="$1"
+    local json_path="$2"
+    
+    debug_log "Processing resource type: $resource_type"
+    
+    # Check if this resource type has any resources
+    local resource_count
+    resource_count=$(jq -r "${json_path} | length" "$INPUT_FILE" 2>/dev/null)
+    
+    if [[ "$resource_count" == "0" || "$resource_count" == "null" ]]; then
+        debug_log "No resources found for $resource_type"
+        return 0
+    fi
+    
+    echo "=== $resource_type ($resource_count found) ==="
+    echo ""
+    
+    # Process each resource in this type
+    local index=0
+    while [[ $index -lt $resource_count ]]; do
+        local resource_data
+        resource_data=$(jq -c "${json_path}[$index]" "$INPUT_FILE" 2>/dev/null)
+        
+        if [[ "$resource_data" == "null" || -z "$resource_data" ]]; then
+            debug_log "Skipping null/empty resource at index $index"
+            index=$((index + 1))
+            continue
+        fi
+        
+        # Extract resource ID (first element of array)
+        local resource_id
+        resource_id=$(echo "$resource_data" | jq -r '.[0]' 2>/dev/null)
+        
+        if [[ -z "$resource_id" || "$resource_id" == "null" ]]; then
+            debug_log "Skipping resource with null/empty ID at index $index"
+            index=$((index + 1))
+            continue
+        fi
+        
+        debug_log "Processing resource $index: $resource_id"
+        
+        # Get additional details from AWS
+        local details
+        details=$(get_resource_details "$resource_type" "$resource_id" "$REGION")
+        
+        # Display resource information
+        echo "Resource: $resource_id"
+        echo "  Raw data: $resource_data"
+        if [[ "$details" != "details-not-implemented" ]]; then
+            echo "  AWS details: $details"
+        fi
+        echo ""
+        
+        # Prompt for deletion (default is No) or auto-select if --skip-checks
+        local response=""
+        if [[ "$SKIP_CHECKS" == "true" ]]; then
+            response="y"
+            echo "Auto-selected for deletion (--skip-checks): $resource_id"
+            debug_log "Auto-selected resource due to --skip-checks: $resource_id"
+        else
+            debug_log "About to prompt for resource: $resource_id"
+            read -p "Delete this $resource_type resource? (y/N): " response || {
+                debug_log "Read command failed for resource: $resource_id"
+                echo "  Skipped due to input error: $resource_id"
+                echo ""
+                index=$((index + 1))
+                continue
+            }
+            debug_log "User response for $resource_id: '$response'"
+        fi
+        
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            echo "✓ Marked for deletion: $resource_id"
             
-            # Load Balancers (ALB/NLB) - EXACT AWS CLI COMMANDS
-            debug_log "Checking ALB/NLB load balancers..."
-            aws elbv2 describe-load-balancers --region "$region" \
-                --query "LoadBalancers[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerArn,LoadBalancerName,Type,State.Code]" \
-                --output text 2>/dev/null | while read -r arn name type state; do
-                if [[ -n "$arn" ]]; then
-                    echo "load_balancer|$arn|$name|$type|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found ALB/NLB: $name ($arn)"
-                fi
-            done
+            # Add to selected resources
+            local resource_entry
+            resource_entry=$(jq -n --arg type "$resource_type" --arg id "$resource_id" --argjson data "$resource_data" --arg details "$details" \
+                '{type: $type, id: $id, raw_data: $data, aws_details: $details}') || {
+                debug_log "Failed to create JSON entry for: $resource_id"
+                echo "  Error processing selection for: $resource_id"
+                echo ""
+                index=$((index + 1))
+                continue
+            }
             
-            # Classic Load Balancers
-            debug_log "Checking Classic ELB load balancers..."
-            aws elb describe-load-balancers --region "$region" \
-                --query "LoadBalancerDescriptions[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerName,VPCId]" \
-                --output text 2>/dev/null | while read -r name vpc; do
-                if [[ -n "$name" ]]; then
-                    echo "classic_load_balancer|$name|$name|$vpc||$region" >> "$RESOURCES_FILE"
-                    debug_log "Found Classic ELB: $name"
-                fi
-            done
-            
-            # RDS Instances
-            debug_log "Checking RDS instances..."
-            aws rds describe-db-instances --region "$region" \
-                --query "DBInstances[?contains(DBInstanceIdentifier, '${cluster_id}')].[DBInstanceIdentifier,DBInstanceStatus,DBSubnetGroup.VpcId]" \
-                --output text 2>/dev/null | while read -r id status vpc; do
-                if [[ -n "$id" ]]; then
-                    echo "rds_instance|$id|$id|$vpc|$status|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found RDS instance: $id - $status"
-                fi
-            done
-            
-            # EC2 Instances
-            debug_log "Checking EC2 instances..."
-            aws ec2 describe-instances --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" "Name=instance-state-name,Values=running,stopped,stopping" \
-                --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0],State.Name,VpcId]' \
-                --output text 2>/dev/null | while read -r id name state vpc; do
-                if [[ -n "$id" ]]; then
-                    echo "ec2_instance|$id|$name|$vpc|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found EC2 instance: $id ($name) - $state"
-                fi
-            done
-            
-            # NAT Gateways
-            debug_log "Checking NAT gateways..."
-            aws ec2 describe-nat-gateways --region "$region" \
-                --filter "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'NatGateways[*].[NatGatewayId,VpcId,State]' \
-                --output text 2>/dev/null | while read -r id vpc state; do
-                if [[ -n "$id" ]]; then
-                    echo "nat_gateway|$id||$vpc|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found NAT gateway: $id - $state"
-                fi
-            done
-            
-            # VPC Endpoints
-            debug_log "Checking VPC endpoints..."
-            aws ec2 describe-vpc-endpoints --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'VpcEndpoints[*].[VpcEndpointId,VpcId,ServiceName,State]' \
-                --output text 2>/dev/null | while read -r id vpc service state; do
-                if [[ -n "$id" ]]; then
-                    echo "vpc_endpoint|$id|$service|$vpc|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found VPC endpoint: $id ($service) - $state"
-                fi
-            done
-            
-            # Network ACLs
-            debug_log "Checking Network ACLs..."
-            aws ec2 describe-network-acls --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'NetworkAcls[*].[NetworkAclId,VpcId,IsDefault]' \
-                --output text 2>/dev/null | while read -r id vpc is_default; do
-                if [[ -n "$id" && "$is_default" != "True" ]]; then
-                    echo "network_acl|$id||$vpc|$is_default|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found Network ACL: $id (default: $is_default)"
-                fi
-            done
-            
-            # Network Interfaces
-            debug_log "Checking network interfaces..."
-            aws ec2 describe-network-interfaces --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId]' \
-                --output text 2>/dev/null | while read -r id type status vpc; do
-                if [[ -n "$id" ]]; then
-                    echo "network_interface|$id|$type|$vpc|$status|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found network interface: $id ($type) - $status"
-                fi
-            done
-            
-            # Route Tables (non-main)
-            debug_log "Checking route tables..."
-            aws ec2 describe-route-tables --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'RouteTables[?length(Associations[?Main == `true`]) == `0`].[RouteTableId,VpcId]' \
-                --output text 2>/dev/null | while read -r id vpc; do
-                if [[ -n "$id" ]]; then
-                    echo "route_table|$id||$vpc||$region" >> "$RESOURCES_FILE"
-                    debug_log "Found route table: $id"
-                fi
-            done
-            
-            # Security Groups
-            debug_log "Checking security groups..."
-            aws ec2 describe-security-groups --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'SecurityGroups[*].[GroupId,GroupName,VpcId]' \
-                --output text 2>/dev/null | while read -r id name vpc; do
-                if [[ -n "$id" && "$name" != "default" ]]; then
-                    echo "security_group|$id|$name|$vpc||$region" >> "$RESOURCES_FILE"
-                    debug_log "Found security group: $name ($id)"
-                fi
-            done
-            
-            # Subnets (search by tags AND by VPC ID if we found VPCs)
-            debug_log "Checking subnets..."
-            aws ec2 describe-subnets --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'Subnets[*].[SubnetId,VpcId,AvailabilityZone,State]' \
-                --output text 2>/dev/null | while read -r id vpc az state; do
-                if [[ -n "$id" ]]; then
-                    echo "subnet|$id|$az|$vpc|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found subnet: $id ($az) - $state"
-                fi
-            done
-            
-            # Internet Gateways
-            debug_log "Checking internet gateways..."
-            aws ec2 describe-internet-gateways --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].VpcId,Attachments[0].State]' \
-                --output text 2>/dev/null | while read -r id vpc state; do
-                if [[ -n "$id" ]]; then
-                    echo "internet_gateway|$id||$vpc|$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found internet gateway: $id - $state"
-                fi
-            done
-            
-            # VPCs
-            debug_log "Checking VPCs..."
-            aws ec2 describe-vpcs --region "$region" \
-                --filters "Name=tag-value,Values=*${cluster_id}*" \
-                --query 'Vpcs[*].[VpcId,CidrBlock,State]' \
-                --output text 2>/dev/null | while read -r id cidr state; do
-                if [[ -n "$id" ]]; then
-                    echo "vpc|$id|$cidr||$state|$region" >> "$RESOURCES_FILE"
-                    debug_log "Found VPC: $id ($cidr) - $state"
-                fi
-            done
-        done
+            selected_resources=$(echo "$selected_resources" | jq --argjson entry "$resource_entry" '. += [$entry]') || {
+                debug_log "Failed to add to selected_resources: $resource_id" 
+                echo "  Error adding to selection: $resource_id"
+                echo ""
+                index=$((index + 1))
+                continue
+            }
+            debug_log "Added to selection: $resource_type $resource_id"
+        else
+            echo "  Skipped: $resource_id"
+        fi
+        
+        echo "$index"
+        index=$((index + 1))
+        echo "$index"
     done
     
-    # Wait for all background processes to complete
-    wait
-    
-    # Second pass: Find resources by VPC ID (for resources without proper tags)
-    debug_log "Second pass: Finding resources by VPC association..."
-    if [[ -s "$RESOURCES_FILE" ]]; then
-        # Extract VPC IDs from found resources
-        vpc_ids=$(grep "^vpc|" "$RESOURCES_FILE" | cut -d'|' -f2 | sort -u)
-        debug_log "Found VPC IDs for second pass: $vpc_ids"
-        for vpc_id in $vpc_ids; do
-            if [[ -n "$vpc_id" ]]; then
-                debug_log "Searching for additional resources in VPC: $vpc_id"
-                for region in "${REGION_ARRAY[@]}"; do
-                    # Find all subnets in this VPC
-                    aws ec2 describe-subnets --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'Subnets[*].[SubnetId,VpcId,AvailabilityZone,State]' \
-                        --output text 2>/dev/null | while read -r id vpc az state; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this subnet
-                            if ! grep -q "^subnet|$id|" "$RESOURCES_FILE"; then
-                                echo "subnet|$id|$az|$vpc|$state|$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional subnet: $id ($az) - $state"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all network interfaces in this VPC
-                    aws ec2 describe-network-interfaces --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId]' \
-                        --output text 2>/dev/null | while read -r id type status vpc; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this network interface
-                            if ! grep -q "^network_interface|$id|" "$RESOURCES_FILE"; then
-                                echo "network_interface|$id|$type|$vpc|$status|$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional network interface: $id ($type) - $status"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all route tables in this VPC (excluding main)
-                    aws ec2 describe-route-tables --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'RouteTables[?length(Associations[?Main == `true`]) == `0`].[RouteTableId,VpcId]' \
-                        --output text 2>/dev/null | while read -r id vpc; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this route table
-                            if ! grep -q "^route_table|$id|" "$RESOURCES_FILE"; then
-                                echo "route_table|$id||$vpc||$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional route table: $id"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all NAT gateways in this VPC
-                    aws ec2 describe-nat-gateways --region "$region" \
-                        --filter "Name=vpc-id,Values=$vpc_id" \
-                        --query 'NatGateways[*].[NatGatewayId,VpcId,State]' \
-                        --output text 2>/dev/null | while read -r id vpc state; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this NAT gateway
-                            if ! grep -q "^nat_gateway|$id|" "$RESOURCES_FILE"; then
-                                echo "nat_gateway|$id||$vpc|$state|$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional NAT gateway: $id - $state"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all VPC endpoints in this VPC  
-                    aws ec2 describe-vpc-endpoints --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'VpcEndpoints[*].[VpcEndpointId,VpcId,ServiceName,State]' \
-                        --output text 2>/dev/null | while read -r id vpc service state; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this VPC endpoint
-                            if ! grep -q "^vpc_endpoint|$id|" "$RESOURCES_FILE"; then
-                                echo "vpc_endpoint|$id|$service|$vpc|$state|$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional VPC endpoint: $id ($service) - $state"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all Network ACLs in this VPC (excluding default)
-                    aws ec2 describe-network-acls --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'NetworkAcls[?IsDefault == `false`].[NetworkAclId,VpcId,IsDefault]' \
-                        --output text 2>/dev/null | while read -r id vpc is_default; do
-                        if [[ -n "$id" ]]; then
-                            # Check if we already have this Network ACL
-                            if ! grep -q "^network_acl|$id|" "$RESOURCES_FILE"; then
-                                echo "network_acl|$id||$vpc|$is_default|$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional Network ACL: $id (default: $is_default)"
-                            fi
-                        fi
-                    done
-                    
-                    # Find all Security Groups in this VPC (excluding default)
-                    aws ec2 describe-security-groups --region "$region" \
-                        --filters "Name=vpc-id,Values=$vpc_id" \
-                        --query 'SecurityGroups[*].[GroupId,GroupName,VpcId]' \
-                        --output text 2>/dev/null | while read -r id name vpc; do
-                        if [[ -n "$id" && "$name" != "default" ]]; then
-                            # Check if we already have this security group
-                            if ! grep -q "^security_group|$id|" "$RESOURCES_FILE"; then
-                                echo "security_group|$id|$name|$vpc||$region" >> "$RESOURCES_FILE"
-                                debug_log "Found additional security group: $name ($id)"
-                            fi
-                        fi
-                    done
-                done
-            fi
-        done
-    fi
-    
-    # Sort by correct deletion order (dependencies deleted first)
-    debug_log "Sorting resources by deletion order..."
-    if [[ -s "$RESOURCES_FILE" ]]; then
-        debug_log "Resource file has $(wc -l < "$RESOURCES_FILE") lines before sorting"
-        {
-            # 1. Load Balancers (nothing depends on them)
-            grep "^load_balancer|" "$RESOURCES_FILE" || true
-            grep "^classic_load_balancer|" "$RESOURCES_FILE" || true
-            
-            # 2. RDS Instances (nothing depends on them)
-            grep "^rds_instance|" "$RESOURCES_FILE" || true
-            
-            # 3. EC2 Instances (release ENIs)
-            grep "^ec2_instance|" "$RESOURCES_FILE" || true
-            
-            # 4. VPC Endpoints (block route deletion)
-            grep "^vpc_endpoint|" "$RESOURCES_FILE" || true
-            
-            # 5. NAT Gateways (use ENIs, block route deletion)
-            grep "^nat_gateway|" "$RESOURCES_FILE" || true
-            
-            # 6. Network Interfaces (attach to subnets, use security groups)
-            grep "^network_interface|" "$RESOURCES_FILE" || true
-            
-            # 7. Route Tables (non-main, associate with subnets)
-            grep "^route_table|" "$RESOURCES_FILE" || true
-            
-            # 8. Security Groups (used by ENIs, instances) - AFTER ENIs are deleted
-            grep "^security_group|" "$RESOURCES_FILE" || true
-            
-            # 9. Network ACLs (non-default, associated with subnets)
-            grep "^network_acl|" "$RESOURCES_FILE" || true
-            
-            # 10. Subnets (contain ENIs, use route tables, associated with ACLs)
-            grep "^subnet|" "$RESOURCES_FILE" || true
-            
-            # 11. Internet Gateways (attached to VPC)
-            grep "^internet_gateway|" "$RESOURCES_FILE" || true
-            
-            # 12. VPCs (last, everything else is inside)
-            grep "^vpc|" "$RESOURCES_FILE" || true
-        } > "${RESOURCES_FILE}.sorted"
-        mv "${RESOURCES_FILE}.sorted" "$RESOURCES_FILE"
-        debug_log "Resource file has $(wc -l < "$RESOURCES_FILE") lines after sorting"
-    else
-        debug_log "Resource file is empty"
-    fi
+    debug_log "Finished processing $resource_type: processed $index resources"
 }
 
-# Function to display found resources - COMPLETE IMPLEMENTATION
-display_resources() {
-    debug_log "Displaying found resources..."
-    if [[ ! -s "$RESOURCES_FILE" ]]; then
-        echo "No resources found matching the criteria"
-        debug_log "Resource file is empty or doesn't exist"
-        return 1
-    fi
-    
-    echo "Found resources:"
-    echo "================"
-    
-    local count=0
-    while IFS='|' read -r type id name vpc state region; do
-        ((count++))
-        case "$type" in
-            load_balancer) echo "$count. Load Balancer: $name ($id) in $region" ;;
-            classic_load_balancer) echo "$count. Classic Load Balancer: $name in $region" ;;
-            rds_instance) echo "$count. RDS Instance: $id ($state) in VPC $vpc, $region" ;;
-            ec2_instance) echo "$count. EC2 Instance: $id ($name) $state in VPC $vpc, $region" ;;
-            nat_gateway) echo "$count. NAT Gateway: $id in VPC $vpc, $region" ;;
-            network_interface) echo "$count. Network Interface: $id ($name) in VPC $vpc, $region" ;;
-            route_table) echo "$count. Route Table: $id in VPC $vpc, $region" ;;
-            security_group) echo "$count. Security Group: $name ($id) in VPC $vpc, $region" ;;
-            network_acl) echo "$count. Network ACL: $id in VPC $vpc, $region" ;;
-            subnet) echo "$count. Subnet: $id in VPC $vpc, $region" ;;
-            internet_gateway) echo "$count. Internet Gateway: $id attached to VPC $vpc, $region" ;;
-            vpc_endpoint) echo "$count. VPC Endpoint: $id ($name) in VPC $vpc, $region" ;;
-            vpc) echo "$count. VPC: $id ($name) in $region" ;;
-        esac
-    done < "$RESOURCES_FILE"
-    
-    echo ""
-    echo "Total: $count resources found"
-    return 0
+# Define dependency-aware deletion order (resources must be deleted in this order)
+# Phase 1: Disconnect and stop services
+get_deletion_order_phase1() {
+    cat <<EOF
+EC2_INSTANCES
+EBS_SNAPSHOTS
+APPLICATION_LOAD_BALANCERS
+CLASSIC_LOAD_BALANCERS
+TARGET_GROUPS
+AUTO_SCALING_GROUPS
+LAUNCH_TEMPLATES
+EKS_CLUSTERS
+RDS_INSTANCES
+RDS_CLUSTERS
+VPC_ENDPOINTS
+NAT_GATEWAYS
+ECR_REPOSITORIES
+CLOUDFORMATION_STACKS
+EBS_VOLUMES
+EOF
 }
 
-# Function to delete a resource - COMPLETE IMPLEMENTATION WITH ALL TYPES
-delete_resource() {
-    local type="$1" id="$2" name="$3" vpc="$4" state="$5" region="$6"
+# Phase 2: Clean up networking and dependencies after services are fully gone
+get_deletion_order_phase2() {
+    cat <<EOF
+ROUTE_TABLES
+NETWORK_INTERFACES
+SECURITY_GROUPS
+NETWORK_ACLS
+EFS_MOUNT_TARGETS
+EFS_FILE_SYSTEMS
+SUBNETS
+INTERNET_GATEWAYS
+ELASTIC_IPS
+VPCS
+IAM_INSTANCE_PROFILES
+IAM_POLICIES
+IAM_ROLES
+EOF
+}
+
+# Function to delete a single AWS resource
+delete_aws_resource() {
+    local resource_type="$1"
+    local resource_id="$2"
+    local region="$3"
+    local raw_data="$4"
     
-    debug_log "Attempting to delete $type: $id ($name) in $region"
+    debug_log "Deleting $resource_type: $resource_id in $region"
+    echo "Deleting $resource_type: $resource_id"
     
-    case "$type" in
-        load_balancer)
-            echo "Deleting Load Balancer: $name"
-            aws elbv2 delete-load-balancer --region "$region" --load-balancer-arn "$id"
-            echo "Load Balancer deletion initiated"
+    case "$resource_type" in
+        "EC2_INSTANCES")
+            aws ec2 terminate-instances --region "$region" --instance-ids "$resource_id"
+            echo "  ✓ EC2 instance termination initiated"
             ;;
-        classic_load_balancer)
-            echo "Deleting Classic Load Balancer: $name"
-            aws elb delete-load-balancer --region "$region" --load-balancer-name "$id"
-            echo "Classic Load Balancer deleted"
+        "EBS_VOLUMES")
+            aws ec2 delete-volume --region "$region" --volume-id "$resource_id"
+            echo "  ✓ EBS volume deleted"
             ;;
-        rds_instance)
-            echo "Deleting RDS Instance: $id"
-            aws rds delete-db-instance --region "$region" --db-instance-identifier "$id" --skip-final-snapshot
-            echo "RDS Instance deletion initiated"
+        "EBS_SNAPSHOTS")
+            aws ec2 delete-snapshot --region "$region" --snapshot-id "$resource_id"
+            echo "  ✓ EBS snapshot deleted"
             ;;
-        ec2_instance)
-            echo "Terminating EC2 Instance: $id ($name)"
-            aws ec2 terminate-instances --region "$region" --instance-ids "$id"
-            echo "EC2 Instance termination initiated"
+        "APPLICATION_LOAD_BALANCERS")
+            aws elbv2 delete-load-balancer --region "$region" --load-balancer-arn "$resource_id"
+            echo "  ✓ Application Load Balancer deletion initiated"
+            # Wait for load balancer to be fully deleted to avoid dependency violations
+            echo "  ⏳ Waiting for load balancer to be fully deleted..."
+            local wait_count=0
+            while [[ $wait_count -lt 30 ]]; do
+                if ! aws elbv2 describe-load-balancers --region "$region" --load-balancer-arns "$resource_id" >/dev/null 2>&1; then
+                    echo "  ✅ Load balancer fully deleted"
+                    break
+                fi
+                sleep 10
+                wait_count=$((wait_count + 1))
+                echo "  ⏳ Still waiting... ($((wait_count * 10))s)"
+            done
             ;;
-        nat_gateway)
-            echo "Deleting NAT Gateway: $id"
-            aws ec2 delete-nat-gateway --region "$region" --nat-gateway-id "$id"
-            echo "NAT Gateway deletion initiated (takes a few minutes)"
+        "CLASSIC_LOAD_BALANCERS")
+            aws elb delete-load-balancer --region "$region" --load-balancer-name "$resource_id"
+            echo "  ✓ Classic Load Balancer deleted"
             ;;
-        network_interface)
-            echo "Deleting Network Interface: $id"
-            # Check if attached, detach first
-            attachment=$(aws ec2 describe-network-interfaces --region "$region" --network-interface-ids "$id" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)
-            if [[ "$attachment" != "None" && "$attachment" != "null" && -n "$attachment" ]]; then
-                echo "Detaching Network Interface: $id"
-                aws ec2 detach-network-interface --region "$region" --attachment-id "$attachment" --force
-                sleep 5
+        "TARGET_GROUPS")
+            aws elbv2 delete-target-group --region "$region" --target-group-arn "$resource_id"
+            echo "  ✓ Target Group deleted"
+            ;;
+        "AUTO_SCALING_GROUPS")
+            aws autoscaling delete-auto-scaling-group --region "$region" --auto-scaling-group-name "$resource_id" --force-delete
+            echo "  ✓ Auto Scaling Group deletion initiated"
+            ;;
+        "LAUNCH_TEMPLATES")
+            aws ec2 delete-launch-template --region "$region" --launch-template-id "$resource_id"
+            echo "  ✓ Launch Template deleted"
+            ;;
+        "VPCS")
+            # Retry VPC deletion as it often has lingering dependencies
+            local retry_count=0
+            while [[ $retry_count -lt 5 ]]; do
+                if aws ec2 delete-vpc --region "$region" --vpc-id "$resource_id" 2>/dev/null; then
+                    echo "  ✓ VPC deleted"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    echo "  ⏳ VPC deletion failed (attempt $retry_count/5), waiting 30s for all dependencies to clear..."
+                    sleep 30
+                fi
+                
+                if [[ $retry_count -eq 5 ]]; then
+                    echo "  ❌ VPC deletion failed after 5 attempts - may have remaining dependencies"
+                    return 1
+                fi
+            done
+            ;;
+        "SUBNETS")
+            # Retry subnet deletion as it might have lingering dependencies
+            local retry_count=0
+            while [[ $retry_count -lt 3 ]]; do
+                if aws ec2 delete-subnet --region "$region" --subnet-id "$resource_id" 2>/dev/null; then
+                    echo "  ✓ Subnet deleted"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    echo "  ⏳ Subnet deletion failed (attempt $retry_count/3), waiting 20s for dependencies to clear..."
+                    sleep 20
+                fi
+                
+                if [[ $retry_count -eq 3 ]]; then
+                    echo "  ❌ Subnet deletion failed after 3 attempts - may have remaining dependencies"
+                    return 1
+                fi
+            done
+            ;;
+        "INTERNET_GATEWAYS")
+            # Need to detach first, extract VPC ID from raw data
+            local vpc_id
+            vpc_id=$(echo "$raw_data" | jq -r '.[1]' 2>/dev/null)
+            if [[ -n "$vpc_id" && "$vpc_id" != "null" ]]; then
+                echo "  ⏳ Detaching Internet Gateway from VPC..."
+                aws ec2 detach-internet-gateway --region "$region" --internet-gateway-id "$resource_id" --vpc-id "$vpc_id" 2>/dev/null || true
+                sleep 5  # Give time for detachment
             fi
-            aws ec2 delete-network-interface --region "$region" --network-interface-id "$id"
-            echo "Network Interface deleted"
-            ;;
-        vpc_endpoint)
-            echo "Deleting VPC Endpoint: $id ($name)"
-            aws ec2 delete-vpc-endpoints --region "$region" --vpc-endpoint-ids "$id"
-            echo "VPC Endpoint deletion initiated"
-            ;;
-        route_table)
-            echo "Clearing routes and deleting Route Table: $id"
             
-            # First, delete all non-local routes from the route table
-            debug_log "Clearing routes from route table: $id"
-            routes=$(aws ec2 describe-route-tables --region "$region" --route-table-ids "$id" --query 'RouteTables[0].Routes[?GatewayId!=`local`]' --output json 2>/dev/null)
+            # Retry Internet Gateway deletion
+            local retry_count=0
+            while [[ $retry_count -lt 3 ]]; do
+                if aws ec2 delete-internet-gateway --region "$region" --internet-gateway-id "$resource_id" 2>/dev/null; then
+                    echo "  ✓ Internet Gateway detached and deleted"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    echo "  ⏳ Internet Gateway deletion failed (attempt $retry_count/3), waiting 15s..."
+                    sleep 15
+                fi
+                
+                if [[ $retry_count -eq 3 ]]; then
+                    echo "  ❌ Internet Gateway deletion failed after 3 attempts"
+                    return 1
+                fi
+            done
+            ;;
+        "NAT_GATEWAYS")
+            aws ec2 delete-nat-gateway --region "$region" --nat-gateway-id "$resource_id"
+            echo "  ✓ NAT Gateway deletion initiated"
+            # Wait for NAT gateway to be fully deleted to avoid dependency violations
+            echo "  ⏳ Waiting for NAT gateway to be fully deleted..."
+            local wait_count=0
+            while [[ $wait_count -lt 30 ]]; do
+                local nat_status
+                nat_status=$(aws ec2 describe-nat-gateways --region "$region" --nat-gateway-ids "$resource_id" --query 'NatGateways[0].State' --output text 2>/dev/null || echo "deleted")
+                if [[ "$nat_status" == "deleted" ]]; then
+                    echo "  ✅ NAT gateway fully deleted"
+                    break
+                fi
+                sleep 15
+                wait_count=$((wait_count + 1))
+                echo "  ⏳ Still waiting... ($((wait_count * 15))s) - Status: $nat_status"
+            done
+            ;;
+        "ROUTE_TABLES")
+            # Clear routes first
+            echo "  ⏳ Clearing non-local routes from route table..."
+            routes=$(aws ec2 describe-route-tables --region "$region" --route-table-ids "$resource_id" --query 'RouteTables[0].Routes[?GatewayId!=`local`]' --output json 2>/dev/null || echo "[]")
             if [[ "$routes" != "[]" && "$routes" != "null" ]]; then
-                echo "Removing routes from route table $id"
                 echo "$routes" | jq -r '.[] | select(.GatewayId != "local") | .DestinationCidrBlock // .DestinationPrefixListId' | while read -r destination; do
                     if [[ -n "$destination" ]]; then
                         if [[ "$destination" =~ ^pl- ]]; then
-                            # Prefix list destination
-                            aws ec2 delete-route --region "$region" --route-table-id "$id" --destination-prefix-list-id "$destination" 2>/dev/null || true
+                            aws ec2 delete-route --region "$region" --route-table-id "$resource_id" --destination-prefix-list-id "$destination" 2>/dev/null || true
                         else
-                            # CIDR destination
-                            aws ec2 delete-route --region "$region" --route-table-id "$id" --destination-cidr-block "$destination" 2>/dev/null || true
+                            aws ec2 delete-route --region "$region" --route-table-id "$resource_id" --destination-cidr-block "$destination" 2>/dev/null || true
                         fi
-                        debug_log "Deleted route to $destination from route table $id"
                     fi
                 done
+                sleep 5  # Give time for route cleanup
             fi
             
-            echo "Deleting Route Table: $id"
-            aws ec2 delete-route-table --region "$region" --route-table-id "$id"
-            echo "Route Table deleted"
+            # Disassociate any explicit subnet associations (main association is automatic)
+            echo "  ⏳ Checking for subnet associations to disassociate..."
+            associations=$(aws ec2 describe-route-tables --region "$region" --route-table-ids "$resource_id" --query 'RouteTables[0].Associations[?Main==`false`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
+            if [[ -n "$associations" && "$associations" != "None" ]]; then
+                for assoc_id in $associations; do
+                    echo "  Disassociating route table from subnet: $assoc_id"
+                    aws ec2 disassociate-route-table --region "$region" --association-id "$assoc_id" 2>/dev/null || true
+                done
+                sleep 5
+            fi
+            
+            # Retry route table deletion
+            local retry_count=0
+            while [[ $retry_count -lt 3 ]]; do
+                if aws ec2 delete-route-table --region "$region" --route-table-id "$resource_id" 2>/dev/null; then
+                    echo "  ✓ Route Table cleared and deleted"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    echo "  ⏳ Route table deletion failed (attempt $retry_count/3), waiting 15s..."
+                    sleep 15
+                fi
+                
+                if [[ $retry_count -eq 3 ]]; then
+                    echo "  ❌ Route table deletion failed after 3 attempts"
+                    return 1
+                fi
+            done
             ;;
-        security_group)
-            echo "Deleting Security Group: $name ($id)"
-            debug_log "Deleting security group (rules already cleared in phase 1): $id"
-            aws ec2 delete-security-group --region "$region" --group-id "$id"
-            echo "Security Group deleted"
+        "SECURITY_GROUPS")
+            # Clear rules first
+            echo "  ⏳ Clearing security group rules..."
+            inbound_rules=$(aws ec2 describe-security-groups --region "$region" --group-ids "$resource_id" --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null || echo "[]")
+            if [[ "$inbound_rules" != "[]" && "$inbound_rules" != "null" ]]; then
+                aws ec2 revoke-security-group-ingress --region "$region" --group-id "$resource_id" --ip-permissions "$inbound_rules" 2>/dev/null || true
+            fi
+            outbound_rules=$(aws ec2 describe-security-groups --region "$region" --group-ids "$resource_id" --query 'SecurityGroups[0].IpPermissionsEgress[?!(IpProtocol==`-1` && IpRanges[0].CidrIp==`0.0.0.0/0`)]' --output json 2>/dev/null || echo "[]")
+            if [[ "$outbound_rules" != "[]" && "$outbound_rules" != "null" ]]; then
+                aws ec2 revoke-security-group-egress --region "$region" --group-id "$resource_id" --ip-permissions "$outbound_rules" 2>/dev/null || true
+            fi
+            
+            # Retry deletion with backoff for dependency violations
+            local retry_count=0
+            while [[ $retry_count -lt 5 ]]; do
+                if aws ec2 delete-security-group --region "$region" --group-id "$resource_id" 2>/dev/null; then
+                    echo "  ✓ Security Group rules cleared and group deleted"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    echo "  ⏳ Security group deletion failed (attempt $retry_count/5), waiting 15s for dependencies to clear..."
+                    sleep 15
+                fi
+                
+                if [[ $retry_count -eq 5 ]]; then
+                    echo "  ❌ Security group deletion failed after 5 attempts - may have remaining dependencies"
+                    return 1
+                fi
+            done
             ;;
-        network_acl)
-            echo "Deleting Network ACL: $id"
-            aws ec2 delete-network-acl --region "$region" --network-acl-id "$id"
-            echo "Network ACL deleted"
+        "NETWORK_ACLS")
+            aws ec2 delete-network-acl --region "$region" --network-acl-id "$resource_id"
+            echo "  ✓ Network ACL deleted"
             ;;
-        subnet)
-            echo "Deleting Subnet: $id"
-            aws ec2 delete-subnet --region "$region" --subnet-id "$id"
-            echo "Subnet deleted"
+        "NETWORK_INTERFACES")
+            # Check if attached and detach first
+            attachment=$(aws ec2 describe-network-interfaces --region "$region" --network-interface-ids "$resource_id" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null || echo "None")
+            if [[ "$attachment" != "None" && "$attachment" != "null" && -n "$attachment" ]]; then
+                echo "  ⏳ Detaching network interface..."
+                aws ec2 detach-network-interface --region "$region" --attachment-id "$attachment" --force
+                sleep 10  # Give more time for detachment
+            fi
+            # Wait a bit more to ensure detachment is complete
+            sleep 5
+            aws ec2 delete-network-interface --region "$region" --network-interface-id "$resource_id"
+            echo "  ✓ Network Interface detached and deleted"
             ;;
-        internet_gateway)
-            echo "Detaching and deleting Internet Gateway: $id"
-            aws ec2 detach-internet-gateway --region "$region" --internet-gateway-id "$id" --vpc-id "$vpc"
-            aws ec2 delete-internet-gateway --region "$region" --internet-gateway-id "$id"
-            echo "Internet Gateway deleted"
+        "VPC_ENDPOINTS")
+            aws ec2 delete-vpc-endpoints --region "$region" --vpc-endpoint-ids "$resource_id"
+            echo "  ✓ VPC Endpoint deletion initiated"
             ;;
-        vpc)
-            echo "Deleting VPC: $id"
-            aws ec2 delete-vpc --region "$region" --vpc-id "$id"
-            echo "VPC deleted"
+        "ELASTIC_IPS")
+            aws ec2 release-address --region "$region" --allocation-id "$resource_id"
+            echo "  ✓ Elastic IP released"
+            ;;
+        "EFS_FILE_SYSTEMS")
+            aws efs delete-file-system --region "$region" --file-system-id "$resource_id"
+            echo "  ✓ EFS File System deletion initiated"
+            ;;
+        "EFS_MOUNT_TARGETS")
+            aws efs delete-mount-target --region "$region" --mount-target-id "$resource_id"
+            echo "  ✓ EFS Mount Target deleted"
+            ;;
+        "RDS_INSTANCES")
+            aws rds delete-db-instance --region "$region" --db-instance-identifier "$resource_id" --skip-final-snapshot
+            echo "  ✓ RDS Instance deletion initiated"
+            ;;
+        "RDS_CLUSTERS")
+            aws rds delete-db-cluster --region "$region" --db-cluster-identifier "$resource_id" --skip-final-snapshot
+            echo "  ✓ RDS Cluster deletion initiated"
+            ;;
+        "EKS_CLUSTERS")
+            aws eks delete-cluster --region "$region" --name "$resource_id"
+            echo "  ✓ EKS Cluster deletion initiated"
+            ;;
+        "ECR_REPOSITORIES")
+            aws ecr delete-repository --region "$region" --repository-name "$resource_id" --force
+            echo "  ✓ ECR Repository deleted"
+            ;;
+        "CLOUDFORMATION_STACKS")
+            aws cloudformation delete-stack --region "$region" --stack-name "$resource_id"
+            echo "  ✓ CloudFormation Stack deletion initiated"
+            ;;
+        "IAM_ROLES")
+            # Delete attached policies first
+            attached_policies=$(aws iam list-attached-role-policies --role-name "$resource_id" --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null || echo "")
+            for policy_arn in $attached_policies; do
+                [[ -n "$policy_arn" ]] && aws iam detach-role-policy --role-name "$resource_id" --policy-arn "$policy_arn" 2>/dev/null || true
+            done
+            # Delete inline policies
+            inline_policies=$(aws iam list-role-policies --role-name "$resource_id" --query 'PolicyNames' --output text 2>/dev/null || echo "")
+            for policy_name in $inline_policies; do
+                [[ -n "$policy_name" ]] && aws iam delete-role-policy --role-name "$resource_id" --policy-name "$policy_name" 2>/dev/null || true
+            done
+            aws iam delete-role --role-name "$resource_id"
+            echo "  ✓ IAM Role and policies deleted"
+            ;;
+        "IAM_POLICIES")
+            aws iam delete-policy --policy-arn "$resource_id"
+            echo "  ✓ IAM Policy deleted"
+            ;;
+        "IAM_INSTANCE_PROFILES")
+            # Remove roles from instance profile first
+            roles=$(aws iam get-instance-profile --instance-profile-name "$resource_id" --query 'InstanceProfile.Roles[*].RoleName' --output text 2>/dev/null || echo "")
+            for role_name in $roles; do
+                [[ -n "$role_name" ]] && aws iam remove-role-from-instance-profile --instance-profile-name "$resource_id" --role-name "$role_name" 2>/dev/null || true
+            done
+            aws iam delete-instance-profile --instance-profile-name "$resource_id"
+            echo "  ✓ IAM Instance Profile deleted"
+            ;;
+        *)
+            echo "  ⚠ Resource type $resource_type not supported for deletion"
+            return 1
             ;;
     esac
+    
+    return 0
+}
+
+# Function to execute all resource deletions from manifest file
+execute_resource_deletions() {
+    local manifest_file="$1"
+    
+    debug_log "Starting resource deletion execution from: $manifest_file"
+    
+    if [[ ! -f "$manifest_file" ]]; then
+        echo "❌ Error: Manifest file not found: $manifest_file"
+        return 1
+    fi
+    
+    # Extract region and resources from manifest
+    local region
+    region=$(jq -r '.metadata.region' "$manifest_file" 2>/dev/null)
+    local total_resources
+    total_resources=$(jq -r '.selected_resources | length' "$manifest_file" 2>/dev/null)
+    
+    echo "Region: $region"
+    echo "Total resources to delete: $total_resources"
+    echo ""
+    
+    local processed=0
+    local failed=0
+    
+    echo "🏗️  === Phase 1: Stopping Services and Load Balancers ==="
+    echo ""
+    
+    # Phase 1: Stop all services first
+    local deletion_order_phase1
+    deletion_order_phase1=$(get_deletion_order_phase1)
+    
+    while IFS= read -r resource_type; do
+        debug_log "Processing resource type: $resource_type"
+        
+        # Get all resources of this type from manifest
+        local resources_of_type
+        resources_of_type=$(jq -r --arg type "$resource_type" '.selected_resources[] | select(.type == $type) | @base64' "$manifest_file" 2>/dev/null)
+        
+        if [[ -z "$resources_of_type" ]]; then
+            debug_log "No resources found for type: $resource_type"
+            continue
+        fi
+        
+        
+        echo "=== Deleting $resource_type resources ==="
+        
+        while IFS= read -r resource_b64; do
+            [[ -z "$resource_b64" ]] && continue
+            
+            local resource_json
+            resource_json=$(echo "$resource_b64" | base64 --decode)
+            
+            local resource_id resource_raw_data
+            resource_id=$(echo "$resource_json" | jq -r '.id')
+            resource_raw_data=$(echo "$resource_json" | jq -c '.raw_data')
+            
+            debug_log "Deleting resource: $resource_id"
+            
+            if delete_aws_resource "$resource_type" "$resource_id" "$region" "$resource_raw_data"; then
+                processed=$((processed + 1))
+                echo ""
+            else
+                echo "  ❌ Failed to delete: $resource_id"
+                failed=$((failed + 1))
+                echo ""
+            fi
+            
+        done <<< "$resources_of_type"
+        
+    done <<< "$deletion_order_phase1"
+    
+    echo ""
+    echo "⏸️  === Phase 1 Complete - Waiting for AWS Services to Fully Terminate ==="
+    echo "Waiting 60 seconds for all services to fully terminate and release network interfaces..."
+    sleep 60
+    echo ""
+    
+    echo "🧹 === Phase 2: Cleaning Up Networking and Infrastructure ==="
+    echo ""
+    
+    # Phase 2: Clean up networking after services are gone
+    local deletion_order_phase2
+    deletion_order_phase2=$(get_deletion_order_phase2)
+    
+    while IFS= read -r resource_type; do
+        debug_log "Processing resource type: $resource_type (Phase 2)"
+        
+        # Get all resources of this type from manifest
+        local resources_of_type
+        resources_of_type=$(jq -r --arg type "$resource_type" '.selected_resources[] | select(.type == $type) | @base64' "$manifest_file" 2>/dev/null)
+        
+        if [[ -z "$resources_of_type" ]]; then
+            debug_log "No resources found for type: $resource_type"
+            continue
+        fi
+        
+        # Add special handling for problematic resource types
+        if [[ "$resource_type" == "SECURITY_GROUPS" ]]; then
+            echo "🔒 Waiting extra time before security group deletion to ensure all network interfaces are cleaned up..."
+            sleep 30
+            
+            # Clean up any remaining network interfaces that might be blocking security group deletion
+            echo "🧹 Checking for orphaned network interfaces that might reference security groups..."
+            local vpc_id
+            vpc_id=$(jq -r '.selected_resources[] | select(.type == "VPCS") | .id' "$manifest_file" 2>/dev/null | head -1)
+            if [[ -n "$vpc_id" && "$vpc_id" != "null" ]]; then
+                # Find any remaining network interfaces in the VPC
+                local orphaned_enis
+                orphaned_enis=$(aws ec2 describe-network-interfaces --region "$region" \
+                    --filters "Name=vpc-id,Values=$vpc_id" "Name=status,Values=available" \
+                    --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null || echo "")
+                
+                if [[ -n "$orphaned_enis" && "$orphaned_enis" != "None" ]]; then
+                    echo "🗑️  Found orphaned network interfaces, cleaning up: $orphaned_enis"
+                    for eni in $orphaned_enis; do
+                        echo "  Deleting orphaned ENI: $eni"
+                        aws ec2 delete-network-interface --region "$region" --network-interface-id "$eni" 2>/dev/null || echo "    ⚠️  Could not delete $eni"
+                    done
+                    sleep 10  # Give time for cleanup
+                fi
+            fi
+        fi
+        
+        if [[ "$resource_type" == "SUBNETS" ]]; then
+            echo "🏗️  Waiting before subnet deletion to ensure route tables are fully cleaned up..."
+            sleep 15
+        fi
+        
+        if [[ "$resource_type" == "INTERNET_GATEWAYS" ]]; then
+            echo "🌐 Ensuring all route table associations are cleared before Internet Gateway deletion..."
+            sleep 10
+        fi
+        
+        echo "=== Deleting $resource_type resources ==="
+        
+        while IFS= read -r resource_b64; do
+            [[ -z "$resource_b64" ]] && continue
+            
+            local resource_json
+            resource_json=$(echo "$resource_b64" | base64 --decode)
+            
+            local resource_id resource_raw_data
+            resource_id=$(echo "$resource_json" | jq -r '.id')
+            resource_raw_data=$(echo "$resource_json" | jq -c '.raw_data')
+            
+            debug_log "Deleting resource: $resource_id (Phase 2)"
+            
+            if delete_aws_resource "$resource_type" "$resource_id" "$region" "$resource_raw_data"; then
+                processed=$((processed + 1))
+                echo ""
+            else
+                echo "  ❌ Failed to delete: $resource_id"
+                failed=$((failed + 1))
+                echo ""
+            fi
+            
+        done <<< "$resources_of_type"
+        
+    done <<< "$deletion_order_phase2"
+    
+    echo "=== Deletion Summary ==="
+    echo "Successfully processed: $processed"
+    echo "Failed: $failed"
+    echo "Total: $((processed + failed))"
+    
+    if [[ $failed -gt 0 ]]; then
+        echo ""
+        echo "⚠ Some deletions failed. Check AWS console for remaining resources."
+        echo "Resources may have dependencies that prevent deletion or may no longer exist."
+    fi
+    
+    debug_log "Resource deletion execution completed"
 }
 
 # Main execution
 debug_log "Starting main execution..."
 
-debug_log "Calling find_resources..."
-find_resources
+echo "Starting resource processing..."
+echo ""
 
-debug_log "Calling display_resources..."
-if ! display_resources; then
-    debug_log "No resources found, exiting"
+# Define the resource types to process in order
+resource_types=(
+    "EC2_INSTANCES:.EC2_INSTANCES"
+    "EBS_VOLUMES:.EBS_VOLUMES" 
+    "EBS_SNAPSHOTS:.EBS_SNAPSHOTS"
+    "APPLICATION_LOAD_BALANCERS:.APPLICATION_LOAD_BALANCERS"
+    "CLASSIC_LOAD_BALANCERS:.CLASSIC_LOAD_BALANCERS"
+    "TARGET_GROUPS:.TARGET_GROUPS"
+    "AUTO_SCALING_GROUPS:.AUTO_SCALING_GROUPS"
+    "LAUNCH_TEMPLATES:.LAUNCH_TEMPLATES"
+    "VPCS:.VPCS"
+    "SUBNETS:.SUBNETS"
+    "INTERNET_GATEWAYS:.INTERNET_GATEWAYS"
+    "NAT_GATEWAYS:.NAT_GATEWAYS"
+    "ROUTE_TABLES:.ROUTE_TABLES"
+    "SECURITY_GROUPS:.SECURITY_GROUPS"
+    "NETWORK_ACLS:.NETWORK_ACLS"
+    "NETWORK_INTERFACES:.NETWORK_INTERFACES"
+    "VPC_ENDPOINTS:.VPC_ENDPOINTS"
+    "ELASTIC_IPS:.ELASTIC_IPS"
+    "EFS_FILE_SYSTEMS:.EFS_FILE_SYSTEMS"
+    "EFS_MOUNT_TARGETS:.EFS_MOUNT_TARGETS"
+    "RDS_INSTANCES:.RDS_INSTANCES"
+    "RDS_CLUSTERS:.RDS_CLUSTERS"
+    "EKS_CLUSTERS:.EKS_CLUSTERS"
+    "ECR_REPOSITORIES:.ECR_REPOSITORIES"
+    "CLOUDFORMATION_STACKS:.CLOUDFORMATION_STACKS"
+)
+
+# Process IAM resources separately since they're nested
+if jq -e '.GLOBAL_IAM_RESOURCES' "$INPUT_FILE" >/dev/null 2>&1; then
+    resource_types+=(
+        "IAM_ROLES:.GLOBAL_IAM_RESOURCES.IAM_ROLES"
+        "IAM_POLICIES:.GLOBAL_IAM_RESOURCES.IAM_POLICIES" 
+        "IAM_INSTANCE_PROFILES:.GLOBAL_IAM_RESOURCES.IAM_INSTANCE_PROFILES"
+    )
+fi
+
+# Process each resource type
+for resource_spec in "${resource_types[@]}"; do
+    IFS=':' read -r resource_type json_path <<< "$resource_spec"
+    debug_log "About to process resource type: $resource_type with path: $json_path"
+    process_resource_type "$resource_type" "$json_path"
+    debug_log "Completed processing resource type: $resource_type"
+done
+
+debug_log "Finished processing all resource types"
+
+# Check if any resources were selected
+selected_count=$(echo "$selected_resources" | jq 'length')
+debug_log "Selected $selected_count resources for deletion"
+
+if [[ "$selected_count" == "0" ]]; then
+    echo "No resources selected for deletion."
+    echo "Exiting without creating deletion file."
     exit 0
 fi
 
-# Prompt for deletion strategy
-echo ""
-if [[ "$DISABLE_PROMPTS" == "true" ]]; then
-    delete_all="y"
-    debug_log "Auto-selecting bulk deletion (--disable-prompts enabled)"
-    echo "Auto-deleting all resources (--disable-prompts enabled)"
-else
-    debug_log "Prompting for deletion strategy..."
-    read -p "Delete all resources at once? (y/N): " delete_all
-    debug_log "User selected delete_all: '$delete_all'"
-fi
+# Write selected resources to output file
+echo "Writing $selected_count selected resources to: $OUTPUT_FILE"
 
-if [[ "$delete_all" =~ ^[Yy]$ ]]; then
+# Create output JSON with metadata
+output_json=$(jq -n \
+    --arg source_file "$INPUT_FILE" \
+    --arg region "$REGION" \
+    --arg timestamp "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+    --argjson resources "$selected_resources" \
+    '{
+        metadata: {
+            source_file: $source_file,
+            region: $region,
+            timestamp: $timestamp,
+            total_selected: ($resources | length)
+        },
+        selected_resources: $resources
+    }')
+
+echo "$output_json" > "$OUTPUT_FILE"
+
+echo ""
+echo "=== Summary ==="
+echo "Source file: $INPUT_FILE"
+echo "Resources selected for deletion: $selected_count"
+echo "Output file: $OUTPUT_FILE"
+echo ""
+echo "Next steps:"
+echo "1. Review the deletion list: jq . '$OUTPUT_FILE'"
+echo ""
+
+# Prompt user to review the deletion manifest or auto-execute if --skip-checks
+echo "Please review the deletion manifest above or run: jq . '$OUTPUT_FILE'"
+echo ""
+
+if [[ "$SKIP_CHECKS" == "true" ]]; then
+    echo "Auto-executing deletion (--skip-checks flag enabled)"
     echo ""
-    echo "Deleting all resources..."
-    debug_log "Starting bulk deletion..."
-    
-    # First phase: Clear all security group rules to handle circular dependencies
-    echo "Phase 1: Clearing all security group rules..."
-    debug_log "Clearing security group rules first to handle circular dependencies"
-    while IFS='|' read -r type id name vpc state region; do
-        if [[ "$type" == "security_group" ]]; then
-            echo "Clearing rules from Security Group: $name ($id)"
-            debug_log "Clearing rules from security group: $id"
-            
-            # Remove all inbound rules
-            inbound_rules=$(aws ec2 describe-security-groups --region "$region" --group-ids "$id" --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null)
-            if [[ "$inbound_rules" != "[]" && "$inbound_rules" != "null" ]]; then
-                echo "  Removing inbound rules from $name"
-                aws ec2 revoke-security-group-ingress --region "$region" --group-id "$id" --ip-permissions "$inbound_rules" 2>/dev/null || true
-            fi
-            
-            # Remove all outbound rules (except default allow-all)
-            outbound_rules=$(aws ec2 describe-security-groups --region "$region" --group-ids "$id" --query 'SecurityGroups[0].IpPermissionsEgress[?!(IpProtocol==`-1` && IpRanges[0].CidrIp==`0.0.0.0/0`)]' --output json 2>/dev/null)
-            if [[ "$outbound_rules" != "[]" && "$outbound_rules" != "null" ]]; then
-                echo "  Removing outbound rules from $name"
-                aws ec2 revoke-security-group-egress --region "$region" --group-id "$id" --ip-permissions "$outbound_rules" 2>/dev/null || true
-            fi
-        fi
-    done < "$RESOURCES_FILE"
-    
-    echo ""
-    echo "Phase 2: Deleting resources..."
-    debug_log "Starting resource deletion phase"
-    
-    # Second phase: Delete all resources
-    while IFS='|' read -r type id name vpc state region; do
-        echo "Processing: $type $name ($id)"
-        debug_log "Processing resource: $type|$id|$name|$vpc|$state|$region"
-        delete_resource "$type" "$id" "$name" "$vpc" "$state" "$region"
-    done < "$RESOURCES_FILE"
-    echo ""
-    echo "All resources processed for deletion"
-    debug_log "Bulk deletion completed"
+    echo "=== Executing Resource Deletions ==="
+    execute_resource_deletions "$OUTPUT_FILE"
 else
-    echo ""
-    echo "Prompting for individual resource deletion..."
-    debug_log "Starting individual deletion prompts..."
-    while IFS='|' read -r type id name vpc state region; do
+    read -p "Do you want to execute the deletion of these $selected_count resources now? (y/N): " execute_deletions
+    
+    if [[ "$execute_deletions" =~ ^[Yy]$ ]]; then
         echo ""
-        case "$type" in
-            load_balancer) desc="Load Balancer: $name ($id)" ;;
-            classic_load_balancer) desc="Classic Load Balancer: $name" ;;
-            rds_instance) desc="RDS Instance: $id" ;;
-            ec2_instance) desc="EC2 Instance: $id ($name)" ;;
-            nat_gateway) desc="NAT Gateway: $id" ;;
-            vpc_endpoint) desc="VPC Endpoint: $id ($name)" ;;
-            network_interface) desc="Network Interface: $id ($name)" ;;
-            route_table) desc="Route Table: $id" ;;
-            security_group) desc="Security Group: $name ($id)" ;;
-            network_acl) desc="Network ACL: $id" ;;
-            subnet) desc="Subnet: $id" ;;
-            internet_gateway) desc="Internet Gateway: $id" ;;
-            vpc) desc="VPC: $id ($name)" ;;
-        esac
-        
-        if [[ "$DISABLE_PROMPTS" == "true" ]]; then
-            response="y"
-            debug_log "Auto-deleting: $desc (--disable-prompts enabled)"
-            echo "Auto-deleting: $desc"
-        else
-            debug_log "Prompting for deletion of: $desc"
-            read -p "Delete $desc in $region? (y/N): " response
-            debug_log "User response for $desc: '$response'"
-        fi
-        
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            delete_resource "$type" "$id" "$name" "$vpc" "$state" "$region"
-        else
-            echo "Skipping $desc"
-            debug_log "Skipping $desc"
-        fi
-    done < "$RESOURCES_FILE"
+        echo "=== Executing Resource Deletions ==="
+        execute_resource_deletions "$OUTPUT_FILE"
+    else
+        echo ""
+        echo "Deletion execution skipped. You can execute deletions later using the manifest file."
+    fi
 fi
 
 echo ""
-echo "=== Cleanup Complete ==="
-debug_log "Script completed"
+echo "=== Resource Selection Complete ==="
+debug_log "Script completed successfully"

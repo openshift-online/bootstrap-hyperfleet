@@ -1,0 +1,630 @@
+#!/bin/bash
+# Test Cleanup Tool
+# Cleans up test clusters and resources safely
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Configuration
+CLUSTER_NAME=""
+CLEANUP_FILE="$ROOT_DIR/.test-clusters"
+FORCE=false
+DRY_RUN=false
+QUIET=false
+ALL_TEST_CLUSTERS=false
+OLDER_THAN=""
+SKIP_DEPROVISION=false
+DEPROVISION_TIMEOUT=900  # 15 minutes
+
+log_info() { [[ "$QUIET" != "true" ]] && echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { [[ "$QUIET" != "true" ]] && echo -e "${GREEN}[SUCCESS]${NC} $*"; }
+log_warn() { [[ "$QUIET" != "true" ]] && echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+# Convert duration to seconds
+duration_to_seconds() {
+    local duration="$1"
+    
+    case "$duration" in
+        *h) echo $((${duration%h} * 3600)) ;;
+        *m) echo $((${duration%m} * 60)) ;;
+        *d) echo $((${duration%d} * 86400)) ;;
+        *s) echo ${duration%s} ;;
+        *) echo "$duration" ;;  # Assume already in seconds
+    esac
+}
+
+# Check if cluster exists
+cluster_exists() {
+    local cluster_name="$1"
+    
+    # Check if any cluster resources exist
+    if [[ -d "$ROOT_DIR/clusters/$cluster_name" ]] || \
+       oc get namespace "$cluster_name" &>/dev/null || \
+       oc get managedcluster "$cluster_name" &>/dev/null || \
+       oc get applicationset "${cluster_name}-applications" -n openshift-gitops &>/dev/null; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Detect cluster type
+detect_cluster_type() {
+    local cluster_name="$1"
+    
+    # Check for OCP (Hive ClusterDeployment)
+    if oc get clusterdeployment "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "ocp"
+    # Check for EKS (CAPI Cluster)
+    elif oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "eks"
+    # Check for HCP (HostedCluster)
+    elif oc get hostedcluster "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        echo "hcp"
+    else
+        echo "unknown"
+    fi
+}
+
+# Remove GitOps applications
+cleanup_gitops_applications() {
+    local cluster_name="$1"
+    
+    log_info "Cleaning up GitOps applications..."
+    
+    # Remove ApplicationSet
+    local appset_name="${cluster_name}-applications"
+    if oc get applicationset "$appset_name" -n openshift-gitops &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete ApplicationSet: $appset_name"
+        else
+            log_info "Removing ApplicationSet: $appset_name"
+            if oc delete applicationset "$appset_name" -n openshift-gitops --timeout=60s; then
+                log_success "ApplicationSet removed: $appset_name"
+            else
+                log_warn "Failed to remove ApplicationSet: $appset_name"
+            fi
+        fi
+    else
+        log_info "ApplicationSet not found: $appset_name"
+    fi
+    
+    # Wait for applications to be removed
+    if [[ "$DRY_RUN" != "true" ]]; then
+        log_info "Waiting for Applications to be removed..."
+        local timeout=60
+        local elapsed=0
+        
+        while [[ $elapsed -lt $timeout ]]; do
+            local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" || true)
+            if [[ -z "$apps" ]]; then
+                log_success "All Applications removed"
+                break
+            fi
+            
+            sleep 5
+            elapsed=$((elapsed + 5))
+        done
+        
+        if [[ $elapsed -ge $timeout ]]; then
+            log_warn "Timeout waiting for Applications removal"
+            # Force delete remaining applications
+            local remaining_apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" | awk '{print $1}' || true)
+            if [[ -n "$remaining_apps" ]]; then
+                log_info "Force deleting remaining Applications..."
+                echo "$remaining_apps" | while read app; do
+                    oc delete application "$app" -n openshift-gitops --timeout=30s --force --grace-period=0 &>/dev/null || true
+                done
+            fi
+        fi
+    fi
+}
+
+# Remove from ACM management
+cleanup_acm_integration() {
+    local cluster_name="$1"
+    
+    log_info "Cleaning up ACM integration..."
+    
+    # Remove ManagedCluster
+    if oc get managedcluster "$cluster_name" &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete ManagedCluster: $cluster_name"
+        else
+            log_info "Removing ManagedCluster: $cluster_name"
+            if oc delete managedcluster "$cluster_name" --timeout=60s; then
+                log_success "ManagedCluster removed: $cluster_name"
+            else
+                log_warn "Failed to remove ManagedCluster: $cluster_name"
+            fi
+        fi
+    else
+        log_info "ManagedCluster not found: $cluster_name"
+    fi
+}
+
+# Deprovision cluster resources
+deprovision_cluster() {
+    local cluster_name="$1"
+    local cluster_type="$2"
+    
+    if [[ "$SKIP_DEPROVISION" == "true" ]]; then
+        log_info "Skipping cluster deprovisioning (--skip-deprovision)"
+        return 0
+    fi
+    
+    log_info "Deprovisioning cluster resources..."
+    
+    case "$cluster_type" in
+        ocp)
+            deprovision_ocp_cluster "$cluster_name"
+            ;;
+        eks)
+            deprovision_eks_cluster "$cluster_name"
+            ;;
+        hcp)
+            deprovision_hcp_cluster "$cluster_name"
+            ;;
+        *)
+            log_warn "Unknown cluster type: $cluster_type - attempting generic cleanup"
+            ;;
+    esac
+}
+
+# Deprovision OCP cluster (Hive)
+deprovision_ocp_cluster() {
+    local cluster_name="$1"
+    
+    if oc get clusterdeployment "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete ClusterDeployment: $cluster_name"
+        else
+            log_info "Deprovisioning OCP cluster (this may take 10-15 minutes)..."
+            if oc delete clusterdeployment "$cluster_name" -n "$cluster_name" --timeout=60s; then
+                log_success "ClusterDeployment deletion initiated: $cluster_name"
+                
+                # Monitor deprovision progress
+                monitor_ocp_deprovision "$cluster_name"
+            else
+                log_warn "Failed to delete ClusterDeployment: $cluster_name"
+            fi
+        fi
+    else
+        log_info "ClusterDeployment not found: $cluster_name"
+    fi
+}
+
+# Monitor OCP deprovision progress
+monitor_ocp_deprovision() {
+    local cluster_name="$1"
+    
+    log_info "Monitoring OCP cluster deprovision progress..."
+    
+    local elapsed=0
+    while [[ $elapsed -lt $DEPROVISION_TIMEOUT ]]; do
+        # Check if deprovision job exists and is running
+        local deprovision_jobs=$(oc get jobs -n "$cluster_name" --no-headers 2>/dev/null | grep -E "(deprovision|destroy|uninstall)" || true)
+        
+        if [[ -n "$deprovision_jobs" ]]; then
+            log_info "Deprovision job running... (elapsed: ${elapsed}s)"
+            
+            # Show job status if found
+            local job_name=$(echo "$deprovision_jobs" | head -1 | awk '{print $1}')
+            local job_status=$(echo "$deprovision_jobs" | head -1 | awk '{print $2}')
+            log_info "Job: $job_name Status: $job_status"
+        else
+            # Check if ClusterDeployment still exists
+            if ! oc get clusterdeployment "$cluster_name" -n "$cluster_name" &>/dev/null; then
+                log_success "OCP cluster deprovisioning completed"
+                return 0
+            fi
+        fi
+        
+        sleep 30
+        elapsed=$((elapsed + 30))
+    done
+    
+    log_warn "Deprovision monitoring timeout after ${DEPROVISION_TIMEOUT}s"
+    log_info "Deprovision may still be in progress - check manually"
+}
+
+# Deprovision EKS cluster (CAPI)
+deprovision_eks_cluster() {
+    local cluster_name="$1"
+    
+    if oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete CAPI Cluster: $cluster_name"
+        else
+            log_info "Deprovisioning EKS cluster..."
+            if oc delete cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" --timeout=60s; then
+                log_success "CAPI Cluster deletion initiated: $cluster_name"
+            else
+                log_warn "Failed to delete CAPI Cluster: $cluster_name"
+            fi
+        fi
+    else
+        log_info "CAPI Cluster not found: $cluster_name"
+    fi
+}
+
+# Deprovision HCP cluster
+deprovision_hcp_cluster() {
+    local cluster_name="$1"
+    
+    if oc get hostedcluster "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete HostedCluster: $cluster_name"
+        else
+            log_info "Deprovisioning HCP cluster..."
+            if oc delete hostedcluster "$cluster_name" -n "$cluster_name" --timeout=60s; then
+                log_success "HostedCluster deletion initiated: $cluster_name"
+            else
+                log_warn "Failed to delete HostedCluster: $cluster_name"
+            fi
+        fi
+    else
+        log_info "HostedCluster not found: $cluster_name"
+    fi
+}
+
+# Clean up namespace
+cleanup_namespace() {
+    local cluster_name="$1"
+    
+    log_info "Cleaning up namespace..."
+    
+    if oc get namespace "$cluster_name" &>/dev/null; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would delete namespace: $cluster_name"
+        else
+            log_info "Removing namespace: $cluster_name"
+            if oc delete namespace "$cluster_name" --timeout=120s; then
+                log_success "Namespace removed: $cluster_name"
+            else
+                log_warn "Failed to remove namespace: $cluster_name"
+                # Force delete if stuck
+                log_info "Attempting force deletion..."
+                oc delete namespace "$cluster_name" --force --grace-period=0 &>/dev/null || true
+            fi
+        fi
+    else
+        log_info "Namespace not found: $cluster_name"
+    fi
+}
+
+# Clean up generated files
+cleanup_generated_files() {
+    local cluster_name="$1"
+    
+    log_info "Cleaning up generated files..."
+    
+    local files_to_remove=(
+        "$ROOT_DIR/clusters/$cluster_name"
+        "$ROOT_DIR/operators/openshift-pipelines/$cluster_name"
+        "$ROOT_DIR/pipelines/hello-world/$cluster_name"
+        "$ROOT_DIR/pipelines/cloud-infrastructure-provisioning/$cluster_name"
+        "$ROOT_DIR/deployments/ocm/$cluster_name"
+        "$ROOT_DIR/gitops-applications/$cluster_name.yaml"
+    )
+    
+    # Find regional specification
+    local regional_specs=$(find "$ROOT_DIR/regions" -name "$cluster_name" -type d 2>/dev/null || true)
+    if [[ -n "$regional_specs" ]]; then
+        while read -r spec_dir; do
+            files_to_remove+=("$spec_dir")
+        done <<< "$regional_specs"
+    fi
+    
+    for file in "${files_to_remove[@]}"; do
+        if [[ -e "$file" ]]; then
+            if [[ "$DRY_RUN" == "true" ]]; then
+                log_info "[DRY RUN] Would remove: $file"
+            else
+                log_info "Removing: $file"
+                if rm -rf "$file"; then
+                    log_success "Removed: $file"
+                else
+                    log_warn "Failed to remove: $file"
+                fi
+            fi
+        fi
+    done
+    
+    # Update GitOps kustomization
+    local gitops_kustomization="$ROOT_DIR/gitops-applications/kustomization.yaml"
+    if [[ -f "$gitops_kustomization" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would update GitOps kustomization.yaml"
+        else
+            log_info "Updating GitOps kustomization.yaml"
+            if sed -i "/- .\/${cluster_name}\.yaml/d" "$gitops_kustomization"; then
+                log_success "Updated GitOps kustomization.yaml"
+            else
+                log_warn "Failed to update GitOps kustomization.yaml"
+            fi
+        fi
+    fi
+}
+
+# Remove from tracking file
+remove_from_tracking() {
+    local cluster_name="$1"
+    
+    if [[ -f "$CLEANUP_FILE" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY RUN] Would remove from tracking file"
+        else
+            log_info "Removing from tracking file..."
+            if grep -v "^$cluster_name:" "$CLEANUP_FILE" > "${CLEANUP_FILE}.tmp" && mv "${CLEANUP_FILE}.tmp" "$CLEANUP_FILE"; then
+                log_success "Removed from tracking file"
+            else
+                log_warn "Failed to update tracking file"
+                rm -f "${CLEANUP_FILE}.tmp"
+            fi
+        fi
+    fi
+}
+
+# Clean up single cluster
+cleanup_single_cluster() {
+    local cluster_name="$1"
+    local force_cleanup="${2:-false}"
+    
+    log_info "Cleaning up cluster: $cluster_name"
+    
+    # Check if cluster exists
+    if ! cluster_exists "$cluster_name" && [[ "$force_cleanup" != "true" ]]; then
+        log_warn "Cluster not found: $cluster_name (use --force to clean up anyway)"
+        return 1
+    fi
+    
+    # Detect cluster type
+    local cluster_type=$(detect_cluster_type "$cluster_name")
+    log_info "Detected cluster type: $cluster_type"
+    
+    # Cleanup sequence (order matters for dependencies)
+    cleanup_gitops_applications "$cluster_name"
+    sleep 10  # Allow GitOps cleanup to propagate
+    
+    cleanup_acm_integration "$cluster_name"
+    sleep 5   # Allow ACM cleanup to propagate
+    
+    deprovision_cluster "$cluster_name" "$cluster_type"
+    
+    cleanup_namespace "$cluster_name"
+    cleanup_generated_files "$cluster_name"
+    remove_from_tracking "$cluster_name"
+    
+    log_success "Cluster cleanup completed: $cluster_name"
+}
+
+# Get tracked test clusters
+get_tracked_clusters() {
+    if [[ ! -f "$CLEANUP_FILE" ]]; then
+        return 0
+    fi
+    
+    local current_time=$(date +%s)
+    local older_than_seconds=0
+    
+    if [[ -n "$OLDER_THAN" ]]; then
+        older_than_seconds=$(duration_to_seconds "$OLDER_THAN")
+    fi
+    
+    while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+        local age=$((current_time - created_time))
+        
+        # Filter by age if specified
+        if [[ -n "$OLDER_THAN" && "$age" -lt "$older_than_seconds" ]]; then
+            continue
+        fi
+        
+        echo "$cluster_name:$cluster_type:$created_time:$cleanup_time:$region"
+    done < "$CLEANUP_FILE"
+}
+
+# Clean up all test clusters
+cleanup_all_test_clusters() {
+    log_info "Cleaning up all test clusters..."
+    
+    local clusters_to_cleanup=$(get_tracked_clusters)
+    
+    if [[ -z "$clusters_to_cleanup" ]]; then
+        log_info "No test clusters found to cleanup"
+        return 0
+    fi
+    
+    local cleanup_count=0
+    local total_clusters=$(echo "$clusters_to_cleanup" | wc -l)
+    
+    log_info "Found $total_clusters test clusters to cleanup"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "$clusters_to_cleanup" | while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+            log_info "[DRY RUN] Would cleanup: $cluster_name ($cluster_type)"
+        done
+        return 0
+    fi
+    
+    if [[ "$FORCE" != "true" ]]; then
+        echo "Clusters to be cleaned up:"
+        echo "$clusters_to_cleanup" | while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+            local created_date=$(date -d "@$created_time" '+%m/%d %H:%M' 2>/dev/null || date -r "$created_time" '+%m/%d %H:%M' 2>/dev/null || echo "unknown")
+            echo "  $cluster_name ($cluster_type) - created $created_date"
+        done
+        echo
+        read -p "Proceed with cleanup? (y/N): " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            log_info "Cleanup cancelled"
+            return 0
+        fi
+    fi
+    
+    echo "$clusters_to_cleanup" | while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+        echo
+        log_info "Cleaning up cluster $((++cleanup_count))/$total_clusters: $cluster_name"
+        
+        if cleanup_single_cluster "$cluster_name" "true"; then
+            log_success "Successfully cleaned up: $cluster_name"
+        else
+            log_error "Failed to clean up: $cluster_name"
+        fi
+    done
+    
+    log_success "Batch cleanup completed"
+}
+
+# List test clusters
+list_test_clusters() {
+    if [[ ! -f "$CLEANUP_FILE" ]]; then
+        echo "No test clusters tracked"
+        return 0
+    fi
+    
+    echo "Tracked Test Clusters:"
+    echo "======================"
+    printf "%-20s %-8s %-12s %-20s %-12s %-10s\n" "CLUSTER" "TYPE" "CREATED" "CLEANUP" "REGION" "STATUS"
+    printf "%-20s %-8s %-12s %-20s %-12s %-10s\n" "-------" "----" "-------" "-------" "------" "------"
+    
+    local current_time=$(date +%s)
+    
+    while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+        local created_date=$(date -d "@$created_time" '+%m/%d %H:%M' 2>/dev/null || date -r "$created_time" '+%m/%d %H:%M' 2>/dev/null || echo "unknown")
+        local cleanup_date="never"
+        local status="active"
+        
+        if [[ -n "$cleanup_time" && "$cleanup_time" != "" ]]; then
+            cleanup_date=$(date -d "@$cleanup_time" '+%m/%d %H:%M' 2>/dev/null || date -r "$cleanup_time" '+%m/%d %H:%M' 2>/dev/null || echo "unknown")
+            
+            if [[ "$cleanup_time" -le "$current_time" ]]; then
+                status="overdue"
+            fi
+        fi
+        
+        # Check if cluster still exists
+        if ! cluster_exists "$cluster_name"; then
+            status="gone"
+        fi
+        
+        printf "%-20s %-8s %-12s %-20s %-12s %-10s\n" "$cluster_name" "$cluster_type" "$created_date" "$cleanup_date" "$region" "$status"
+    done < "$CLEANUP_FILE"
+}
+
+# Usage
+usage() {
+    cat << EOF
+Test Cleanup Tool
+
+Usage: $0 [OPTIONS]
+
+Options:
+  --cluster NAME           Clean up specific test cluster
+  --all-test-clusters      Clean up all tracked test clusters
+  --older-than DURATION    Only clean clusters older than duration (e.g., 24h, 7d)
+  --force                  Skip confirmation prompts
+  --dry-run               Show what would be cleaned up without doing it
+  --quiet                 Suppress non-error output
+  --skip-deprovision      Skip cluster deprovisioning (keep cloud resources)
+  --deprovision-timeout S Timeout for deprovision monitoring (default: 900s)
+  --list                  List tracked test clusters
+  --help                  Show this help message
+
+Examples:
+  $0 --cluster test-ocp-1234              Clean up specific cluster
+  $0 --all-test-clusters --older-than 24h Clean up clusters older than 24 hours
+  $0 --all-test-clusters --dry-run        Show what would be cleaned up
+  $0 --list                               List all tracked test clusters
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --cluster)
+            CLUSTER_NAME="$2"
+            shift 2
+            ;;
+        --all-test-clusters)
+            ALL_TEST_CLUSTERS=true
+            shift
+            ;;
+        --older-than)
+            OLDER_THAN="$2"
+            shift 2
+            ;;
+        --force)
+            FORCE=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --quiet)
+            QUIET=true
+            shift
+            ;;
+        --skip-deprovision)
+            SKIP_DEPROVISION=true
+            shift
+            ;;
+        --deprovision-timeout)
+            DEPROVISION_TIMEOUT="$2"
+            shift 2
+            ;;
+        --list)
+            list_test_clusters
+            exit 0
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Main execution
+main() {
+    if [[ "$QUIET" != "true" ]]; then
+        log_info "Test Cleanup Tool"
+        echo "================="
+        echo "Force: $FORCE"
+        echo "Dry Run: $DRY_RUN"
+        echo "Skip Deprovision: $SKIP_DEPROVISION"
+        if [[ -n "$OLDER_THAN" ]]; then
+            echo "Older Than: $OLDER_THAN"
+        fi
+        echo
+    fi
+    
+    if [[ "$ALL_TEST_CLUSTERS" == "true" ]]; then
+        cleanup_all_test_clusters
+    elif [[ -n "$CLUSTER_NAME" ]]; then
+        cleanup_single_cluster "$CLUSTER_NAME" "$FORCE"
+    else
+        log_error "Either --cluster or --all-test-clusters must be specified"
+        usage
+        exit 1
+    fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

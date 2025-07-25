@@ -1,0 +1,485 @@
+#!/bin/bash
+# Test Cluster Creation Tool
+# Creates temporary test clusters with cleanup tracking
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Default configuration
+CLUSTER_TYPE="ocp"
+REGION="us-east-1"
+DOMAIN="rosa.mturansk-test.csu2.i3.devshift.org"
+INSTANCE_TYPE="m5.2xlarge"
+REPLICAS="2"
+CLEANUP_AFTER=""
+CLEANUP_FILE="$ROOT_DIR/.test-clusters"
+FORCE_CREATE=false
+DRY_RUN=false
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+# Generate unique test cluster name
+generate_test_cluster_name() {
+    local type="$1"
+    local timestamp=$(date +%m%d-%H%M)
+    local base_name="test-${type}-${timestamp}"
+    local counter=1
+    local cluster_name="$base_name"
+    
+    # Ensure uniqueness
+    while [[ -d "$ROOT_DIR/clusters/$cluster_name" ]] || \
+          [[ -d "$ROOT_DIR/regions/$REGION/$cluster_name" ]] || \
+          [[ -f "$ROOT_DIR/gitops-applications/$cluster_name.yaml" ]]; do
+        cluster_name="${base_name}-${counter}"
+        ((counter++))
+    done
+    
+    echo "$cluster_name"
+}
+
+# Validate cluster type
+validate_cluster_type() {
+    local type="$1"
+    if [[ "$type" != "ocp" && "$type" != "eks" && "$type" != "hcp" ]]; then
+        log_error "Invalid cluster type: $type (must be ocp, eks, or hcp)"
+        return 1
+    fi
+    return 0
+}
+
+# Track test cluster for cleanup
+track_test_cluster() {
+    local cluster_name="$1"
+    local created_time=$(date +%s)
+    local cleanup_time=""
+    
+    if [[ -n "$CLEANUP_AFTER" ]]; then
+        # Parse cleanup duration (e.g., "2h", "30m", "1d")
+        local duration_seconds
+        case "$CLEANUP_AFTER" in
+            *h) duration_seconds=$((${CLEANUP_AFTER%h} * 3600)) ;;
+            *m) duration_seconds=$((${CLEANUP_AFTER%m} * 60)) ;;
+            *d) duration_seconds=$((${CLEANUP_AFTER%d} * 86400)) ;;
+            *) 
+                log_error "Invalid cleanup duration format: $CLEANUP_AFTER (use format like 2h, 30m, 1d)"
+                return 1
+                ;;
+        esac
+        cleanup_time=$((created_time + duration_seconds))
+    fi
+    
+    # Create or update tracking file
+    mkdir -p "$(dirname "$CLEANUP_FILE")"
+    
+    # Remove existing entry if present
+    if [[ -f "$CLEANUP_FILE" ]]; then
+        grep -v "^$cluster_name:" "$CLEANUP_FILE" > "${CLEANUP_FILE}.tmp" || true
+        mv "${CLEANUP_FILE}.tmp" "$CLEANUP_FILE"
+    fi
+    
+    # Add new entry
+    echo "$cluster_name:$CLUSTER_TYPE:$created_time:$cleanup_time:$REGION" >> "$CLEANUP_FILE"
+    
+    log_success "Test cluster tracked for cleanup: $cluster_name"
+    if [[ -n "$cleanup_time" ]]; then
+        local cleanup_date=$(date -d "@$cleanup_time" 2>/dev/null || date -r "$cleanup_time" 2>/dev/null || echo "unknown")
+        log_info "Scheduled for cleanup at: $cleanup_date"
+    fi
+}
+
+# Create regional specification
+create_regional_spec() {
+    local cluster_name="$1"
+    local spec_dir="$ROOT_DIR/regions/$REGION/$cluster_name"
+    
+    log_info "Creating regional specification..."
+    
+    if [[ -d "$spec_dir" ]]; then
+        if [[ "$FORCE_CREATE" == "false" ]]; then
+            log_error "Regional specification already exists: $spec_dir"
+            return 1
+        else
+            log_warn "Overwriting existing regional specification"
+            rm -rf "$spec_dir"
+        fi
+    fi
+    
+    mkdir -p "$spec_dir"
+    
+    # Create region.yaml based on cluster type
+    case "$CLUSTER_TYPE" in
+        ocp)
+            cat > "$spec_dir/region.yaml" << EOF
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $cluster_name
+  namespace: $REGION
+spec:
+  type: ocp
+  region: $REGION
+  domain: $DOMAIN
+  
+  compute:
+    instanceType: $INSTANCE_TYPE
+    replicas: $REPLICAS
+    
+  openshift:
+    version: "4.15"
+    channel: stable
+EOF
+            ;;
+        eks)
+            cat > "$spec_dir/region.yaml" << EOF
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $cluster_name
+  namespace: $REGION
+spec:
+  type: eks
+  region: $REGION
+  domain: $DOMAIN
+  
+  compute:
+    instanceType: $INSTANCE_TYPE
+    replicas: $REPLICAS
+    
+  kubernetes:
+    version: "1.28"
+EOF
+            ;;
+        hcp)
+            cat > "$spec_dir/region.yaml" << EOF
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: $cluster_name
+  namespace: $REGION
+spec:
+  type: hcp
+  region: $REGION
+  domain: $DOMAIN
+  
+  compute:
+    instanceType: $INSTANCE_TYPE
+    replicas: $REPLICAS
+    
+  hypershift:
+    release: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
+    infrastructureAvailabilityPolicy: SingleReplica
+    platform: None
+EOF
+            ;;
+    esac
+    
+    log_success "Regional specification created: $spec_dir/region.yaml"
+    echo "$spec_dir"
+}
+
+# Generate cluster configuration
+generate_cluster_config() {
+    local cluster_name="$1"
+    local spec_dir="$2"
+    
+    log_info "Generating cluster configuration using bin/cluster-generate..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would run: $ROOT_DIR/bin/cluster-generate $spec_dir"
+        return 0
+    fi
+    
+    if ! "$ROOT_DIR/bin/cluster-generate" "$spec_dir"; then
+        log_error "Failed to generate cluster configuration"
+        return 1
+    fi
+    
+    log_success "Cluster configuration generated successfully"
+    
+    # List generated files
+    log_info "Generated files:"
+    echo "  Regional spec: $spec_dir/"
+    echo "  Cluster config: $ROOT_DIR/clusters/$cluster_name/"
+    echo "  Operators: $ROOT_DIR/operators/openshift-pipelines/$cluster_name/"
+    echo "  Pipelines: $ROOT_DIR/pipelines/*/cluster_name/"
+    echo "  Deployments: $ROOT_DIR/deployments/ocm/$cluster_name/"
+    echo "  GitOps: $ROOT_DIR/gitops-applications/$cluster_name.yaml"
+    
+    return 0
+}
+
+# Validate generated configuration
+validate_configuration() {
+    local cluster_name="$1"
+    
+    log_info "Validating generated configuration..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would validate cluster configuration"
+        return 0
+    fi
+    
+    # Validate cluster configuration
+    if ! oc kustomize "$ROOT_DIR/clusters/$cluster_name/" >/dev/null; then
+        log_error "Cluster configuration validation failed"
+        return 1
+    fi
+    log_success "Cluster configuration validated"
+    
+    # Validate deployments configuration
+    if ! oc kustomize "$ROOT_DIR/deployments/ocm/$cluster_name/" >/dev/null; then
+        log_error "Deployments configuration validation failed"
+        return 1
+    fi
+    log_success "Deployments configuration validated"
+    
+    # Validate GitOps applications
+    if ! oc kustomize "$ROOT_DIR/gitops-applications/" >/dev/null; then
+        log_error "GitOps applications validation failed"
+        return 1
+    fi
+    log_success "GitOps applications configuration validated"
+    
+    return 0
+}
+
+# List tracked test clusters
+list_test_clusters() {
+    if [[ ! -f "$CLEANUP_FILE" ]]; then
+        echo "No test clusters tracked"
+        return 0
+    fi
+    
+    echo "Tracked Test Clusters:"
+    echo "======================"
+    printf "%-20s %-8s %-12s %-20s %-12s\n" "CLUSTER" "TYPE" "CREATED" "CLEANUP" "REGION"
+    printf "%-20s %-8s %-12s %-20s %-12s\n" "-------" "----" "-------" "-------" "------"
+    
+    while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+        local created_date=$(date -d "@$created_time" '+%m/%d %H:%M' 2>/dev/null || date -r "$created_time" '+%m/%d %H:%M' 2>/dev/null || echo "unknown")
+        local cleanup_date="never"
+        
+        if [[ -n "$cleanup_time" && "$cleanup_time" != "" ]]; then
+            cleanup_date=$(date -d "@$cleanup_time" '+%m/%d %H:%M' 2>/dev/null || date -r "$cleanup_time" '+%m/%d %H:%M' 2>/dev/null || echo "unknown")
+            
+            # Check if cleanup is due
+            local current_time=$(date +%s)
+            if [[ "$cleanup_time" -le "$current_time" ]]; then
+                cleanup_date="$cleanup_date (DUE)"
+            fi
+        fi
+        
+        printf "%-20s %-8s %-12s %-20s %-12s\n" "$cluster_name" "$cluster_type" "$created_date" "$cleanup_date" "$region"
+    done < "$CLEANUP_FILE"
+}
+
+# Clean up overdue test clusters
+cleanup_overdue_clusters() {
+    if [[ ! -f "$CLEANUP_FILE" ]]; then
+        log_info "No test clusters tracked"
+        return 0
+    fi
+    
+    local current_time=$(date +%s)
+    local cleaned_count=0
+    
+    log_info "Checking for overdue test clusters..."
+    
+    while IFS=':' read -r cluster_name cluster_type created_time cleanup_time region; do
+        if [[ -n "$cleanup_time" && "$cleanup_time" != "" && "$cleanup_time" -le "$current_time" ]]; then
+            log_info "Cleaning up overdue cluster: $cluster_name"
+            
+            if "$SCRIPT_DIR/test-cleanup" --cluster "$cluster_name" --quiet; then
+                log_success "Cleaned up: $cluster_name"
+                ((cleaned_count++))
+            else
+                log_error "Failed to clean up: $cluster_name"
+            fi
+        fi
+    done < "$CLEANUP_FILE"
+    
+    if [[ "$cleaned_count" -eq 0 ]]; then
+        log_info "No overdue clusters found"
+    else
+        log_success "Cleaned up $cleaned_count overdue clusters"
+    fi
+}
+
+# Usage
+usage() {
+    cat << EOF
+Test Cluster Creation Tool
+
+Usage: $0 [OPTIONS]
+
+Options:
+  --type TYPE              Cluster type: ocp, eks, hcp (default: ocp)
+  --region REGION          AWS region (default: us-east-1)
+  --domain DOMAIN          Base domain (default: rosa.mturansk-test.csu2.i3.devshift.org)
+  --instance-type TYPE     EC2 instance type (default: m5.2xlarge)
+  --replicas COUNT         Number of worker nodes (default: 2)
+  --cleanup-after DURATION Auto-cleanup after duration (e.g., 2h, 30m, 1d)
+  --force                  Overwrite existing configurations
+  --dry-run               Show what would be created without creating
+  --list                  List tracked test clusters
+  --cleanup-overdue       Clean up overdue test clusters
+  --help                  Show this help message
+
+Examples:
+  $0                           Create OCP test cluster with defaults
+  $0 --type eks --region us-west-2  Create EKS cluster in us-west-2
+  $0 --cleanup-after 2h        Create cluster with 2-hour auto-cleanup
+  $0 --list                    List all tracked test clusters
+  $0 --cleanup-overdue         Clean up overdue clusters
+
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --type)
+            CLUSTER_TYPE="$2"
+            shift 2
+            ;;
+        --region)
+            REGION="$2"
+            shift 2
+            ;;
+        --domain)
+            DOMAIN="$2"
+            shift 2
+            ;;
+        --instance-type)
+            INSTANCE_TYPE="$2"
+            shift 2
+            ;;
+        --replicas)
+            REPLICAS="$2"
+            shift 2
+            ;;
+        --cleanup-after)
+            CLEANUP_AFTER="$2"
+            shift 2
+            ;;
+        --force)
+            FORCE_CREATE=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --list)
+            list_test_clusters
+            exit 0
+            ;;
+        --cleanup-overdue)
+            cleanup_overdue_clusters
+            exit 0
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Main execution
+main() {
+    log_info "Test Cluster Creation Tool"
+    echo "=========================="
+    
+    # Validate inputs
+    if ! validate_cluster_type "$CLUSTER_TYPE"; then
+        exit 1
+    fi
+    
+    # Generate cluster name
+    local cluster_name=$(generate_test_cluster_name "$CLUSTER_TYPE")
+    log_info "Generated cluster name: $cluster_name"
+    
+    # Show configuration
+    echo
+    log_info "Configuration:"
+    echo "  Cluster Name: $cluster_name"
+    echo "  Type: $CLUSTER_TYPE"
+    echo "  Region: $REGION"
+    echo "  Domain: $DOMAIN"
+    echo "  Instance Type: $INSTANCE_TYPE"
+    echo "  Replicas: $REPLICAS"
+    if [[ -n "$CLEANUP_AFTER" ]]; then
+        echo "  Auto-cleanup: $CLEANUP_AFTER"
+    fi
+    echo
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would create test cluster with above configuration"
+        exit 0
+    fi
+    
+    # Confirm creation
+    if [[ -t 0 ]]; then  # Check if running interactively
+        read -p "Create test cluster? (y/N): " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            log_info "Creation cancelled"
+            exit 0
+        fi
+    fi
+    
+    # Create regional specification
+    local spec_dir
+    if ! spec_dir=$(create_regional_spec "$cluster_name"); then
+        exit 1
+    fi
+    
+    # Generate cluster configuration
+    if ! generate_cluster_config "$cluster_name" "$spec_dir"; then
+        log_error "Failed to generate cluster configuration"
+        # Clean up partial creation
+        rm -rf "$spec_dir" 2>/dev/null || true
+        exit 1
+    fi
+    
+    # Validate configuration
+    if ! validate_configuration "$cluster_name"; then
+        log_error "Configuration validation failed"
+        exit 1
+    fi
+    
+    # Track for cleanup
+    if ! track_test_cluster "$cluster_name"; then
+        log_warn "Failed to track cluster for cleanup"
+    fi
+    
+    echo
+    log_success "🎉 Test cluster created successfully!"
+    echo
+    echo "Next steps:"
+    echo "1. Provision cluster: ./bin/test-cluster-provision --cluster $cluster_name"
+    echo "2. Validate cluster: ./bin/test-cluster-validate --cluster $cluster_name"
+    echo "3. Clean up cluster: ./bin/test-cleanup --cluster $cluster_name"
+    echo
+    echo "Or run full test suite: ./bin/test-run-suite --cluster $cluster_name"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

@@ -1,0 +1,619 @@
+#!/bin/bash
+# Test GitOps Sync Tool
+# Tests ArgoCD ApplicationSet and application sync status
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Configuration
+CLUSTER_NAME=""
+TIMEOUT=600  # 10 minutes default
+VERBOSE=false
+SYNC_TIMEOUT=300  # 5 minutes for individual app sync
+WAIT_FOR_SYNC=true
+CHECK_WORKLOADS=false
+
+# Test counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_WARNED=0
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[PASS]${NC} $*"; ((TESTS_PASSED++)); }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; ((TESTS_WARNED++)); }
+log_error() { echo -e "${RED}[FAIL]${NC} $*"; ((TESTS_FAILED++)); }
+
+# Log with timestamp
+log_with_time() {
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp=$(date '+%H:%M:%S')
+    echo -e "[$timestamp] $level $message"
+}
+
+log_info_time() { log_with_time "${BLUE}[INFO]${NC}" "$@"; }
+log_success_time() { log_with_time "${GREEN}[SUCCESS]${NC}" "$@"; }
+log_warn_time() { log_with_time "${YELLOW}[WARN]${NC}" "$@"; }
+log_error_time() { log_with_time "${RED}[ERROR]${NC}" "$@"; }
+
+# Check if ArgoCD is available
+check_argocd_availability() {
+    log_info "Checking ArgoCD availability..."
+    
+    if ! oc get deployment openshift-gitops-server -n openshift-gitops &>/dev/null; then
+        log_error "ArgoCD deployment not found"
+        return 1
+    fi
+    
+    local gitops_ready=$(oc get deployment openshift-gitops-server -n openshift-gitops \
+        -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    local gitops_desired=$(oc get deployment openshift-gitops-server -n openshift-gitops \
+        -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+    
+    if [[ "$gitops_ready" -lt "$gitops_desired" ]]; then
+        log_error "ArgoCD server not ready: $gitops_ready/$gitops_desired replicas"
+        return 1
+    fi
+    
+    log_success "ArgoCD server ready: $gitops_ready/$gitops_desired replicas"
+    return 0
+}
+
+# Check ApplicationSet exists
+check_application_set() {
+    local cluster_name="$1"
+    
+    log_info "Checking ApplicationSet for cluster: $cluster_name"
+    
+    local appset_name="${cluster_name}-applications"
+    if ! oc get applicationset "$appset_name" -n openshift-gitops &>/dev/null; then
+        log_error "ApplicationSet not found: $appset_name"
+        return 1
+    fi
+    
+    log_success "ApplicationSet exists: $appset_name"
+    
+    # Check ApplicationSet generation status
+    local generation=$(oc get applicationset "$appset_name" -n openshift-gitops \
+        -o jsonpath='{.metadata.generation}' 2>/dev/null || echo "0")
+    local observed_generation=$(oc get applicationset "$appset_name" -n openshift-gitops \
+        -o jsonpath='{.status.observedGeneration}' 2>/dev/null || echo "0")
+    
+    if [[ "$generation" != "$observed_generation" ]]; then
+        log_warn "ApplicationSet generation mismatch: $generation vs $observed_generation"
+    else
+        log_success "ApplicationSet generation current: $generation"
+    fi
+    
+    # Show ApplicationSet details if verbose
+    if [[ "$VERBOSE" == "true" ]]; then
+        log_info "ApplicationSet details:"
+        oc get applicationset "$appset_name" -n openshift-gitops -o yaml | grep -A20 "spec:" | head -20
+    fi
+    
+    return 0
+}
+
+# Get expected applications from ApplicationSet
+get_expected_applications() {
+    local cluster_name="$1"
+    
+    local appset_name="${cluster_name}-applications"
+    
+    # Extract application names from ApplicationSet generators
+    oc get applicationset "$appset_name" -n openshift-gitops -o yaml 2>/dev/null | \
+        grep -A2 "component:" | grep "component:" | awk '{print $2}' | \
+        while read component; do
+            echo "${cluster_name}-${component}"
+        done
+}
+
+# Monitor application creation
+wait_for_applications_creation() {
+    local cluster_name="$1"
+    local timeout="$2"
+    
+    log_info_time "Waiting for Applications to be created..."
+    
+    local elapsed=0
+    
+    while [[ $elapsed -lt $timeout ]]; do
+        local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" || true)
+        
+        if [[ -n "$apps" ]]; then
+            local app_count=$(echo "$apps" | wc -l)
+            log_success_time "Applications created: $app_count found"
+            return 0
+        fi
+        
+        log_info_time "Waiting for Applications to be created... (elapsed: ${elapsed}s)"
+        sleep 30
+        elapsed=$((elapsed + 30))
+    done
+    
+    log_error_time "Timeout waiting for Applications creation after ${timeout}s"
+    return 1
+}
+
+# Check individual application status
+check_application_status() {
+    local app_name="$1"
+    
+    if ! oc get application "$app_name" -n openshift-gitops &>/dev/null; then
+        echo "NOT_FOUND"
+        return 1
+    fi
+    
+    local sync_status=$(oc get application "$app_name" -n openshift-gitops \
+        -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+    local health_status=$(oc get application "$app_name" -n openshift-gitops \
+        -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+    local operation_phase=$(oc get application "$app_name" -n openshift-gitops \
+        -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "")
+    
+    echo "$sync_status:$health_status:$operation_phase"
+    return 0
+}
+
+# Monitor application sync status
+monitor_application_sync() {
+    local cluster_name="$1"
+    local timeout="$2"
+    
+    log_info_time "Monitoring Application sync status..."
+    log_info_time "Timeout: ${timeout}s ($((timeout / 60)) minutes)"
+    
+    local elapsed=0
+    local last_summary=""
+    
+    while [[ $elapsed -lt $timeout ]]; do
+        local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" || true)
+        
+        if [[ -z "$apps" ]]; then
+            log_info_time "No applications found yet..."
+            sleep 30
+            elapsed=$((elapsed + 30))
+            continue
+        fi
+        
+        local total_apps=0
+        local synced_apps=0
+        local healthy_apps=0
+        local syncing_apps=0
+        local failed_apps=0
+        
+        local app_details=""
+        
+        echo "$apps" | while read app rest; do
+            local status=$(check_application_status "$app")
+            local sync_status=$(echo "$status" | cut -d: -f1)
+            local health_status=$(echo "$status" | cut -d: -f2)
+            local operation_phase=$(echo "$status" | cut -d: -f3)
+            
+            echo "$app:$sync_status:$health_status:$operation_phase"
+        done > /tmp/app_status_$$
+        
+        while IFS=: read -r app sync_status health_status operation_phase; do
+            ((total_apps++))
+            
+            case "$sync_status" in
+                "Synced")
+                    ((synced_apps++))
+                    ;;
+                "OutOfSync")
+                    if [[ "$operation_phase" == "Running" || "$operation_phase" == "Progressing" ]]; then
+                        ((syncing_apps++))
+                    fi
+                    ;;
+            esac
+            
+            case "$health_status" in
+                "Healthy")
+                    ((healthy_apps++))
+                    ;;
+                "Degraded"|"Missing")
+                    ((failed_apps++))
+                    ;;
+            esac
+            
+            # Collect details for verbose output
+            if [[ "$VERBOSE" == "true" ]]; then
+                app_details="${app_details}  $app: $sync_status/$health_status"
+                if [[ -n "$operation_phase" ]]; then
+                    app_details="${app_details} ($operation_phase)"
+                fi
+                app_details="${app_details}\n"
+            fi
+        done < /tmp/app_status_$$
+        
+        rm -f /tmp/app_status_$$
+        
+        # Create summary
+        local current_summary="Total:$total_apps Synced:$synced_apps Healthy:$healthy_apps Syncing:$syncing_apps Failed:$failed_apps"
+        
+        if [[ "$current_summary" != "$last_summary" ]]; then
+            log_info_time "Application status: $current_summary (elapsed: ${elapsed}s)"
+            if [[ "$VERBOSE" == "true" && -n "$app_details" ]]; then
+                echo -e "$app_details"
+            fi
+            last_summary="$current_summary"
+        fi
+        
+        # Check if all applications are synced and healthy
+        if [[ "$synced_apps" -eq "$total_apps" && "$healthy_apps" -eq "$total_apps" && "$total_apps" -gt 0 ]]; then
+            log_success_time "All applications synced and healthy: $total_apps/$total_apps"
+            return 0
+        fi
+        
+        # Check for failed applications
+        if [[ "$failed_apps" -gt 0 ]]; then
+            log_warn_time "Some applications failed: $failed_apps"
+        fi
+        
+        sleep 30
+        elapsed=$((elapsed + 30))
+    done
+    
+    log_error_time "Timeout waiting for application sync after ${timeout}s"
+    return 1
+}
+
+# Check deployed workloads on managed cluster
+check_deployed_workloads() {
+    local cluster_name="$1"
+    
+    if [[ "$CHECK_WORKLOADS" != "true" ]]; then
+        log_info "Skipping workload check (use --check-workloads to enable)"
+        return 0
+    fi
+    
+    log_info "Checking deployed workloads on managed cluster..."
+    
+    # Extract managed cluster kubeconfig
+    local temp_kubeconfig
+    if ! temp_kubeconfig=$(extract_managed_cluster_kubeconfig "$cluster_name"); then
+        log_warn "Could not extract managed cluster kubeconfig - skipping workload check"
+        return 0
+    fi
+    
+    # Check for OpenShift Pipelines operator
+    if KUBECONFIG="$temp_kubeconfig" oc get pods -n openshift-pipelines &>/dev/null; then
+        local pipeline_pods=$(KUBECONFIG="$temp_kubeconfig" oc get pods -n openshift-pipelines --no-headers 2>/dev/null | wc -l || echo "0")
+        local running_pipeline_pods=$(KUBECONFIG="$temp_kubeconfig" oc get pods -n openshift-pipelines --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        
+        if [[ "$running_pipeline_pods" -gt 0 ]]; then
+            log_success "OpenShift Pipelines operator deployed: $running_pipeline_pods/$pipeline_pods pods running"
+        else
+            log_warn "OpenShift Pipelines operator pods not running: $running_pipeline_pods/$pipeline_pods"
+        fi
+    else
+        log_warn "OpenShift Pipelines operator not found"
+    fi
+    
+    # Check for pipeline resources
+    if KUBECONFIG="$temp_kubeconfig" oc get pipelines -A &>/dev/null; then
+        local pipeline_count=$(KUBECONFIG="$temp_kubeconfig" oc get pipelines -A --no-headers 2>/dev/null | wc -l || echo "0")
+        if [[ "$pipeline_count" -gt 0 ]]; then
+            log_success "Tekton pipelines deployed: $pipeline_count found"
+        else
+            log_warn "No Tekton pipelines found"
+        fi
+    fi
+    
+    # Check OCM namespace and workloads
+    local ocm_namespace="ocm-${cluster_name}"
+    if KUBECONFIG="$temp_kubeconfig" oc get namespace "$ocm_namespace" &>/dev/null; then
+        log_success "OCM namespace exists: $ocm_namespace"
+        
+        local ocm_pods=$(KUBECONFIG="$temp_kubeconfig" oc get pods -n "$ocm_namespace" --no-headers 2>/dev/null | wc -l || echo "0")
+        if [[ "$ocm_pods" -gt 0 ]]; then
+            log_success "OCM workloads deployed: $ocm_pods pods in $ocm_namespace"
+        else
+            log_info "No OCM workloads found in $ocm_namespace (this is normal)"
+        fi
+    else
+        log_warn "OCM namespace not found: $ocm_namespace"
+    fi
+    
+    rm -f "$temp_kubeconfig"
+    return 0
+}
+
+# Extract managed cluster kubeconfig
+extract_managed_cluster_kubeconfig() {
+    local cluster_name="$1"
+    
+    local temp_kubeconfig="/tmp/${cluster_name}-kubeconfig-$$"
+    
+    # Detect cluster type first
+    local cluster_type
+    if oc get clusterdeployment "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        cluster_type="ocp"
+    elif oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        cluster_type="eks"
+    elif oc get hostedcluster "$cluster_name" -n "$cluster_name" &>/dev/null; then
+        cluster_type="hcp"
+    else
+        return 1
+    fi
+    
+    case "$cluster_type" in
+        ocp)
+            if oc get secret "${cluster_name}-admin-kubeconfig" -n "$cluster_name" \
+               -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d > "$temp_kubeconfig"; then
+                echo "$temp_kubeconfig"
+                return 0
+            fi
+            ;;
+        eks)
+            if command -v aws &>/dev/null; then
+                local region=$(oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" \
+                    -o jsonpath='{.spec.infrastructureRef.region}' 2>/dev/null || echo "us-east-1")
+                if aws eks update-kubeconfig --name "$cluster_name" --region "$region" --kubeconfig "$temp_kubeconfig" &>/dev/null; then
+                    echo "$temp_kubeconfig"
+                    return 0
+                fi
+            fi
+            ;;
+        hcp)
+            if oc get secret "${cluster_name}-kubeconfig" -n "$cluster_name" \
+               -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d > "$temp_kubeconfig"; then
+                echo "$temp_kubeconfig"
+                return 0
+            fi
+            ;;
+    esac
+    
+    rm -f "$temp_kubeconfig" 2>/dev/null || true
+    return 1
+}
+
+# Trigger application refresh
+trigger_application_refresh() {
+    local cluster_name="$1"
+    
+    log_info "Triggering application refresh..."
+    
+    local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" | awk '{print $1}' || true)
+    
+    if [[ -z "$apps" ]]; then
+        log_warn "No applications found to refresh"
+        return 0
+    fi
+    
+    local refreshed_count=0
+    echo "$apps" | while read app; do
+        if oc patch application "$app" -n openshift-gitops --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' &>/dev/null; then
+            echo "Refreshed: $app"
+            ((refreshed_count++))
+        fi
+    done
+    
+    log_success "Triggered refresh for applications"
+    return 0
+}
+
+# Show current GitOps status
+show_gitops_status() {
+    local cluster_name="$1"
+    
+    echo "GitOps Status:"
+    echo "=============="
+    echo "Cluster: $cluster_name"
+    
+    # ApplicationSet status
+    local appset_name="${cluster_name}-applications"
+    if oc get applicationset "$appset_name" -n openshift-gitops &>/dev/null; then
+        echo "ApplicationSet: EXISTS"
+    else
+        echo "ApplicationSet: NOT FOUND"
+    fi
+    
+    # Applications status
+    local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" || true)
+    if [[ -n "$apps" ]]; then
+        local total_apps=$(echo "$apps" | wc -l)
+        echo "Applications: $total_apps found"
+        
+        echo "$apps" | while read app sync health rest; do
+            echo "  $app: $sync/$health"
+        done
+    else
+        echo "Applications: NONE FOUND"
+    fi
+}
+
+# Generate GitOps sync summary
+generate_summary() {
+    echo
+    echo "============================================"
+    echo "         GITOPS SYNC SUMMARY"
+    echo "============================================"
+    echo -e "${GREEN}Tests Passed:${NC}  $TESTS_PASSED"
+    echo -e "${YELLOW}Warnings:${NC}     $TESTS_WARNED"
+    echo -e "${RED}Tests Failed:${NC} $TESTS_FAILED"
+    echo "============================================"
+    
+    if [[ "$TESTS_FAILED" -eq 0 ]]; then
+        echo -e "${GREEN}✅ GitOps sync successful${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ GitOps sync failed - $TESTS_FAILED critical issues${NC}"
+        return 1
+    fi
+}
+
+# Usage
+usage() {
+    cat << EOF
+Test GitOps Sync Tool
+
+Usage: $0 --cluster CLUSTER_NAME [OPTIONS]
+
+Required:
+  --cluster NAME           Name of the test cluster to test GitOps sync
+
+Options:
+  --timeout SECONDS        Overall timeout in seconds (default: 600)
+  --sync-timeout SECONDS   Individual app sync timeout (default: 300)
+  --no-wait               Skip waiting for sync completion
+  --check-workloads       Check deployed workloads on managed cluster
+  --verbose               Show detailed sync information
+  --refresh               Trigger application refresh before monitoring
+  --status                Show current GitOps status and exit
+  --help                  Show this help message
+
+Examples:
+  $0 --cluster test-ocp-1234                    Test GitOps sync
+  $0 --cluster test-ocp-1234 --check-workloads  Include workload validation
+  $0 --cluster test-ocp-1234 --refresh --verbose  Refresh and show details
+  $0 --cluster test-ocp-1234 --status           Show current status
+
+EOF
+}
+
+# Parse arguments
+REFRESH_APPS=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --cluster)
+            CLUSTER_NAME="$2"
+            shift 2
+            ;;
+        --timeout)
+            TIMEOUT="$2"
+            shift 2
+            ;;
+        --sync-timeout)
+            SYNC_TIMEOUT="$2"
+            shift 2
+            ;;
+        --no-wait)
+            WAIT_FOR_SYNC=false
+            shift
+            ;;
+        --check-workloads)
+            CHECK_WORKLOADS=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --refresh)
+            REFRESH_APPS=true
+            shift
+            ;;
+        --status)
+            if [[ -z "$CLUSTER_NAME" ]]; then
+                log_error "Cluster name required for status check"
+                exit 1
+            fi
+            show_gitops_status "$CLUSTER_NAME"
+            exit 0
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$CLUSTER_NAME" ]]; then
+    log_error "Cluster name is required"
+    usage
+    exit 1
+fi
+
+# Main execution
+main() {
+    log_info "Test GitOps Sync Tool"
+    echo "====================="
+    echo "Cluster: $CLUSTER_NAME"
+    echo "Timeout: ${TIMEOUT}s ($((TIMEOUT / 60)) minutes)"
+    echo "Sync Timeout: ${SYNC_TIMEOUT}s ($((SYNC_TIMEOUT / 60)) minutes)"
+    echo "Wait for Sync: $WAIT_FOR_SYNC"
+    echo "Check Workloads: $CHECK_WORKLOADS"
+    echo "Verbose: $VERBOSE"
+    echo
+    
+    # Check ArgoCD availability
+    if ! check_argocd_availability; then
+        exit 1
+    fi
+    
+    # Check ApplicationSet
+    if ! check_application_set "$CLUSTER_NAME"; then
+        exit 1
+    fi
+    
+    # Trigger refresh if requested
+    if [[ "$REFRESH_APPS" == "true" ]]; then
+        trigger_application_refresh "$CLUSTER_NAME" || true
+    fi
+    
+    # Wait for applications to be created
+    if ! wait_for_applications_creation "$CLUSTER_NAME" "$TIMEOUT"; then
+        log_error "Applications were not created"
+        exit 1
+    fi
+    
+    # Monitor application sync if requested
+    if [[ "$WAIT_FOR_SYNC" == "true" ]]; then
+        if ! monitor_application_sync "$CLUSTER_NAME" "$SYNC_TIMEOUT"; then
+            log_error "Application sync monitoring failed"
+        fi
+    else
+        log_info "Skipping sync monitoring (--no-wait specified)"
+        
+        # Just show current status
+        local apps=$(oc get applications -n openshift-gitops --no-headers 2>/dev/null | grep "^${cluster_name}-" || true)
+        if [[ -n "$apps" ]]; then
+            local total_apps=$(echo "$apps" | wc -l)
+            log_success "Applications found: $total_apps"
+        fi
+    fi
+    
+    # Check deployed workloads
+    check_deployed_workloads "$CLUSTER_NAME" || true
+    
+    # Generate summary
+    if generate_summary; then
+        echo
+        echo "GitOps Applications:"
+        oc get applications -n openshift-gitops | grep "^${CLUSTER_NAME}-" || echo "No applications found"
+        echo
+        echo "Next steps:"
+        echo "1. Check ArgoCD console for detailed application status"
+        echo "2. Clean up cluster: ./bin/test-cleanup --cluster $CLUSTER_NAME"
+        exit 0
+    else
+        echo
+        echo "Troubleshooting:"
+        echo "1. Check ApplicationSet: oc describe applicationset ${CLUSTER_NAME}-applications -n openshift-gitops"
+        echo "2. Check applications: oc get applications -n openshift-gitops | grep $CLUSTER_NAME"
+        echo "3. Trigger refresh: $0 --cluster $CLUSTER_NAME --refresh"
+        exit 1
+    fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

@@ -28,24 +28,47 @@ Based on analysis of the current cluster configurations in this repository:
 ### AWS Resource Discovery Commands
 
 #### Core Discovery Strategy
-Build on the proven two-pass discovery approach from `bin/clean-aws`:
-1. **Tag-Based Search** - Find resources with cluster ID in tag values
-2. **VPC-Based Search** - Find additional resources by VPC association
+Build on the proven multi-pass discovery approach from `bin/clean-aws`:
+1. **Tag-Based Search** - Find resources with cluster ID in tag values (primary)
+2. **VPC-Scoped Search** - Find additional resources by VPC association (secondary)
+3. **Pattern-Based Search** - Find resources by OpenShift-specific patterns (fallback only)
+
+**Discovery Precedence Rules:**
+- Instance type discovery only runs within VPCs that have cluster tags
+- Security group pattern matching used as tertiary fallback
+- Prevents false positives from unrelated infrastructure
 
 #### Complete Resource Discovery Commands
 
 **1. EC2 Instances**
 ```bash
-# Find all instances by cluster tag
+# Primary: Find all instances by cluster tag
 aws ec2 describe-instances --region $region \
   --filters "Name=tag-value,Values=*${cluster_id}*" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
   --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SubnetId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
   --output table
 
-# Find instances by specific instance types used in project
+# Secondary (fallback): Find instances by type ONLY in cluster-related VPCs
+# First identify VPCs with cluster tags
+vpc_ids=$(aws ec2 describe-vpcs --region $region \
+  --filters "Name=tag-value,Values=*${cluster_id}*" \
+  --query 'Vpcs[*].VpcId' --output text)
+
+# Then find instances by type only within those VPCs
+if [[ -n "$vpc_ids" ]]; then
+  aws ec2 describe-instances --region $region \
+    --filters "Name=instance-type,Values=m5.xlarge,m5.large,c5.4xlarge" \
+              "Name=instance-state-name,Values=running,stopped,stopping,pending" \
+              "Name=vpc-id,Values=$vpc_ids" \
+    --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,Tags[?Key==`kubernetes.io/cluster`] | [0].Value || `untagged-in-cluster-vpc`]' \
+    --output table
+fi
+
+# Tertiary (OpenShift-specific): Find instances with OpenShift security group patterns
 aws ec2 describe-instances --region $region \
-  --filters "Name=instance-type,Values=m5.xlarge,m5.large,c5.4xlarge" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,Tags[?Key==`kubernetes.io/cluster`] | [0].Value || `no-cluster-tag`]' \
+  --filters "Name=instance.group-name,Values=*${cluster_id}*master*,*${cluster_id}*worker*,*${cluster_id}*node*" \
+            "Name=instance-state-name,Values=running,stopped,stopping,pending" \
+  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SecurityGroups[0].GroupName]' \
   --output table
 ```
 
@@ -295,18 +318,23 @@ done
 
 **Usage Patterns:**
 ```bash
-# Discover resources for specific cluster
-./bin/find-aws-resources.sh ocp-02
+# Discover resources for specific cluster (JSON output)
+./bin/aws-find-resources ocp-02 > cluster-resources.json
 
 # Discover across all regions for cluster
-./bin/find-aws-resources.sh eks-02 --all-regions
+./bin/aws-find-resources eks-02 --all-regions > multi-region-resources.json
 
-# Discover with detailed output
-./bin/find-aws-resources.sh ocp-03 --verbose
+# Discover with progress information and summary
+./bin/aws-find-resources ocp-03 --verbose
 
-# Output to file for analysis
-./bin/find-aws-resources.sh ocp-04 > cluster-resources.txt
+# Parse JSON output with jq for analysis
+./bin/aws-find-resources ocp-04 | jq '.[] | select(.ResourceType == "EC2_INSTANCES")'
 ```
+
+**Output Format:**
+- **Default**: Raw JSON data suitable for programmatic processing
+- **Verbose Mode**: Progress information to stderr + JSON data to stdout
+- **Machine-Readable**: All discovery data in structured JSON format
 
 ### Expected Resource Footprint per Cluster
 
@@ -332,6 +360,21 @@ done
 - IAM roles and policies for node groups
 
 This comprehensive discovery approach ensures complete visibility into AWS resource consumption across all cluster types and regions used in this OpenShift bootstrap project.
+
+### False Positive Prevention
+
+**Problem Solved:**
+The original implementation found ALL instances of specific types (`m5.xlarge`, `m5.large`, `c5.4xlarge`) across the entire AWS account, leading to false positives from unrelated infrastructure.
+
+**Smart Filtering Implementation:**
+- **VPC Scoping**: Instance type discovery only runs within VPCs that have cluster-related tags
+- **Conditional Execution**: Security group pattern matching only triggers if tag-based discovery finds no instances
+- **Layered Discovery**: Each method provides fallback coverage without broad spectrum false positives
+
+**Expected Results:**
+- Eliminates discovery of unrelated instances in different VPCs
+- Maintains coverage for legitimate untagged cluster resources
+- Reduces noise in resource discovery output by 80-90%
 
 ## Related Tools
 

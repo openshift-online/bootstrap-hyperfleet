@@ -1,15 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== AWS Resource Discovery ==="
-echo "This script discovers all AWS resources consumed by OpenShift clusters"
-echo ""
-
 # Parse command line arguments
 DEBUG=${DEBUG:-false}
 ALL_REGIONS=false
 VERBOSE=false
-OUTPUT_FORMAT="table"
 
 for arg in "$@"; do
     case $arg in
@@ -23,27 +18,24 @@ for arg in "$@"; do
         --verbose)
             VERBOSE=true
             ;;
-        --output-json)
-            OUTPUT_FORMAT="json"
-            ;;
-        --output-text)
-            OUTPUT_FORMAT="text"
-            ;;
         --help)
             echo "Usage: $0 [CLUSTER_ID] [OPTIONS]"
             echo ""
+            echo "DISCOVERY STRATEGY:"
+            echo "  1. Tag-based discovery (primary) - finds properly tagged resources"
+            echo "  2. VPC-scoped discovery (secondary) - finds untagged resources in cluster VPCs only"
+            echo "  3. Security group patterns (fallback) - OpenShift-specific patterns"
+            echo ""
             echo "OPTIONS:"
-            echo "  --debug         Enable debug output"
+            echo "  --debug         Enable debug output with discovery strategy details"
             echo "  --all-regions   Search all supported regions"
-            echo "  --verbose       Detailed resource information"
-            echo "  --output-json   Output in JSON format"
-            echo "  --output-text   Output in text format (default: table)"
+            echo "  --verbose       Show discovery progress to stderr (default: JSON output only)"
             echo "  --help          Show this help"
             echo ""
             echo "Examples:"
             echo "  $0 ocp-02                    # Discover resources for ocp-02"
             echo "  $0 eks-02 --all-regions     # Search all regions"
-            echo "  $0 ocp-03 --verbose         # Detailed output"
+            echo "  $0 ocp-03 --verbose         # Show progress + JSON output"
             exit 0
             ;;
     esac
@@ -82,414 +74,284 @@ fi
 
 debug_log "Cluster ID: '$CLUSTER_ID'"
 debug_log "Regions: ${REGIONS[*]}"
-debug_log "Output format: $OUTPUT_FORMAT"
 
-echo "Discovering resources for cluster: $CLUSTER_ID"
-echo "Searching regions: ${REGIONS[*]}"
-echo ""
-
-# Temporary files for resource collection
-RESOURCES_FILE=$(mktemp)
-SUMMARY_FILE=$(mktemp)
-debug_log "Created temporary files: $RESOURCES_FILE, $SUMMARY_FILE"
-trap "debug_log 'Cleaning up temporary files'; rm -f $RESOURCES_FILE $SUMMARY_FILE" EXIT
-
-# Resource discovery functions
-discover_ec2_instances() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering EC2 instances in $region for $cluster_id"
-    echo "EC2_INSTANCES" >> "$RESOURCES_FILE"
-    
-    # Tag-based discovery
-    aws ec2 describe-instances --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-        --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SubnetId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    # Instance type-based discovery for project-specific types
-    aws ec2 describe-instances --region "$region" \
-        --filters "Name=instance-type,Values=m5.xlarge,m5.large,c5.4xlarge" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-        --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,Tags[?Key==`kubernetes.io/cluster`] | [0].Value || `no-cluster-tag`]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_ebs_volumes() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering EBS volumes in $region for $cluster_id"
-    echo "EBS_VOLUMES" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-volumes --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'Volumes[*].[VolumeId,Size,VolumeType,State,Encrypted,Attachments[0].InstanceId || `unattached`,Iops || `0`]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_ebs_snapshots() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering EBS snapshots in $region for $cluster_id"
-    echo "EBS_SNAPSHOTS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-snapshots --region "$region" \
-        --owner-ids self \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'Snapshots[*].[SnapshotId,VolumeSize,State,StartTime,Description]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_load_balancers() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering load balancers in $region for $cluster_id"
-    echo "APPLICATION_LOAD_BALANCERS" >> "$RESOURCES_FILE"
-    
-    aws elbv2 describe-load-balancers --region "$region" \
-        --query "LoadBalancers[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerArn,LoadBalancerName,Type,State.Code,VpcId]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "CLASSIC_LOAD_BALANCERS" >> "$RESOURCES_FILE"
-    
-    aws elb describe-load-balancers --region "$region" \
-        --query "LoadBalancerDescriptions[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerName,VPCId,Scheme,CreatedTime]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "TARGET_GROUPS" >> "$RESOURCES_FILE"
-    
-    aws elbv2 describe-target-groups --region "$region" \
-        --query "TargetGroups[?contains(TargetGroupName, '${cluster_id}')].[TargetGroupArn,TargetGroupName,Protocol,Port,VpcId]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_auto_scaling() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering auto scaling resources in $region for $cluster_id"
-    echo "AUTO_SCALING_GROUPS" >> "$RESOURCES_FILE"
-    
-    aws autoscaling describe-auto-scaling-groups --region "$region" \
-        --query "AutoScalingGroups[?contains(AutoScalingGroupName, '${cluster_id}')].[AutoScalingGroupName,DesiredCapacity,MinSize,MaxSize,VPCZoneIdentifier]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "LAUNCH_TEMPLATES" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-launch-templates --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'LaunchTemplates[*].[LaunchTemplateId,LaunchTemplateName,LatestVersionNumber,CreatedBy]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_networking() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering networking resources in $region for $cluster_id"
-    echo "VPCS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-vpcs --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'Vpcs[*].[VpcId,CidrBlock,State,IsDefault,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "SUBNETS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-subnets --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'Subnets[*].[SubnetId,VpcId,CidrBlock,AvailabilityZone,MapPublicIpOnLaunch,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "INTERNET_GATEWAYS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-internet-gateways --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].VpcId,Attachments[0].State,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "NAT_GATEWAYS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-nat-gateways --region "$region" \
-        --filter "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'NatGateways[*].[NatGatewayId,VpcId,SubnetId,State,NatGatewayAddresses[0].PublicIp]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "ROUTE_TABLES" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-route-tables --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'RouteTables[*].[RouteTableId,VpcId,Associations[0].Main || `false`,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "SECURITY_GROUPS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-security-groups --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'SecurityGroups[*].[GroupId,GroupName,VpcId,Description]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "NETWORK_ACLS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-network-acls --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'NetworkAcls[*].[NetworkAclId,VpcId,IsDefault,Associations[0].SubnetId || `none`]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "NETWORK_INTERFACES" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-network-interfaces --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId,SubnetId,PrivateIpAddress,Attachment.InstanceId || `unattached`]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "VPC_ENDPOINTS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-vpc-endpoints --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'VpcEndpoints[*].[VpcEndpointId,VpcId,ServiceName,State,VpcEndpointType]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "ELASTIC_IPS" >> "$RESOURCES_FILE"
-    
-    aws ec2 describe-addresses --region "$region" \
-        --filters "Name=tag-value,Values=*${cluster_id}*" \
-        --query 'Addresses[*].[AllocationId,PublicIp,InstanceId || `unassociated`,NetworkInterfaceId || `none`,Domain]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_storage() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering storage resources in $region for $cluster_id"
-    echo "EFS_FILE_SYSTEMS" >> "$RESOURCES_FILE"
-    
-    aws efs describe-file-systems --region "$region" \
-        --query "FileSystems[?contains(Name, '${cluster_id}')].[FileSystemId,Name,LifeCycleState,SizeInBytes.Value,CreationTime]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "EFS_MOUNT_TARGETS" >> "$RESOURCES_FILE"
-    
-    aws efs describe-mount-targets --region "$region" \
-        --query 'MountTargets[*].[MountTargetId,FileSystemId,SubnetId,LifeCycleState,IpAddress]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_databases() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering database resources in $region for $cluster_id"
-    echo "RDS_INSTANCES" >> "$RESOURCES_FILE"
-    
-    aws rds describe-db-instances --region "$region" \
-        --query "DBInstances[?contains(DBInstanceIdentifier, '${cluster_id}')].[DBInstanceIdentifier,DBInstanceStatus,DBInstanceClass,Engine,DBSubnetGroup.VpcId]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "RDS_CLUSTERS" >> "$RESOURCES_FILE"
-    
-    aws rds describe-db-clusters --region "$region" \
-        --query "DBClusters[?contains(DBClusterIdentifier, '${cluster_id}')].[DBClusterIdentifier,Status,Engine,VpcSecurityGroups[0].VpcId]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_containers() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering container resources in $region for $cluster_id"
-    echo "EKS_CLUSTERS" >> "$RESOURCES_FILE"
-    
-    # Try to describe the specific cluster
-    aws eks describe-cluster --region "$region" --name "${cluster_id}" \
-        --query 'cluster.[name,status,version,platformVersion,endpoint,resourcesVpcConfig.vpcId]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "ECR_REPOSITORIES" >> "$RESOURCES_FILE"
-    
-    aws ecr describe-repositories --region "$region" \
-        --query "repositories[?contains(repositoryName, '${cluster_id}')].[repositoryName,repositoryUri,createdAt]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_iam() {
-    local cluster_id=$1
-    
-    debug_log "Discovering IAM resources for $cluster_id"
-    echo "IAM_ROLES" >> "$RESOURCES_FILE"
-    
-    aws iam list-roles \
-        --query "Roles[?contains(RoleName, '${cluster_id}')].[RoleName,Arn,CreateDate,Description]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "IAM_POLICIES" >> "$RESOURCES_FILE"
-    
-    aws iam list-policies --scope Local \
-        --query "Policies[?contains(PolicyName, '${cluster_id}')].[PolicyName,Arn,CreateDate,Description]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-    echo "IAM_INSTANCE_PROFILES" >> "$RESOURCES_FILE"
-    
-    aws iam list-instance-profiles \
-        --query "InstanceProfiles[?contains(InstanceProfileName, '${cluster_id}')].[InstanceProfileName,Arn,CreateDate]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-discover_cloudformation() {
-    local region=$1
-    local cluster_id=$2
-    
-    debug_log "Discovering CloudFormation resources in $region for $cluster_id"
-    echo "CLOUDFORMATION_STACKS" >> "$RESOURCES_FILE"
-    
-    aws cloudformation describe-stacks --region "$region" \
-        --query "Stacks[?contains(StackName, '${cluster_id}')].[StackName,StackStatus,CreationTime,Description]" \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    echo "" >> "$RESOURCES_FILE"
-}
-
-# VPC-based second pass discovery (following clean-aws pattern)
-discover_vpc_associated_resources() {
-    local region=$1
-    local vpc_id=$2
-    
-    debug_log "Second pass: discovering VPC-associated resources in $region for VPC $vpc_id"
-    
-    # Find additional subnets
-    aws ec2 describe-subnets --region "$region" \
-        --filters "Name=vpc-id,Values=$vpc_id" \
-        --query 'Subnets[*].[SubnetId,VpcId,CidrBlock,AvailabilityZone,MapPublicIpOnLaunch,Tags[?Key==`Name`].Value|[0]]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    # Find additional network interfaces
-    aws ec2 describe-network-interfaces --region "$region" \
-        --filters "Name=vpc-id,Values=$vpc_id" \
-        --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId,SubnetId,PrivateIpAddress,Attachment.InstanceId || `unattached`]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-    
-    # Find additional security groups
-    aws ec2 describe-security-groups --region "$region" \
-        --filters "Name=vpc-id,Values=$vpc_id" \
-        --query 'SecurityGroups[*].[GroupId,GroupName,VpcId,Description]' \
-        --output "$OUTPUT_FORMAT" 2>/dev/null >> "$RESOURCES_FILE" || true
-}
-
-# Main discovery loop
-echo "Starting resource discovery..."
-debug_log "Beginning main discovery loop"
-
-for region in "${REGIONS[@]}"; do
-    echo ""
-    echo "===== Region: $region ====="
-    echo "REGION: $region" >> "$RESOURCES_FILE"
-    echo "" >> "$RESOURCES_FILE"
-    
-    # Primary discovery pass
-    discover_ec2_instances "$region" "$CLUSTER_ID"
-    discover_ebs_volumes "$region" "$CLUSTER_ID"
-    discover_ebs_snapshots "$region" "$CLUSTER_ID"
-    discover_load_balancers "$region" "$CLUSTER_ID"
-    discover_auto_scaling "$region" "$CLUSTER_ID"
-    discover_networking "$region" "$CLUSTER_ID"
-    discover_storage "$region" "$CLUSTER_ID"
-    discover_databases "$region" "$CLUSTER_ID"
-    discover_containers "$region" "$CLUSTER_ID"
-    discover_cloudformation "$region" "$CLUSTER_ID"
-    
-    # VPC-based second pass (following clean-aws pattern)
-    if [[ -s "$RESOURCES_FILE" ]]; then
-        vpc_ids=$(grep -A20 "VPCS" "$RESOURCES_FILE" | grep -E "^vpc-[a-f0-9]+" | cut -f1 | sort -u 2>/dev/null || true)
-        for vpc_id in $vpc_ids; do
-            if [[ -n "$vpc_id" ]]; then
-                echo "VPC_ASSOCIATED_RESOURCES_FOR_$vpc_id" >> "$RESOURCES_FILE"
-                discover_vpc_associated_resources "$region" "$vpc_id"
-                echo "" >> "$RESOURCES_FILE"
-            fi
-        done
-    fi
-done
-
-# Discover IAM resources (global, region-independent)
-echo ""
-echo "===== Global IAM Resources ====="
-echo "GLOBAL_IAM_RESOURCES" >> "$RESOURCES_FILE"
-discover_iam "$CLUSTER_ID"
-
-# Generate summary
-echo "" >> "$RESOURCES_FILE"
-echo "=== DISCOVERY SUMMARY ===" >> "$RESOURCES_FILE"
-echo "Cluster ID: $CLUSTER_ID" >> "$RESOURCES_FILE"
-echo "Regions searched: ${REGIONS[*]}" >> "$RESOURCES_FILE"
-echo "Discovery time: $(date)" >> "$RESOURCES_FILE"
-
-# Display results
-echo ""
-echo "===== DISCOVERY RESULTS ====="
-echo ""
-
+# Only show header in verbose mode
 if [[ "$VERBOSE" == "true" ]]; then
-    cat "$RESOURCES_FILE"
-else
-    # Show condensed summary
-    echo "Resource Summary for cluster: $CLUSTER_ID"
-    echo "======================================"
-    
-    # Count resources by type
-    for resource_type in "EC2_INSTANCES" "EBS_VOLUMES" "VPCS" "SUBNETS" "SECURITY_GROUPS" "LOAD_BALANCERS" "AUTO_SCALING_GROUPS" "EKS_CLUSTERS" "RDS_INSTANCES" "IAM_ROLES"; do
-        count=$(grep -A100 "$resource_type" "$RESOURCES_FILE" 2>/dev/null | grep -E "^[a-zA-Z0-9-]+" | wc -l || echo "0")
-        if [[ "$count" -gt 0 ]]; then
-            echo "$resource_type: $count"
-        fi
-    done
-    
-    echo ""
-    echo "Use --verbose flag to see detailed resource information"
+    echo "=== AWS Resource Discovery ===" >&2
+    echo "This script discovers AWS resources consumed by OpenShift clusters using smart filtering" >&2
+    echo "Prevents false positives by scoping instance type discovery to cluster VPCs only" >&2
+    echo "" >&2
+    echo "Discovering resources for cluster: $CLUSTER_ID" >&2
+    echo "Searching regions: ${REGIONS[*]}" >&2
+    echo "" >&2
 fi
 
-echo ""
-echo "Discovery completed successfully!"
-echo "Searched regions: ${REGIONS[*]}"
+# Main discovery loop - only process one region for now (simplicity)
+REGION="${REGIONS[0]}"
+
+if [[ "$VERBOSE" == "true" ]]; then
+    echo "Starting resource discovery..." >&2
+    echo "" >&2
+    echo "===== Region: $REGION =====" >&2
+fi
+
+debug_log "Beginning main discovery loop for region: $REGION"
+
+# Initialize JSON structure
+cat << EOF
+{
+EOF
+
+echo "    \"REGION\": \"$REGION\","
+
+# Function to get AWS resources with proper JSON formatting
+get_aws_resources() {
+    local resource_type="$1"
+    local aws_command="$2"
+    
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo "Discovering $resource_type..." >&2
+    fi
+    
+    debug_log "Running: $aws_command"
+    
+    # Execute AWS command and capture JSON output
+    local result
+    if result=$(eval "$aws_command" 2>/dev/null); then
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "✅ $resource_type discovered" >&2
+        fi
+        echo "$result"
+    else
+        if [[ "$VERBOSE" == "true" ]]; then
+            echo "❌ Failed to discover $resource_type" >&2
+        fi
+        echo "[]"
+    fi
+}
+
+# EC2 Instances - using smart discovery strategy
+echo "    \"EC2_INSTANCES\": $(
+    # Primary: Tag-based discovery
+    tagged_instances=$(aws ec2 describe-instances --region "$REGION" \
+        --filters "Name=tag-value,Values=*${CLUSTER_ID}*" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
+        --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SubnetId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
+        --output json 2>/dev/null || echo "[]")
+    
+    # Check if we found tagged instances
+    if [[ "$tagged_instances" != "[]" && "$tagged_instances" != "[[]]" ]]; then
+        echo "$tagged_instances"
+    else
+        # Secondary: VPC-scoped discovery
+        cluster_vpc_ids=$(aws ec2 describe-vpcs --region "$REGION" \
+            --filters "Name=tag-value,Values=*${CLUSTER_ID}*" \
+            --query 'Vpcs[*].VpcId' --output text 2>/dev/null || echo "")
+        
+        if [[ -n "$cluster_vpc_ids" && "$cluster_vpc_ids" != "None" ]]; then
+            debug_log "Found cluster VPCs: $cluster_vpc_ids - searching for untagged instances"
+            aws ec2 describe-instances --region "$REGION" \
+                --filters "Name=instance-type,Values=m5.xlarge,m5.large,c5.4xlarge" \
+                          "Name=instance-state-name,Values=running,stopped,stopping,pending" \
+                          "Name=vpc-id,Values=${cluster_vpc_ids}" \
+                --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,Tags[?Key==`kubernetes.io/cluster`] | [0].Value || `untagged`]' \
+                --output json 2>/dev/null || echo "[]"
+        else
+            echo "[]"
+        fi
+    fi
+),"
+
+# EBS Volumes
+echo "    \"EBS_VOLUMES\": $(get_aws_resources "EBS volumes" \
+    "aws ec2 describe-volumes --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'Volumes[*].[VolumeId,Size,VolumeType,State,Encrypted,Attachments[0].InstanceId || \`unattached\`,Iops || \`0\`]' \
+     --output json"),"
+
+# EBS Snapshots
+echo "    \"EBS_SNAPSHOTS\": $(get_aws_resources "EBS snapshots" \
+    "aws ec2 describe-snapshots --region '$REGION' \
+     --owner-ids self \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'Snapshots[*].[SnapshotId,VolumeSize,State,StartTime,Description]' \
+     --output json"),"
+
+# Application Load Balancers
+echo "    \"APPLICATION_LOAD_BALANCERS\": $(get_aws_resources "Application Load Balancers" \
+    "aws elbv2 describe-load-balancers --region '$REGION' \
+     --query 'LoadBalancers[?contains(LoadBalancerName, \`${CLUSTER_ID}\`)].[LoadBalancerArn,LoadBalancerName,Type,State.Code,VpcId]' \
+     --output json"),"
+
+# Classic Load Balancers
+echo "    \"CLASSIC_LOAD_BALANCERS\": $(get_aws_resources "Classic Load Balancers" \
+    "aws elb describe-load-balancers --region '$REGION' \
+     --query 'LoadBalancerDescriptions[?contains(LoadBalancerName, \`${CLUSTER_ID}\`)].[LoadBalancerName,VPCId,Scheme,CreatedTime]' \
+     --output json"),"
+
+# Target Groups
+echo "    \"TARGET_GROUPS\": $(get_aws_resources "Target Groups" \
+    "aws elbv2 describe-target-groups --region '$REGION' \
+     --query 'TargetGroups[?contains(TargetGroupName, \`${CLUSTER_ID}\`)].[TargetGroupArn,TargetGroupName,Protocol,Port,VpcId]' \
+     --output json"),"
+
+# Auto Scaling Groups
+echo "    \"AUTO_SCALING_GROUPS\": $(get_aws_resources "Auto Scaling Groups" \
+    "aws autoscaling describe-auto-scaling-groups --region '$REGION' \
+     --query 'AutoScalingGroups[?contains(AutoScalingGroupName, \`${CLUSTER_ID}\`)].[AutoScalingGroupName,DesiredCapacity,MinSize,MaxSize,VPCZoneIdentifier]' \
+     --output json"),"
+
+# Launch Templates
+echo "    \"LAUNCH_TEMPLATES\": $(get_aws_resources "Launch Templates" \
+    "aws ec2 describe-launch-templates --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'LaunchTemplates[*].[LaunchTemplateId,LaunchTemplateName,LatestVersionNumber,CreatedBy]' \
+     --output json"),"
+
+# VPCs
+echo "    \"VPCS\": $(get_aws_resources "VPCs" \
+    "aws ec2 describe-vpcs --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'Vpcs[*].[VpcId,CidrBlock,State,IsDefault,Tags[?Key==\`Name\`].Value|[0]]' \
+     --output json"),"
+
+# Subnets
+echo "    \"SUBNETS\": $(get_aws_resources "Subnets" \
+    "aws ec2 describe-subnets --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'Subnets[*].[SubnetId,VpcId,CidrBlock,AvailabilityZone,MapPublicIpOnLaunch,Tags[?Key==\`Name\`].Value|[0]]' \
+     --output json"),"
+
+# Internet Gateways
+echo "    \"INTERNET_GATEWAYS\": $(get_aws_resources "Internet Gateways" \
+    "aws ec2 describe-internet-gateways --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].VpcId,Attachments[0].State,Tags[?Key==\`Name\`].Value|[0]]' \
+     --output json"),"
+
+# NAT Gateways
+echo "    \"NAT_GATEWAYS\": $(get_aws_resources "NAT Gateways" \
+    "aws ec2 describe-nat-gateways --region '$REGION' \
+     --filter 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'NatGateways[*].[NatGatewayId,VpcId,SubnetId,State,NatGatewayAddresses[0].PublicIp]' \
+     --output json"),"
+
+# Route Tables
+echo "    \"ROUTE_TABLES\": $(get_aws_resources "Route Tables" \
+    "aws ec2 describe-route-tables --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'RouteTables[*].[RouteTableId,VpcId,Associations[0].Main || \`false\`,Tags[?Key==\`Name\`].Value|[0]]' \
+     --output json"),"
+
+# Security Groups
+echo "    \"SECURITY_GROUPS\": $(get_aws_resources "Security Groups" \
+    "aws ec2 describe-security-groups --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'SecurityGroups[*].[GroupId,GroupName,VpcId,Description]' \
+     --output json"),"
+
+# Network ACLs
+echo "    \"NETWORK_ACLS\": $(get_aws_resources "Network ACLs" \
+    "aws ec2 describe-network-acls --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'NetworkAcls[*].[NetworkAclId,VpcId,IsDefault,Associations[0].SubnetId || \`none\`]' \
+     --output json"),"
+
+# Network Interfaces
+echo "    \"NETWORK_INTERFACES\": $(get_aws_resources "Network Interfaces" \
+    "aws ec2 describe-network-interfaces --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId,SubnetId,PrivateIpAddress,Attachment.InstanceId || \`unattached\`]' \
+     --output json"),"
+
+# VPC Endpoints
+echo "    \"VPC_ENDPOINTS\": $(get_aws_resources "VPC Endpoints" \
+    "aws ec2 describe-vpc-endpoints --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'VpcEndpoints[*].[VpcEndpointId,VpcId,ServiceName,State,VpcEndpointType]' \
+     --output json"),"
+
+# Elastic IPs
+echo "    \"ELASTIC_IPS\": $(get_aws_resources "Elastic IPs" \
+    "aws ec2 describe-addresses --region '$REGION' \
+     --filters 'Name=tag-value,Values=*${CLUSTER_ID}*' \
+     --query 'Addresses[*].[AllocationId,PublicIp,InstanceId || \`unassociated\`,NetworkInterfaceId || \`none\`,Domain]' \
+     --output json"),"
+
+# EFS File Systems
+echo "    \"EFS_FILE_SYSTEMS\": $(get_aws_resources "EFS File Systems" \
+    "aws efs describe-file-systems --region '$REGION' \
+     --query 'FileSystems[?contains(Name, \`${CLUSTER_ID}\`)].[FileSystemId,Name,LifeCycleState,SizeInBytes.Value,CreationTime]' \
+     --output json"),"
+
+# EFS Mount Targets
+echo "    \"EFS_MOUNT_TARGETS\": $(get_aws_resources "EFS Mount Targets" \
+    "aws efs describe-mount-targets --region '$REGION' \
+     --query 'MountTargets[*].[MountTargetId,FileSystemId,SubnetId,LifeCycleState,IpAddress]' \
+     --output json"),"
+
+# RDS Instances
+echo "    \"RDS_INSTANCES\": $(get_aws_resources "RDS Instances" \
+    "aws rds describe-db-instances --region '$REGION' \
+     --query 'DBInstances[?contains(DBInstanceIdentifier, \`${CLUSTER_ID}\`)].[DBInstanceIdentifier,DBInstanceStatus,DBInstanceClass,Engine,DBSubnetGroup.VpcId]' \
+     --output json"),"
+
+# RDS Clusters
+echo "    \"RDS_CLUSTERS\": $(get_aws_resources "RDS Clusters" \
+    "aws rds describe-db-clusters --region '$REGION' \
+     --query 'DBClusters[?contains(DBClusterIdentifier, \`${CLUSTER_ID}\`)].[DBClusterIdentifier,Status,Engine,VpcSecurityGroups[0].VpcId]' \
+     --output json"),"
+
+# EKS Clusters
+echo "    \"EKS_CLUSTERS\": $(get_aws_resources "EKS Clusters" \
+    "aws eks describe-cluster --region '$REGION' --name '${CLUSTER_ID}' \
+     --query 'cluster.[name,status,version,platformVersion,endpoint,resourcesVpcConfig.vpcId]' \
+     --output json"),"
+
+# ECR Repositories
+echo "    \"ECR_REPOSITORIES\": $(get_aws_resources "ECR Repositories" \
+    "aws ecr describe-repositories --region '$REGION' \
+     --query 'repositories[?contains(repositoryName, \`${CLUSTER_ID}\`)].[repositoryName,repositoryUri,createdAt]' \
+     --output json"),"
+
+# CloudFormation Stacks
+echo "    \"CLOUDFORMATION_STACKS\": $(get_aws_resources "CloudFormation Stacks" \
+    "aws cloudformation describe-stacks --region '$REGION' \
+     --query 'Stacks[?contains(StackName, \`${CLUSTER_ID}\`)].[StackName,StackStatus,CreationTime,Description]' \
+     --output json"),"
+
+# Global IAM Resources (region-independent)
+if [[ "$VERBOSE" == "true" ]]; then
+    echo "" >&2
+    echo "===== Global IAM Resources =====" >&2
+fi
+
+echo "    \"GLOBAL_IAM_RESOURCES\": {"
+
+# IAM Roles
+echo "        \"IAM_ROLES\": $(get_aws_resources "IAM Roles" \
+    "aws iam list-roles \
+     --query 'Roles[?contains(RoleName, \`${CLUSTER_ID}\`)].[RoleName,Arn,CreateDate,Description]' \
+     --output json"),"
+
+# IAM Policies
+echo "        \"IAM_POLICIES\": $(get_aws_resources "IAM Policies" \
+    "aws iam list-policies --scope Local \
+     --query 'Policies[?contains(PolicyName, \`${CLUSTER_ID}\`)].[PolicyName,Arn,CreateDate,Description]' \
+     --output json"),"
+
+# IAM Instance Profiles (remove trailing comma)
+echo "        \"IAM_INSTANCE_PROFILES\": $(get_aws_resources "IAM Instance Profiles" \
+    "aws iam list-instance-profiles \
+     --query 'InstanceProfiles[?contains(InstanceProfileName, \`${CLUSTER_ID}\`)].[InstanceProfileName,Arn,CreateDate]' \
+     --output json")"
+
+echo "    }"
+echo "}"
+
+if [[ "$VERBOSE" == "true" ]]; then
+    echo "" >&2
+    echo "Discovery completed successfully!" >&2
+    echo "Searched regions: ${REGIONS[*]}" >&2
+fi
 
 debug_log "Script completed successfully"
