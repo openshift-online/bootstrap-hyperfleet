@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: eks-01-mturansk-a
-  labels:
-    name: eks-01-mturansk-a

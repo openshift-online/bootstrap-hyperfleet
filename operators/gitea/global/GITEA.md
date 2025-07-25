@@ -75,7 +75,7 @@ Gitea is deployed as an internal git server to solve the ArgoCD dependency issue
 ### Initial Setup (Automatic)
 
 The installation automatically creates:
-- **Admin User**: `bootstrap` (password: `bootstrap123`)
+- **Admin User**: `mturansk` (password: `acmeprototype321#`)
 - **Repository**: `bootstrap/bootstrap` 
 - **ArgoCD Integration**: Repository secret configured
 
@@ -206,7 +206,7 @@ oc get jobs -n gitea-system | grep gitea-push
 oc logs job/gitea-push-[cluster-name] -n gitea-system
 
 # Common fix: Verify credentials
-oc exec -n gitea-system deployment/gitea -- curl -u "bootstrap:bootstrap123" http://localhost:3000/api/v1/user
+oc exec -n gitea-system deployment/gitea -- curl -u "mturansk:acmeprototype321#" http://localhost:3000/api/v1/user
 ```
 
 ### Recovery Procedures
@@ -226,10 +226,10 @@ oc apply -k operators/gitea/global/
 #### Reset Repository
 ```bash
 # Delete and recreate repository
-oc exec -n gitea-system deployment/gitea -- curl -X DELETE -u "bootstrap:bootstrap123" http://localhost:3000/api/v1/repos/bootstrap/bootstrap
+oc exec -n gitea-system deployment/gitea -- curl -X DELETE -u "mturansk:acmeprototype321#" http://localhost:3000/api/v1/repos/bootstrap/bootstrap
 
 # Recreate repository
-oc exec -n gitea-system deployment/gitea -- curl -X POST -u "bootstrap:bootstrap123" http://localhost:3000/api/v1/user/repos -H "Content-Type: application/json" -d '{"name": "bootstrap", "description": "Bootstrap cluster configurations", "private": false, "auto_init": true}'
+oc exec -n gitea-system deployment/gitea -- curl -X POST -u "mturansk:acmeprototype321#" http://localhost:3000/api/v1/user/repos -H "Content-Type: application/json" -d '{"name": "bootstrap", "description": "Bootstrap cluster configurations", "private": false, "auto_init": true}'
 ```
 
 ## Monitoring and Maintenance
@@ -246,7 +246,7 @@ oc exec -n gitea-system deployment/gitea -- curl -s http://localhost:3000/api/he
 oc exec -n gitea-system deployment/gitea-db -- pg_isready
 
 # Repository access
-oc exec -n gitea-system deployment/gitea -- curl -s -u "bootstrap:bootstrap123" http://localhost:3000/api/v1/repos/bootstrap/bootstrap
+oc exec -n gitea-system deployment/gitea -- curl -s -u "mturansk:acmeprototype321#" http://localhost:3000/api/v1/repos/bootstrap/bootstrap
 ```
 
 ### Resource Usage
