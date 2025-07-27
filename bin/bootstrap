@@ -13,17 +13,17 @@ oc cluster-info
 echo "Applying a subscription to the OpenShift GitOps Operator"
 oc apply -k ./prereqs
 
-./status.sh applications.argoproj.io
+./bin/monitor-status applications.argoproj.io
 
 # Apply the GitOps Applications to complete bootstrap
 echo "Applying the GitOps Applications to complete bootstrap"
 oc apply -k ./gitops-applications
 
 echo "Waiting for openshift-gitops (aka Argo) to complete"
-./wait.kube.sh route openshift-gitops-server openshift-gitops {.kind} Route
+./bin/wait-kube route openshift-gitops-server openshift-gitops {.kind} Route
 
 echo "Waiting for ACM to complete"
-./wait.kube.sh mch multiclusterhub open-cluster-management '{.status.conditions[?(@.type=="Complete")].message}' "All hub components ready."
+./bin/wait-kube mch multiclusterhub open-cluster-management '{.status.conditions[?(@.type=="Complete")].message}' "All hub components ready."
 
 echo "Control plane is ready: $(oc whoami --show-console)"
 
