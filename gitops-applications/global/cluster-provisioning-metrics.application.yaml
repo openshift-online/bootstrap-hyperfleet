@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-provisioning-metrics
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app.kubernetes.io/name: cluster-provisioning-metrics
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: openshift-bootstrap
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap.git
+    targetRevision: main
+    path: operators/cluster-provisioning-metrics/global
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false  # namespace already exists
+    - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+  - group: ""
+    kind: ConfigMap
+    name: cluster-provisioning-metrics-script
+    jsonPointers:
+    - /data
+  revisionHistoryLimit: 3
