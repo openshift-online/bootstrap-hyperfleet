@@ -1,0 +1,150 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cluster-provisioning-metrics
+  namespace: openshift-gitops
+  labels:
+    app: cluster-provisioning-metrics
+spec:
+  selector:
+    matchLabels:
+      app: cluster-provisioning-metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    scheme: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cluster-provisioning-alerts
+  namespace: openshift-gitops
+  labels:
+    app: cluster-provisioning-metrics
+spec:
+  groups:
+  - name: cluster-provisioning.rules
+    rules:
+    # === Provisioning Duration Alerts ===
+    - alert: ClusterProvisioningTakingTooLong
+      expr: cluster_provisioning_active_total > 0 and increase(cluster_provisioning_duration_seconds_count[1h]) == 0
+      for: 75m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Cluster provisioning exceeding expected duration"
+        description: "Cluster {{ $labels.cluster_name }} has been provisioning for over 75 minutes"
+    
+    - alert: ClusterProvisioningFailed
+      expr: increase(cluster_provisioning_failures_total[5m]) > 0
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Cluster provisioning failed"
+        description: "Cluster {{ $labels.cluster_name }} failed provisioning: {{ $labels.failure_reason }}"
+    
+    # === Sync Wave Alerts ===
+    - alert: SyncWaveStuck
+      expr: cluster_sync_wave_status == 1 and increase(cluster_sync_wave_duration_seconds_count[30m]) == 0
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "ArgoCD sync wave stuck"
+        description: "Cluster {{ $labels.cluster_name }} wave {{ $labels.wave_number }} has been in progress for over 30 minutes"
+    
+    - alert: SyncWaveFailed
+      expr: cluster_sync_wave_status == 3
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "ArgoCD sync wave failed"
+        description: "Cluster {{ $labels.cluster_name }} wave {{ $labels.wave_number }} has failed"
+    
+    # === Infrastructure Alerts ===
+    - alert: InfrastructureProvisioningFailed
+      expr: cluster_infrastructure_status == 3  # failed state
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Infrastructure provisioning failed"
+        description: "Cluster {{ $labels.cluster_name }} infrastructure ({{ $labels.infrastructure_type }}) failed to provision"
+    
+    - alert: WorkerNodesInsufficient
+      expr: cluster_worker_nodes_status{status_type="actual"} < cluster_worker_nodes_status{status_type="expected"}
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Insufficient worker nodes"
+        description: "Cluster {{ $labels.cluster_name }} has {{ $value }} worker nodes but expects {{ $labels.expected }}"
+    
+    # === Platform Health Alerts ===
+    - alert: ClusterOperatorsDegraded
+      expr: cluster_operators_status_total{status="degraded"} > 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Cluster operators degraded"
+        description: "Cluster {{ $labels.cluster_name }} has {{ $value }} degraded cluster operators"
+    
+    - alert: ClusterReadinessLow
+      expr: cluster_readiness_score < 80
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Low cluster readiness score"
+        description: "Cluster {{ $labels.cluster_name }} readiness score is {{ $value }}%"
+    
+    # === ACM Management Alerts ===
+    - alert: ManagedClusterUnreachable
+      expr: managed_cluster_status == 2  # unreachable state
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Managed cluster unreachable"
+        description: "ACM cannot reach cluster {{ $labels.cluster_name }}"
+    
+    # === Success Rate Alerts ===
+    - alert: ProvisioningSuccessRateLow
+      expr: cluster_provisioning_success_rate{time_window="24h"} < 0.8
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Low provisioning success rate"
+        description: "Provisioning success rate for {{ $labels.cluster_type }} in {{ $labels.region }} is {{ $value }}% over 24 hours"
+    
+    # === Recording Rules for Dashboard Efficiency ===
+    - record: cluster_provisioning_success_rate_1h
+      expr: |
+        (
+          rate(cluster_provisioning_duration_seconds_count{result="success"}[1h]) /
+          rate(cluster_provisioning_duration_seconds_count[1h])
+        ) * 100
+    
+    - record: cluster_provisioning_success_rate_24h
+      expr: |
+        (
+          rate(cluster_provisioning_duration_seconds_count{result="success"}[24h]) /
+          rate(cluster_provisioning_duration_seconds_count[24h])
+        ) * 100
+    
+    - record: cluster_provisioning_mean_duration_1h
+      expr: |
+        rate(cluster_provisioning_duration_seconds_sum[1h]) /
+        rate(cluster_provisioning_duration_seconds_count[1h])
+    
+    - record: cluster_sync_wave_completion_rate
+      expr: |
+        (
+          sum by (cluster_name) (cluster_sync_wave_status == 2) /
+          sum by (cluster_name) (cluster_sync_wave_status > 0)
+        ) * 100

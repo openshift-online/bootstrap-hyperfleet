@@ -14,4 +14,4 @@ spec:
         size: 100
         type: io1
       type: t3a.xlarge  # 4 vCPU, 16 GiB RAM - General Purpose
-  replicas: 1
+  replicas: 2 # min 2 required for anti-affinity full provisioning

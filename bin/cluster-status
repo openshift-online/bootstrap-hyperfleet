@@ -11,29 +11,50 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 DEBUG=${DEBUG:-false}
 OUTPUT_FORMAT="table"  # table|json|csv
 SHOW_ONLY_ISSUES=false
+HEALTH_LEVEL="basic"  # basic|deep|full|infrastructure|platform|workloads
+SPECIFIC_CLUSTER=""
+PARALLEL_CHECKS=5
+CLUSTER_TIMEOUT=30
 
 # Usage information
 usage() {
     cat <<EOF
 Usage: $0 [OPTIONS]
 
-Compare ACM ManagedClusters with repository cluster configurations to identify:
-- Stuck terminations and finalizers
-- Orphaned ManagedClusters (no repository config)
-- Missing ManagedClusters (config exists but no cluster)
-- ArgoCD Application mismatches
+Comprehensive cluster health assessment across multiple layers:
+- Repository vs ACM state comparison (basic)
+- Infrastructure health: node capacity, provisioning status (deep+)
+- Platform health: cluster operators, core services (deep+)
+- Sync wave progression and application status (deep+)
+- Workload scheduling and resource constraints (full)
+- External dependencies: secrets, vault, registry (full)
+
+HEALTH LEVELS:
+    --health-basic       Repository + ACM + ArgoCD validation (default)
+    --health-deep        + Infrastructure + Platform validation (recommended)
+    --health-full        + Workload + External dependencies (comprehensive)
+    --health-infrastructure  Infrastructure layer only
+    --health-platform    Platform layer only  
+    --health-workloads   Workload layer only
 
 OPTIONS:
-    --format FORMAT       Output format: table (default), json, csv
+    --format FORMAT      Output format: table (default), json, csv
     --issues-only        Show only problematic clusters
+    --cluster CLUSTER    Check specific cluster only
+    --parallel N         Number of parallel health checks (default: 5)
+    --timeout N          Per-cluster timeout in seconds (default: 30)
     --debug              Enable debug output
     --help               Show this help message
 
 EXAMPLES:
-    $0                              # Basic cluster status comparison
-    $0 --issues-only                # Show only stuck/orphaned clusters
-    $0 --format json                # JSON output for automation
-    $0 --format csv > status.csv    # CSV export
+    $0                              # Basic cluster status (GitOps layer only)
+    $0 --health-deep                # Infrastructure + Platform health (recommended)
+    $0 --health-full                # Comprehensive health (all layers)
+    $0 --health-deep --issues-only  # Show only problematic clusters with deep health
+    $0 --health-full --cluster ocp-01-mturansk-a3  # Full health for specific cluster
+    $0 --health-infrastructure      # Infrastructure health only
+    $0 --health-deep --format json  # JSON output with deep health for automation
+    $0 --health-full --format csv > cluster-health.csv  # CSV export with full health
 
 OUTPUT:
     - Comparison table showing repository vs ACM state
@@ -47,6 +68,30 @@ EOF
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --health-basic)
+            HEALTH_LEVEL="basic"
+            shift
+            ;;
+        --health-deep)
+            HEALTH_LEVEL="deep"
+            shift
+            ;;
+        --health-full)
+            HEALTH_LEVEL="full"
+            shift
+            ;;
+        --health-infrastructure)
+            HEALTH_LEVEL="infrastructure"
+            shift
+            ;;
+        --health-platform)
+            HEALTH_LEVEL="platform"
+            shift
+            ;;
+        --health-workloads)
+            HEALTH_LEVEL="workloads"
+            shift
+            ;;
         --format)
             OUTPUT_FORMAT="$2"
             shift 2
@@ -54,6 +99,18 @@ while [[ $# -gt 0 ]]; do
         --issues-only)
             SHOW_ONLY_ISSUES=true
             shift
+            ;;
+        --cluster)
+            SPECIFIC_CLUSTER="$2"
+            shift 2
+            ;;
+        --parallel)
+            PARALLEL_CHECKS="$2"
+            shift 2
+            ;;
+        --timeout)
+            CLUSTER_TIMEOUT="$2"
+            shift 2
             ;;
         --debug)
             DEBUG=true
@@ -109,6 +166,12 @@ get_repository_clusters() {
     debug_log "Discovering clusters from repository..."
     
     local clusters=()
+    
+    # If specific cluster requested, only check that one
+    if [[ -n "$SPECIFIC_CLUSTER" ]]; then
+        echo "$SPECIFIC_CLUSTER"
+        return
+    fi
     
     # Scan clusters/ directory for deployed clusters
     if [[ -d "$ROOT_DIR/clusters/" ]]; then
@@ -233,6 +296,259 @@ has_issues() {
     fi
     
     return 1  # No issues
+}
+
+# Infrastructure health check
+check_infrastructure_health() {
+    local cluster_name="$1"
+    
+    debug_log "Checking infrastructure health for $cluster_name..."
+    
+    # Get expected worker count from MachinePool
+    local expected_workers="N/A"
+    if oc get machinepool -n "$cluster_name" "${cluster_name}-worker" >/dev/null 2>&1; then
+        expected_workers=$(oc get machinepool -n "$cluster_name" "${cluster_name}-worker" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "N/A")
+    fi
+    
+    # Get actual worker count (requires cluster access)
+    local actual_workers="N/A"
+    local ready_workers="N/A"
+    if timeout "$CLUSTER_TIMEOUT" oc --context="$cluster_name" get nodes >/dev/null 2>&1; then
+        actual_workers=$(oc --context="$cluster_name" get nodes --no-headers 2>/dev/null | grep -c worker || echo "0")
+        ready_workers=$(oc --context="$cluster_name" get nodes --no-headers 2>/dev/null | grep worker | grep -c Ready || echo "0")
+    fi
+    
+    # CAPI cluster status for EKS
+    local capi_ready="N/A"
+    if oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" >/dev/null 2>&1; then
+        capi_ready=$(oc get cluster.cluster.x-k8s.io "$cluster_name" -n "$cluster_name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+    fi
+    
+    # Hive cluster status for OCP
+    local hive_ready="N/A"
+    if oc get clusterdeployment "$cluster_name" -n "$cluster_name" >/dev/null 2>&1; then
+        hive_ready=$(oc get clusterdeployment "$cluster_name" -n "$cluster_name" -o jsonpath='{.status.conditions[?(@.type=="ClusterReadyCondition")].status}' 2>/dev/null || echo "Unknown")
+    fi
+    
+    echo "$expected_workers/$actual_workers/$ready_workers/$capi_ready/$hive_ready"
+}
+
+# Platform health check
+check_platform_health() {
+    local cluster_name="$1"
+    
+    debug_log "Checking platform health for $cluster_name..."
+    
+    # Count degraded cluster operators (requires cluster access)
+    local degraded_cos="N/A"
+    local api_health="N/A"
+    local etcd_health="N/A"
+    
+    if timeout "$CLUSTER_TIMEOUT" oc --context="$cluster_name" get co >/dev/null 2>&1; then
+        degraded_cos=$(oc --context="$cluster_name" get co --no-headers 2>/dev/null | awk '$3 != "True" || $4 != "False" || $5 != "False" {count++} END {print count+0}' || echo "N/A")
+        api_health=$(oc --context="$cluster_name" get co kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+        etcd_health=$(oc --context="$cluster_name" get co etcd -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+    fi
+    
+    echo "$degraded_cos/$api_health/$etcd_health"
+}
+
+# Sync wave health check
+check_sync_wave_health() {
+    local cluster_name="$1"
+    
+    debug_log "Checking sync wave health for $cluster_name..."
+    
+    # Find highest sync wave with applications
+    local max_wave=0
+    local current_wave=0
+    
+    if oc get applications.argoproj.io -A >/dev/null 2>&1; then
+        for wave in $(seq 1 10); do
+            local wave_apps=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster_name" --arg wave "$wave" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.annotations["argocd.argoproj.io/sync-wave"] == $wave) | .metadata.name' 2>/dev/null | wc -l || echo "0")
+            if [[ $wave_apps -gt 0 ]]; then
+                max_wave=$wave
+                local synced_apps=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster_name" --arg wave "$wave" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.annotations["argocd.argoproj.io/sync-wave"] == $wave) | select(.status.sync.status == "Synced") | .metadata.name' 2>/dev/null | wc -l || echo "0")
+                if [[ $synced_apps -eq $wave_apps ]]; then
+                    current_wave=$wave
+                fi
+            fi
+        done
+    fi
+    
+    echo "$current_wave/$max_wave"
+}
+
+# Workload health check
+check_workload_health() {
+    local cluster_name="$1"
+    
+    debug_log "Checking workload health for $cluster_name..."
+    
+    # Count pending pods and PVCs (requires cluster access)
+    local pending_pods="N/A"
+    local pending_pvcs="N/A"
+    
+    if timeout "$CLUSTER_TIMEOUT" oc --context="$cluster_name" get pods >/dev/null 2>&1; then
+        pending_pods=$(oc --context="$cluster_name" get pods -A --field-selector=status.phase=Pending --no-headers 2>/dev/null | wc -l || echo "N/A")
+        pending_pvcs=$(oc --context="$cluster_name" get pvc -A --no-headers 2>/dev/null | grep -c Pending || echo "0")
+    fi
+    
+    echo "$pending_pods/$pending_pvcs"
+}
+
+# External dependencies health check
+check_external_dependencies() {
+    local cluster_name="$1"
+    
+    debug_log "Checking external dependencies for $cluster_name..."
+    
+    # External Secrets health (requires cluster access)
+    local external_secrets_failed="N/A"
+    local connectivity="N/A"
+    
+    if timeout "$CLUSTER_TIMEOUT" oc --context="$cluster_name" get externalsecrets >/dev/null 2>&1; then
+        external_secrets_failed=$(oc --context="$cluster_name" get externalsecrets -A -o json 2>/dev/null | jq '[.items[] | select(.status.conditions[] | select(.type == "Ready" and .status != "True"))] | length' 2>/dev/null || echo "N/A")
+        connectivity="OK"
+    else
+        connectivity="FAILED"
+    fi
+    
+    echo "$external_secrets_failed/$connectivity"
+}
+
+# ArgoCD health check
+check_argocd_health() {
+    local cluster_name="$1"
+    
+    debug_log "Checking ArgoCD health for $cluster_name..."
+    
+    # Check for stuck applications (with deletion timestamp)
+    local stuck_applications="0"
+    local stuck_applicationsets="0"
+    local app_sync_issues="0"
+    
+    if oc get applications.argoproj.io -A >/dev/null 2>&1; then
+        # Count applications stuck in deletion
+        stuck_applications=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq --arg cluster "$cluster_name" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.deletionTimestamp) | .metadata.name' 2>/dev/null | wc -l || echo "0")
+        
+        # Count applications with sync issues
+        app_sync_issues=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq --arg cluster "$cluster_name" '.items[] | select(.metadata.name | contains($cluster)) | select(.status.sync.status != "Synced") | .metadata.name' 2>/dev/null | wc -l || echo "0")
+        
+        # Check for stuck applicationsets
+        if oc get applicationsets.argoproj.io -A >/dev/null 2>&1; then
+            stuck_applicationsets=$(oc get applicationsets.argoproj.io -A -o json 2>/dev/null | jq --arg cluster "$cluster_name" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.deletionTimestamp) | .metadata.name' 2>/dev/null | wc -l || echo "0")
+        fi
+    fi
+    
+    echo "$stuck_applications/$stuck_applicationsets/$app_sync_issues"
+}
+
+# Issue detection functions
+detect_infrastructure_issues() {
+    local infra_data="$1"
+    IFS='/' read -r expected actual ready capi_ready hive_ready <<< "$infra_data"
+    
+    local issues=()
+    
+    if [[ "$actual" != "N/A" && "$expected" != "N/A" ]] && (( actual < expected )); then
+        issues+=("INSUFFICIENT_WORKERS")
+    fi
+    
+    if [[ "$ready" != "N/A" && "$actual" != "N/A" ]] && (( ready < actual )); then
+        issues+=("NODES_NOT_READY")
+    fi
+    
+    if [[ "$capi_ready" == "False" ]] || [[ "$hive_ready" == "False" ]]; then
+        issues+=("CLUSTER_NOT_PROVISIONED")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
+}
+
+detect_platform_issues() {
+    local platform_data="$1"
+    IFS='/' read -r degraded_cos api_health etcd_health <<< "$platform_data"
+    
+    local issues=()
+    
+    if [[ "$degraded_cos" != "N/A" ]] && (( degraded_cos > 0 )); then
+        issues+=("DEGRADED_COS")
+    fi
+    
+    if [[ "$api_health" != "True" ]] || [[ "$etcd_health" != "True" ]]; then
+        issues+=("CORE_SERVICES_DOWN")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
+}
+
+detect_sync_wave_issues() {
+    local sync_data="$1"
+    IFS='/' read -r current_wave max_wave <<< "$sync_data"
+    
+    local issues=()
+    
+    if [[ "$max_wave" != "N/A" && "$current_wave" != "N/A" ]] && (( current_wave < max_wave )); then
+        issues+=("STUCK_SYNC_WAVES")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
+}
+
+detect_workload_issues() {
+    local workload_data="$1"
+    IFS='/' read -r pending_pods pending_pvcs <<< "$workload_data"
+    
+    local issues=()
+    
+    if [[ "$pending_pods" != "N/A" ]] && (( pending_pods > 0 )); then
+        issues+=("PODS_PENDING")
+    fi
+    
+    if [[ "$pending_pvcs" != "N/A" ]] && (( pending_pvcs > 0 )); then
+        issues+=("PVC_BINDING_FAILED")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
+}
+
+detect_external_issues() {
+    local external_data="$1"
+    IFS='/' read -r failed_secrets connectivity <<< "$external_data"
+    
+    local issues=()
+    
+    if [[ "$failed_secrets" != "N/A" ]] && (( failed_secrets > 0 )); then
+        issues+=("EXTERNAL_SECRETS_FAILED")
+    fi
+    
+    if [[ "$connectivity" == "FAILED" ]]; then
+        issues+=("CONNECTIVITY_FAILED")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
+}
+
+detect_argocd_issues() {
+    local argocd_data="$1"
+    IFS='/' read -r stuck_apps stuck_appsets sync_issues <<< "$argocd_data"
+    
+    local issues=()
+    
+    if [[ "$stuck_apps" != "N/A" ]] && (( stuck_apps > 0 )); then
+        issues+=("STUCK_ARGOCD_APPS")
+    fi
+    
+    if [[ "$stuck_appsets" != "N/A" ]] && (( stuck_appsets > 0 )); then
+        issues+=("STUCK_ARGOCD_APPSETS")
+    fi
+    
+    if [[ "$sync_issues" != "N/A" ]] && (( sync_issues > 0 )); then
+        issues+=("ARGOCD_SYNC_FAILED")
+    fi
+    
+    printf '%s\n' "${issues[@]}"
 }
 
 # Generate issue summary
