@@ -5,17 +5,15 @@ namespace: openshift-gitops
 
 resources:
 - deployment.yaml
+- configmap.yaml
 - servicemonitor.yaml
 
-configMapGenerator:
-- name: cluster-provisioning-metrics-script
-  files:
-  - metrics_exporter.py
-  - requirements.txt
-
 # Add labels for GitOps tracking
-commonLabels:
-  app.kubernetes.io/name: cluster-provisioning-metrics
-  app.kubernetes.io/component: metrics-exporter
-  app.kubernetes.io/part-of: openshift-bootstrap
-  app.kubernetes.io/managed-by: argocd
+labels:
+- includeSelectors: true
+  includeTemplates: true
+  pairs:
+    app.kubernetes.io/name: cluster-provisioning-metrics
+    app.kubernetes.io/component: metrics-exporter
+    app.kubernetes.io/part-of: openshift-bootstrap
+    app.kubernetes.io/managed-by: argocd

@@ -8,7 +8,6 @@ resources:
 - ./global/openshift-pipelines-operator.application.yaml
 - ./global/acm-gitops-integration.application.yaml #imports new managed clusters into argo
 - ./global/cluster-provisioning-metrics.application.yaml # monitors cluster provisioning
--
 - ./global/vault.application.yaml
 - ./global/eso.application.yaml
 - ./global/gitea.application.yaml
