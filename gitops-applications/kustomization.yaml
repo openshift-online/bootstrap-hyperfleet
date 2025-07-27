@@ -9,8 +9,8 @@ resources:
 - ./global/acm-gitops-integration.application.yaml #imports new managed clusters into argo
 
 - ./global/vault.application.yaml
-- ./global/gitea.application.yaml
 - ./global/eso.application.yaml
+- ./global/gitea.application.yaml
 
 # ADD CLUSTERS HERE
 

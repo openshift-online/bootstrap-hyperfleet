@@ -1,0 +1,479 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "OpenShift Bootstrap - Cluster Provisioning Dashboard",
+    "tags": ["openshift", "bootstrap", "cluster-provisioning", "acm", "argocd"],
+    "style": "dark",
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": [
+        {
+          "name": "cluster",
+          "type": "query",
+          "label": "Cluster",
+          "query": "label_values(cluster_provisioning_duration_seconds, cluster_name)",
+          "regex": "",
+          "sort": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*",
+          "current": {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          }
+        },
+        {
+          "name": "cluster_type",
+          "type": "query",
+          "label": "Cluster Type",
+          "query": "label_values(cluster_provisioning_duration_seconds, cluster_type)",
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        },
+        {
+          "name": "region",
+          "type": "query",
+          "label": "Region",
+          "query": "label_values(cluster_provisioning_duration_seconds, region)",
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "📊 Provisioning Overview",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+        "collapsed": false
+      },
+      {
+        "id": 2,
+        "title": "Active Provisioning Clusters",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 6, "x": 0, "y": 1 },
+        "targets": [
+          {
+            "expr": "cluster_provisioning_active_total",
+            "legendFormat": "Active Provisioning"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3 },
+                { "color": "red", "value": 10 }
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "horizontal"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Success Rate (24h)",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 6, "x": 6, "y": 1 },
+        "targets": [
+          {
+            "expr": "cluster_provisioning_success_rate_24h",
+            "legendFormat": "Success Rate %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 80 },
+                { "color": "green", "value": 95 }
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Mean Provisioning Time (1h)",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 6, "x": 12, "y": 1 },
+        "targets": [
+          {
+            "expr": "cluster_provisioning_mean_duration_1h / 60",
+            "legendFormat": "Mean Duration (min)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 60 },
+                { "color": "red", "value": 90 }
+              ]
+            },
+            "unit": "m"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Total Clusters by Status",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 6, "x": 18, "y": 1 },
+        "targets": [
+          {
+            "expr": "count by (status) (managed_cluster_status)",
+            "legendFormat": "{{ status }}"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right" },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 10,
+        "title": "🚀 End-to-End Provisioning Flow",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+        "collapsed": false
+      },
+      {
+        "id": 11,
+        "title": "Cluster Provisioning Timeline",
+        "type": "graph",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+        "targets": [
+          {
+            "expr": "cluster_provisioning_duration_seconds{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ cluster_name }} ({{ result }})"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (minutes)",
+            "unit": "m"
+          }
+        ],
+        "xAxis": { "mode": "time" },
+        "legend": { "alignAsTable": true, "rightSide": true }
+      },
+      {
+        "id": 20,
+        "title": "🌊 ArgoCD Sync Wave Progression",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+        "collapsed": false
+      },
+      {
+        "id": 21,
+        "title": "Sync Wave Status Matrix",
+        "type": "heatmap",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+        "targets": [
+          {
+            "expr": "cluster_sync_wave_status{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ cluster_name }}"
+          }
+        ],
+        "heatmap": {
+          "yAxis": { "unit": "short", "decimals": 0 },
+          "colorMode": "spectrum",
+          "colorScale": "exponential",
+          "colorScheme": "interpolateSpectral"
+        }
+      },
+      {
+        "id": 22,
+        "title": "Sync Wave Applications Status",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+        "targets": [
+          {
+            "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"total\"}",
+            "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Total"
+          },
+          {
+            "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"synced\"}",
+            "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Synced"
+          },
+          {
+            "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"healthy\"}",
+            "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Healthy"
+          }
+        ],
+        "yAxes": [{ "label": "Applications", "unit": "short" }],
+        "stack": false
+      },
+      {
+        "id": 30,
+        "title": "🏗️ Infrastructure Provisioning",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+        "collapsed": false
+      },
+      {
+        "id": 31,
+        "title": "Infrastructure Status by Type",
+        "type": "stat",
+        "gridPos": { "h": 6, "w": 8, "x": 0, "y": 30 },
+        "targets": [
+          {
+            "expr": "count by (infrastructure_type, status) (cluster_infrastructure_status{cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{ infrastructure_type }} - {{ status }}"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center"
+        }
+      },
+      {
+        "id": 32,
+        "title": "Worker Nodes Status",
+        "type": "graph",
+        "gridPos": { "h": 6, "w": 8, "x": 8, "y": 30 },
+        "targets": [
+          {
+            "expr": "cluster_worker_nodes_status{cluster_name=~\"$cluster\", status_type=\"expected\"}",
+            "legendFormat": "{{ cluster_name }} - Expected"
+          },
+          {
+            "expr": "cluster_worker_nodes_status{cluster_name=~\"$cluster\", status_type=\"actual\"}",
+            "legendFormat": "{{ cluster_name }} - Actual"
+          },
+          {
+            "expr": "cluster_worker_nodes_status{cluster_name=~\"$cluster\", status_type=\"ready\"}",
+            "legendFormat": "{{ cluster_name }} - Ready"
+          }
+        ],
+        "yAxes": [{ "label": "Nodes", "unit": "short" }]
+      },
+      {
+        "id": 33,
+        "title": "Cluster API Response Time",
+        "type": "graph",
+        "gridPos": { "h": 6, "w": 8, "x": 16, "y": 30 },
+        "targets": [
+          {
+            "expr": "cluster_api_response_time_seconds{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ cluster_name }}"
+          }
+        ],
+        "yAxes": [{ "label": "Response Time", "unit": "s" }]
+      },
+      {
+        "id": 40,
+        "title": "🎯 Platform Health & Readiness",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+        "collapsed": false
+      },
+      {
+        "id": 41,
+        "title": "Cluster Operators Status",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
+        "targets": [
+          {
+            "expr": "cluster_operators_status_total{cluster_name=~\"$cluster\", status=\"available\"}",
+            "legendFormat": "{{ cluster_name }} - Available"
+          },
+          {
+            "expr": "cluster_operators_status_total{cluster_name=~\"$cluster\", status=\"progressing\"}",
+            "legendFormat": "{{ cluster_name }} - Progressing"
+          },
+          {
+            "expr": "cluster_operators_status_total{cluster_name=~\"$cluster\", status=\"degraded\"}",
+            "legendFormat": "{{ cluster_name }} - Degraded"
+          }
+        ],
+        "yAxes": [{ "label": "Operators", "unit": "short" }],
+        "stack": true
+      },
+      {
+        "id": 42,
+        "title": "Cluster Readiness Score",
+        "type": "gauge",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+        "targets": [
+          {
+            "expr": "cluster_readiness_score{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ cluster_name }}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "yellow", "value": 70 },
+                { "color": "green", "value": 90 }
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        }
+      },
+      {
+        "id": 50,
+        "title": "🔗 ACM Management & Dependencies",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+        "collapsed": false
+      },
+      {
+        "id": 51,
+        "title": "ManagedCluster Conditions",
+        "type": "graph",
+        "gridPos": { "h": 6, "w": 12, "x": 0, "y": 46 },
+        "targets": [
+          {
+            "expr": "managed_cluster_conditions{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ cluster_name }} - {{ condition_type }}"
+          }
+        ],
+        "yAxes": [{ "label": "Status (1=True, 0=False)", "unit": "short", "min": 0, "max": 1 }]
+      },
+      {
+        "id": 52,
+        "title": "External Dependencies Health",
+        "type": "stat",
+        "gridPos": { "h": 6, "w": 12, "x": 12, "y": 46 },
+        "targets": [
+          {
+            "expr": "cluster_dependency_health{cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{ dependency_type }}: {{ dependency_name }}"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none"
+        }
+      },
+      {
+        "id": 60,
+        "title": "📈 Performance Analytics",
+        "type": "row",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 52 },
+        "collapsed": false
+      },
+      {
+        "id": 61,
+        "title": "Provisioning Duration Distribution",
+        "type": "histogram",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 53 },
+        "targets": [
+          {
+            "expr": "rate(cluster_provisioning_duration_seconds_bucket{cluster_type=~\"$cluster_type\", region=~\"$region\"}[1h])",
+            "legendFormat": "{{ le }}s"
+          }
+        ]
+      },
+      {
+        "id": 62,
+        "title": "Failure Categories (24h)",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 53 },
+        "targets": [
+          {
+            "expr": "increase(cluster_provisioning_failures_total{cluster_name=~\"$cluster\"}[24h])",
+            "legendFormat": "{{ failure_category }}"
+          }
+        ],
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right" },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 70,
+        "title": "🔍 Detailed Status Table",
+        "type": "table",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 61 },
+        "targets": [
+          {
+            "expr": "cluster_readiness_score{cluster_name=~\"$cluster\"}",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "managed_cluster_status{cluster_name=~\"$cluster\"}",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "cluster_infrastructure_status{cluster_name=~\"$cluster\"}",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge"
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true,
+                "__name__": true
+              },
+              "renameByName": {
+                "cluster_name": "Cluster",
+                "Value #A": "Readiness Score",
+                "Value #B": "ACM Status",
+                "Value #C": "Infrastructure Status"
+              }
+            }
+          }
+        ],
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "desc": false, "displayName": "Cluster" }]
+        }
+      }
+    ],
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1
+  }
+}

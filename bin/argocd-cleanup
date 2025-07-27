@@ -1,0 +1,294 @@
+#!/bin/bash
+set -euo pipefail
+
+# bin/argocd-cleanup - Complete ArgoCD Resource Cleanup Tool
+# Hierarchical cleanup of ArgoCD applications and applicationsets with dependency handling
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+
+# Default values
+DEBUG=${DEBUG:-false}
+DRY_RUN=false
+CLUSTER_NAME=""
+
+# Usage information
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS] <cluster-name>
+
+Complete ArgoCD resource cleanup for stuck clusters with hierarchical dependency handling.
+This tool removes ArgoCD resources in the correct order: applications first, then applicationsets.
+
+ARGUMENTS:
+    cluster-name         Name of the cluster to clean up (e.g., ocp-01-mturansk-t10)
+
+OPTIONS:
+    --dry-run           Show what would be removed without actually removing
+    --debug             Enable debug output
+    --help              Show this help message
+
+EXAMPLES:
+    $0 ocp-01-mturansk-t10              # Clean up all ArgoCD resources for cluster
+    $0 --dry-run ocp-01-mturansk-t2     # Preview cleanup actions
+    $0 --debug ocp-01-mturansk-t3       # Cleanup with debug output
+
+CLEANUP ORDER:
+    1. Stop ApplicationSet reconciliation
+    2. Remove dependent Applications (with finalizer removal)
+    3. Remove ApplicationSets (with finalizer removal)  
+    4. Verify complete cleanup
+
+EOF
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --debug)
+            DEBUG=true
+            set -x
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+        *)
+            if [[ -z "$CLUSTER_NAME" ]]; then
+                CLUSTER_NAME="$1"
+            else
+                echo "Error: Multiple cluster names provided"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate cluster name provided
+if [[ -z "$CLUSTER_NAME" ]]; then
+    echo "Error: Cluster name is required"
+    usage
+    exit 1
+fi
+
+# Debug logging function
+debug_log() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "[DEBUG $(date '+%H:%M:%S')] $*" >&2
+    fi
+}
+
+# Execute command with dry-run support
+execute_command() {
+    local cmd="$1"
+    local description="$2"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "[DRY-RUN] $description"
+        echo "  Would execute: $cmd"
+    else
+        echo "$description"
+        eval "$cmd"
+    fi
+}
+
+# Check dependencies
+check_dependencies() {
+    debug_log "Checking dependencies..."
+    
+    local missing_deps=()
+    
+    command -v oc >/dev/null 2>&1 || missing_deps+=("oc")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "❌ Error: Missing required dependencies: ${missing_deps[*]}"
+        echo "   Install missing tools and try again"
+        exit 1
+    fi
+    
+    # Check OpenShift connection
+    if ! oc whoami >/dev/null 2>&1; then
+        echo "❌ Error: Not connected to OpenShift cluster"
+        echo "   Run: oc login"
+        exit 1
+    fi
+    
+    debug_log "All dependencies satisfied"
+}
+
+# Get ArgoCD resources for cluster
+get_argocd_resources() {
+    local cluster="$1"
+    
+    debug_log "Discovering ArgoCD resources for $cluster..."
+    
+    # Find applications
+    local applications=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+    
+    # Find applicationsets  
+    local applicationsets=$(oc get applicationsets.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+    
+    # Find stuck applications (with deletion timestamp)
+    local stuck_applications=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.deletionTimestamp) | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+    
+    # Find stuck applicationsets
+    local stuck_applicationsets=$(oc get applicationsets.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | select(.metadata.deletionTimestamp) | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+    
+    echo "$applications|$applicationsets|$stuck_applications|$stuck_applicationsets"
+}
+
+# Clean up ArgoCD applications
+cleanup_applications() {
+    local cluster="$1"
+    local applications="$2"
+    
+    if [[ -z "$applications" ]]; then
+        echo "  No applications found for $cluster"
+        return
+    fi
+    
+    echo "🗑️  Removing Applications for $cluster..."
+    
+    for app_path in $applications; do
+        if [[ -z "$app_path" ]]; then continue; fi
+        
+        local namespace=$(echo "$app_path" | cut -d'/' -f1)
+        local name=$(echo "$app_path" | cut -d'/' -f2)
+        
+        echo "  📄 Processing application: $name"
+        
+        # Remove finalizers first
+        execute_command \
+            "oc patch application $name -n $namespace --type=json -p='[{\"op\": \"remove\", \"path\": \"/metadata/finalizers\"}]' 2>/dev/null || true" \
+            "    Removing finalizers from $name"
+        
+        # Delete the application
+        execute_command \
+            "oc delete application $name -n $namespace --ignore-not-found=true --wait=false" \
+            "    Deleting application $name"
+    done
+}
+
+# Clean up ArgoCD applicationsets
+cleanup_applicationsets() {
+    local cluster="$1"
+    local applicationsets="$2"
+    
+    if [[ -z "$applicationsets" ]]; then
+        echo "  No applicationsets found for $cluster"
+        return
+    fi
+    
+    echo "🗑️  Removing ApplicationSets for $cluster..."
+    
+    for appset_path in $applicationsets; do
+        if [[ -z "$appset_path" ]]; then continue; fi
+        
+        local namespace=$(echo "$appset_path" | cut -d'/' -f1)
+        local name=$(echo "$appset_path" | cut -d'/' -f2)
+        
+        echo "  📋 Processing applicationset: $name"
+        
+        # Stop reconciliation first
+        execute_command \
+            "oc patch applicationset $name -n $namespace --type=merge -p '{\"spec\":{\"syncPolicy\":{\"preserveResourcesOnDeletion\":true}}}' 2>/dev/null || true" \
+            "    Stopping reconciliation for $name"
+        
+        # Remove finalizers
+        execute_command \
+            "oc patch applicationset $name -n $namespace --type=json -p='[{\"op\": \"remove\", \"path\": \"/metadata/finalizers\"}]' 2>/dev/null || true" \
+            "    Removing finalizers from $name"
+        
+        # Delete the applicationset
+        execute_command \
+            "oc delete applicationset $name -n $namespace --ignore-not-found=true --wait=false" \
+            "    Deleting applicationset $name"
+    done
+}
+
+# Verify cleanup completion
+verify_cleanup() {
+    local cluster="$1"
+    
+    echo "✅ Verifying cleanup for $cluster..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "[DRY-RUN] Skipping verification in dry-run mode"
+        return
+    fi
+    
+    sleep 5  # Allow time for deletions to propagate
+    
+    local remaining_apps=$(oc get applications.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | .metadata.name' | wc -l || echo "0")
+    local remaining_appsets=$(oc get applicationsets.argoproj.io -A -o json 2>/dev/null | jq -r --arg cluster "$cluster" '.items[] | select(.metadata.name | contains($cluster)) | .metadata.name' | wc -l || echo "0")
+    
+    local total_remaining=$((remaining_apps + remaining_appsets))
+    
+    if [[ $total_remaining -eq 0 ]]; then
+        echo "✅ All ArgoCD resources cleaned up successfully for $cluster"
+    else
+        echo "⚠️  $total_remaining ArgoCD resources still remain for $cluster:"
+        if [[ $remaining_apps -gt 0 ]]; then
+            echo "   Applications remaining:"
+            oc get applications.argoproj.io -A | grep "$cluster" | sed 's/^/     /'
+        fi
+        if [[ $remaining_appsets -gt 0 ]]; then
+            echo "   ApplicationSets remaining:"
+            oc get applicationsets.argoproj.io -A | grep "$cluster" | sed 's/^/     /'
+        fi
+        echo "   These may need manual intervention"
+    fi
+}
+
+# Main execution function
+main() {
+    check_dependencies
+    
+    echo "🔍 ArgoCD Cleanup Tool for cluster: $CLUSTER_NAME"
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "🔍 DRY-RUN MODE: No actual changes will be made"
+    fi
+    echo ""
+    
+    # Discover ArgoCD resources
+    local resource_info
+    resource_info=$(get_argocd_resources "$CLUSTER_NAME")
+    
+    IFS='|' read -r applications applicationsets stuck_applications stuck_applicationsets <<< "$resource_info"
+    
+    # Show current state
+    echo "🔍 Current ArgoCD resources for $CLUSTER_NAME:"
+    echo "   Applications: $(echo "$applications" | wc -w)"
+    echo "   ApplicationSets: $(echo "$applicationsets" | wc -w)"
+    echo "   Stuck Applications: $(echo "$stuck_applications" | wc -w)"
+    echo "   Stuck ApplicationSets: $(echo "$stuck_applicationsets" | wc -w)"
+    echo ""
+    
+    # Exit if nothing to clean
+    if [[ -z "$applications" && -z "$applicationsets" ]]; then
+        echo "✅ No ArgoCD resources found for $CLUSTER_NAME - nothing to clean up"
+        exit 0
+    fi
+    
+    # Cleanup sequence: Applications first, then ApplicationSets
+    cleanup_applications "$CLUSTER_NAME" "$applications"
+    cleanup_applicationsets "$CLUSTER_NAME" "$applicationsets"
+    
+    # Verify cleanup
+    verify_cleanup "$CLUSTER_NAME"
+}
+
+# Run main function
+main "$@"

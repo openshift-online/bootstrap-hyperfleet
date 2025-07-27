@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-provisioning-metrics-exporter
+  namespace: openshift-gitops
+  labels:
+    app: cluster-provisioning-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-provisioning-metrics
+  template:
+    metadata:
+      labels:
+        app: cluster-provisioning-metrics
+    spec:
+      serviceAccountName: cluster-provisioning-metrics
+      containers:
+      - name: metrics-exporter
+        image: registry.redhat.io/ubi9/python-39:latest
+        ports:
+        - containerPort: 8080
+          name: metrics
+        env:
+        - name: METRICS_PORT
+          value: "8080"
+        - name: SCRAPE_INTERVAL
+          value: "30"
+        volumeMounts:
+        - name: metrics-script
+          mountPath: /app
+        command:
+        - python3
+        - /app/metrics_exporter.py
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: metrics-script
+        configMap:
+          name: cluster-provisioning-metrics-script
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-provisioning-metrics
+  namespace: openshift-gitops
+  labels:
+    app: cluster-provisioning-metrics
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: metrics
+  selector:
+    app: cluster-provisioning-metrics
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-provisioning-metrics
+  namespace: openshift-gitops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-provisioning-metrics
+rules:
+- apiGroups: [""]
+  resources: ["namespaces", "pods", "services"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "applicationsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["cluster.open-cluster-management.io"]
+  resources: ["managedclusters"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["cluster.x-k8s.io"]
+  resources: ["clusters", "awsmanagedcontrolplanes", "awsmanagedmachinepools"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["hive.openshift.io"]
+  resources: ["clusterdeployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["clusteroperators"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-provisioning-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-provisioning-metrics
+subjects:
+- kind: ServiceAccount
+  name: cluster-provisioning-metrics
+  namespace: openshift-gitops

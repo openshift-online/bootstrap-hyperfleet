@@ -1,0 +1,476 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-provisioning-metrics-script
+  namespace: openshift-gitops
+data:
+  metrics_exporter.py: |
+    #!/usr/bin/env python3
+    """
+    OpenShift Bootstrap Cluster Provisioning Metrics Exporter
+    
+    Collects comprehensive metrics across the entire cluster provisioning lifecycle:
+    - Regional specification validation
+    - ArgoCD sync wave progression  
+    - Infrastructure provisioning (CAPI/Hive)
+    - Platform health and readiness
+    - End-to-end provisioning tracking
+    """
+    
+    import os
+    import time
+    import json
+    import logging
+    import threading
+    from datetime import datetime, timezone
+    from collections import defaultdict
+    from typing import Dict, List, Optional, Tuple
+    
+    from prometheus_client import start_http_server, Gauge, Counter, Histogram, Info, Enum
+    from kubernetes import client, config
+    from kubernetes.client.rest import ApiException
+    
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    class ClusterProvisioningMetrics:
+        """Comprehensive cluster provisioning metrics collector"""
+        
+        def __init__(self):
+            # Load Kubernetes configuration
+            try:
+                config.load_incluster_config()
+            except:
+                config.load_kube_config()
+            
+            # Initialize Kubernetes clients
+            self.v1 = client.CoreV1Api()
+            self.apps_v1 = client.AppsV1Api()
+            self.custom_api = client.CustomObjectsApi()
+            
+            # Metrics collection interval
+            self.scrape_interval = int(os.getenv('SCRAPE_INTERVAL', '30'))
+            
+            # Initialize Prometheus metrics
+            self._init_metrics()
+            
+            # Cluster state tracking
+            self.cluster_state = defaultdict(dict)
+            self.provisioning_start_times = {}
+            
+        def _init_metrics(self):
+            """Initialize all Prometheus metrics"""
+            
+            # === End-to-End Provisioning Metrics ===
+            self.provisioning_duration = Histogram(
+                'cluster_provisioning_duration_seconds',
+                'Total time for complete cluster provisioning',
+                ['cluster_name', 'cluster_type', 'region', 'result']
+            )
+            
+            self.provisioning_phase_duration = Histogram(
+                'cluster_provisioning_phase_duration_seconds',
+                'Duration of each provisioning phase',
+                ['cluster_name', 'phase', 'result']
+            )
+            
+            self.active_provisioning_clusters = Gauge(
+                'cluster_provisioning_active_total',
+                'Number of clusters currently being provisioned'
+            )
+            
+            # === Sync Wave Progression Metrics ===
+            self.sync_wave_status = Gauge(
+                'cluster_sync_wave_status',
+                'Current sync wave status (0=not_started, 1=in_progress, 2=completed, 3=failed)',
+                ['cluster_name', 'wave_number']
+            )
+            
+            self.sync_wave_duration = Histogram(
+                'cluster_sync_wave_duration_seconds',
+                'Time spent in each sync wave',
+                ['cluster_name', 'wave_number', 'result']
+            )
+            
+            self.sync_wave_applications = Gauge(
+                'cluster_sync_wave_applications_total',
+                'Number of applications in each sync wave',
+                ['cluster_name', 'wave_number', 'status']
+            )
+            
+            # === Infrastructure Provisioning Metrics ===
+            self.infrastructure_status = Enum(
+                'cluster_infrastructure_status',
+                'Infrastructure provisioning status',
+                ['cluster_name', 'infrastructure_type'],
+                states=['unknown', 'provisioning', 'ready', 'failed', 'deleting']
+            )
+            
+            self.worker_nodes_status = Gauge(
+                'cluster_worker_nodes_status',
+                'Worker node status (expected vs actual vs ready)',
+                ['cluster_name', 'status_type']  # expected, actual, ready
+            )
+            
+            self.cluster_api_responsiveness = Gauge(
+                'cluster_api_response_time_seconds',
+                'Cluster API response time',
+                ['cluster_name']
+            )
+            
+            # === Platform Health Metrics ===
+            self.cluster_operators_status = Gauge(
+                'cluster_operators_status_total',
+                'Number of cluster operators by status',
+                ['cluster_name', 'status']  # available, progressing, degraded
+            )
+            
+            self.cluster_readiness_score = Gauge(
+                'cluster_readiness_score',
+                'Overall cluster readiness score (0-100)',
+                ['cluster_name']
+            )
+            
+            # === ACM Management Metrics ===
+            self.managed_cluster_status = Enum(
+                'managed_cluster_status',
+                'ACM ManagedCluster status',
+                ['cluster_name'],
+                states=['unknown', 'available', 'unreachable', 'offline']
+            )
+            
+            self.managed_cluster_conditions = Gauge(
+                'managed_cluster_conditions',
+                'ManagedCluster condition status (1=True, 0=False)',
+                ['cluster_name', 'condition_type']
+            )
+            
+            # === Success Rate & Failure Analysis ===
+            self.provisioning_success_rate = Gauge(
+                'cluster_provisioning_success_rate',
+                'Success rate by cluster type and region',
+                ['cluster_type', 'region', 'time_window']  # 1h, 24h, 7d
+            )
+            
+            self.failure_categories = Counter(
+                'cluster_provisioning_failures_total',
+                'Categorized provisioning failures',
+                ['cluster_name', 'failure_category', 'failure_reason']
+            )
+            
+            # === Resource Efficiency Metrics ===
+            self.resource_utilization = Gauge(
+                'cluster_resource_utilization_percent',
+                'Resource utilization during provisioning',
+                ['cluster_name', 'resource_type']  # cpu, memory, storage
+            )
+            
+            # === External Dependencies ===
+            self.external_secrets_status = Gauge(
+                'cluster_external_secrets_status',
+                'External secrets synchronization status',
+                ['cluster_name', 'secret_store', 'status']
+            )
+            
+            self.dependency_health = Gauge(
+                'cluster_dependency_health',
+                'Health status of external dependencies',
+                ['cluster_name', 'dependency_type', 'dependency_name']
+            )
+            
+        def collect_argocd_metrics(self):
+            """Collect ArgoCD application and sync wave metrics"""
+            try:
+                # Get all ArgoCD applications
+                apps = self.custom_api.list_namespaced_custom_object(
+                    group="argoproj.io",
+                    version="v1alpha1",
+                    namespace="openshift-gitops",
+                    plural="applications"
+                )
+                
+                cluster_apps = defaultdict(list)
+                
+                for app in apps.get('items', []):
+                    app_name = app['metadata']['name']
+                    
+                    # Extract cluster name from application name
+                    if '-cluster' in app_name:
+                        cluster_name = app_name.replace('-cluster', '')
+                        cluster_apps[cluster_name].append(app)
+                    
+                # Process each cluster's applications
+                for cluster_name, apps in cluster_apps.items():
+                    self._process_cluster_sync_waves(cluster_name, apps)
+                    
+            except ApiException as e:
+                logger.error(f"Error collecting ArgoCD metrics: {e}")
+        
+        def _process_cluster_sync_waves(self, cluster_name: str, apps: List[Dict]):
+            """Process sync wave progression for a cluster"""
+            
+            wave_status = defaultdict(lambda: {'total': 0, 'synced': 0, 'healthy': 0})
+            
+            for app in apps:
+                # Get sync wave from annotations
+                annotations = app['metadata'].get('annotations', {})
+                wave_num = annotations.get('argocd.argoproj.io/sync-wave', '0')
+                
+                try:
+                    wave_num = int(wave_num)
+                except ValueError:
+                    wave_num = 0
+                
+                # Get application status
+                status = app.get('status', {})
+                sync_status = status.get('sync', {}).get('status', 'Unknown')
+                health_status = status.get('health', {}).get('status', 'Unknown')
+                
+                wave_status[wave_num]['total'] += 1
+                if sync_status == 'Synced':
+                    wave_status[wave_num]['synced'] += 1
+                if health_status == 'Healthy':
+                    wave_status[wave_num]['healthy'] += 1
+            
+            # Update metrics for each wave
+            for wave_num, status in wave_status.items():
+                # Determine wave status (0=not_started, 1=in_progress, 2=completed, 3=failed)
+                if status['total'] == 0:
+                    wave_status_code = 0  # not_started
+                elif status['synced'] == status['total'] and status['healthy'] == status['total']:
+                    wave_status_code = 2  # completed
+                elif status['synced'] > 0 or status['healthy'] > 0:
+                    wave_status_code = 1  # in_progress
+                else:
+                    wave_status_code = 3  # failed
+                
+                self.sync_wave_status.labels(
+                    cluster_name=cluster_name,
+                    wave_number=str(wave_num)
+                ).set(wave_status_code)
+                
+                # Update application counts by status
+                self.sync_wave_applications.labels(
+                    cluster_name=cluster_name,
+                    wave_number=str(wave_num),
+                    status='total'
+                ).set(status['total'])
+                
+                self.sync_wave_applications.labels(
+                    cluster_name=cluster_name,
+                    wave_number=str(wave_num),
+                    status='synced'
+                ).set(status['synced'])
+                
+                self.sync_wave_applications.labels(
+                    cluster_name=cluster_name,
+                    wave_number=str(wave_num),
+                    status='healthy'
+                ).set(status['healthy'])
+        
+        def collect_infrastructure_metrics(self):
+            """Collect CAPI and Hive infrastructure metrics"""
+            try:
+                # Collect CAPI clusters (EKS)
+                self._collect_capi_metrics()
+                
+                # Collect Hive clusters (OCP)
+                self._collect_hive_metrics()
+                
+            except Exception as e:
+                logger.error(f"Error collecting infrastructure metrics: {e}")
+        
+        def _collect_capi_metrics(self):
+            """Collect CAPI cluster metrics"""
+            try:
+                clusters = self.custom_api.list_cluster_custom_object(
+                    group="cluster.x-k8s.io",
+                    version="v1beta1",
+                    plural="clusters"
+                )
+                
+                for cluster in clusters.get('items', []):
+                    cluster_name = cluster['metadata']['name']
+                    namespace = cluster['metadata']['namespace']
+                    
+                    # Skip if not a managed cluster
+                    if not self._is_managed_cluster(cluster_name):
+                        continue
+                    
+                    # Get cluster status
+                    status = cluster.get('status', {})
+                    conditions = status.get('conditions', [])
+                    
+                    # Determine infrastructure status
+                    ready_condition = next(
+                        (c for c in conditions if c['type'] == 'Ready'), 
+                        None
+                    )
+                    
+                    if ready_condition:
+                        if ready_condition['status'] == 'True':
+                            infra_status = 'ready'
+                        elif ready_condition['status'] == 'False':
+                            infra_status = 'failed'
+                        else:
+                            infra_status = 'provisioning'
+                    else:
+                        infra_status = 'unknown'
+                    
+                    self.infrastructure_status.labels(
+                        cluster_name=cluster_name,
+                        infrastructure_type='capi'
+                    ).state(infra_status)
+                    
+            except ApiException as e:
+                if e.status != 404:  # Ignore if CAPI CRDs not installed
+                    logger.error(f"Error collecting CAPI metrics: {e}")
+        
+        def _collect_hive_metrics(self):
+            """Collect Hive ClusterDeployment metrics"""
+            try:
+                deployments = self.custom_api.list_cluster_custom_object(
+                    group="hive.openshift.io",
+                    version="v1",
+                    plural="clusterdeployments"
+                )
+                
+                for deployment in deployments.get('items', []):
+                    cluster_name = deployment['metadata']['name']
+                    
+                    # Skip if not a managed cluster
+                    if not self._is_managed_cluster(cluster_name):
+                        continue
+                    
+                    # Get deployment status
+                    status = deployment.get('status', {})
+                    conditions = status.get('conditions', [])
+                    
+                    # Determine infrastructure status
+                    ready_condition = next(
+                        (c for c in conditions if c['type'] == 'ClusterReadyCondition'),
+                        None
+                    )
+                    
+                    if ready_condition:
+                        if ready_condition['status'] == 'True':
+                            infra_status = 'ready'
+                        elif ready_condition['status'] == 'False':
+                            infra_status = 'failed'
+                        else:
+                            infra_status = 'provisioning'
+                    else:
+                        infra_status = 'unknown'
+                    
+                    self.infrastructure_status.labels(
+                        cluster_name=cluster_name,
+                        infrastructure_type='hive'
+                    ).state(infra_status)
+                    
+            except ApiException as e:
+                if e.status != 404:  # Ignore if Hive CRDs not installed
+                    logger.error(f"Error collecting Hive metrics: {e}")
+        
+        def collect_acm_metrics(self):
+            """Collect ACM ManagedCluster metrics"""
+            try:
+                managed_clusters = self.custom_api.list_cluster_custom_object(
+                    group="cluster.open-cluster-management.io",
+                    version="v1",
+                    plural="managedclusters"
+                )
+                
+                for mc in managed_clusters.get('items', []):
+                    cluster_name = mc['metadata']['name']
+                    
+                    # Skip local-cluster
+                    if cluster_name == 'local-cluster':
+                        continue
+                    
+                    # Get ManagedCluster status
+                    status = mc.get('status', {})
+                    conditions = status.get('conditions', [])
+                    
+                    # Process conditions
+                    for condition in conditions:
+                        condition_type = condition['type']
+                        condition_status = 1 if condition['status'] == 'True' else 0
+                        
+                        self.managed_cluster_conditions.labels(
+                            cluster_name=cluster_name,
+                            condition_type=condition_type
+                        ).set(condition_status)
+                    
+                    # Determine overall status
+                    available_condition = next(
+                        (c for c in conditions if c['type'] == 'ManagedClusterConditionAvailable'),
+                        None
+                    )
+                    
+                    if available_condition:
+                        if available_condition['status'] == 'True':
+                            mc_status = 'available'
+                        elif available_condition['status'] == 'Unknown':
+                            mc_status = 'unreachable'
+                        else:
+                            mc_status = 'offline'
+                    else:
+                        mc_status = 'unknown'
+                    
+                    self.managed_cluster_status.labels(
+                        cluster_name=cluster_name
+                    ).state(mc_status)
+                    
+            except ApiException as e:
+                logger.error(f"Error collecting ACM metrics: {e}")
+        
+        def calculate_readiness_scores(self):
+            """Calculate overall cluster readiness scores"""
+            # This would analyze all collected metrics to generate a composite score
+            # Implementation would consider:
+            # - Infrastructure readiness
+            # - Sync wave completion
+            # - Platform health
+            # - External dependencies
+            pass
+        
+        def _is_managed_cluster(self, cluster_name: str) -> bool:
+            """Check if this is a cluster we manage"""
+            # This could check against known patterns or configuration
+            return cluster_name.startswith(('ocp-', 'eks-'))
+        
+        def collect_all_metrics(self):
+            """Collect all metrics in a single cycle"""
+            logger.info("Starting metrics collection cycle")
+            
+            try:
+                self.collect_argocd_metrics()
+                self.collect_infrastructure_metrics()
+                self.collect_acm_metrics()
+                self.calculate_readiness_scores()
+                
+                logger.info("Metrics collection cycle completed successfully")
+                
+            except Exception as e:
+                logger.error(f"Error in metrics collection cycle: {e}")
+        
+        def run(self):
+            """Main metrics collection loop"""
+            logger.info(f"Starting cluster provisioning metrics exporter on port {os.getenv('METRICS_PORT', '8080')}")
+            
+            # Start Prometheus metrics server
+            start_http_server(int(os.getenv('METRICS_PORT', '8080')))
+            
+            # Start metrics collection loop
+            while True:
+                self.collect_all_metrics()
+                time.sleep(self.scrape_interval)
+    
+    if __name__ == "__main__":
+        exporter = ClusterProvisioningMetrics()
+        exporter.run()
+  
+  requirements.txt: |
+    kubernetes==29.0.0
+    prometheus-client==0.19.0
