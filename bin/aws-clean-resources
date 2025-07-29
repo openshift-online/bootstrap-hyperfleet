@@ -215,15 +215,84 @@ process_resource_type() {
             continue
         fi
         
-        # Extract resource ID (first element of array)
+        # Extract resource ID - handle nested array structure
         local resource_id
-        resource_id=$(echo "$resource_data" | jq -r '.[0]' 2>/dev/null)
+        # Check if this is a nested array structure (common in aws-find-resources output)
+        if echo "$resource_data" | jq -e 'type == "array" and length > 0 and (.[0] | type) == "array"' >/dev/null 2>&1; then
+            # Nested array: extract first element of first sub-array
+            resource_id=$(echo "$resource_data" | jq -r '.[0][0]' 2>/dev/null)
+            debug_log "Detected nested array structure, extracted ID from .[0][0]: $resource_id"
+        else
+            # Flat array: extract first element
+            resource_id=$(echo "$resource_data" | jq -r '.[0]' 2>/dev/null)
+            debug_log "Detected flat array structure, extracted ID from .[0]: $resource_id"
+        fi
         
         if [[ -z "$resource_id" || "$resource_id" == "null" ]]; then
             debug_log "Skipping resource with null/empty ID at index $index"
             index=$((index + 1))
             continue
         fi
+        
+        # Validate resource ID format for common AWS resources
+        case "$resource_type" in
+            "EC2_INSTANCES")
+                if [[ ! "$resource_id" =~ ^i-[0-9a-f]{8,17}$ ]]; then
+                    echo "⚠️  WARNING: Invalid EC2 instance ID format: '$resource_id'"
+                    echo "  Expected format: i-xxxxxxxxx, got: $resource_id"
+                    echo "  This might be an instance type instead of instance ID"
+                    echo "  Raw data: $resource_data"
+                    echo "  Skipping this resource..."
+                    echo ""
+                    index=$((index + 1))
+                    continue
+                fi
+                ;;
+            "EBS_VOLUMES")
+                if [[ ! "$resource_id" =~ ^vol-[0-9a-f]{8,17}$ ]]; then
+                    echo "⚠️  WARNING: Invalid EBS volume ID format: '$resource_id'"
+                    echo "  Expected format: vol-xxxxxxxxx, got: $resource_id"
+                    echo "  Raw data: $resource_data"
+                    echo "  Skipping this resource..."
+                    echo ""
+                    index=$((index + 1))
+                    continue
+                fi
+                ;;
+            "VPCS")
+                if [[ ! "$resource_id" =~ ^vpc-[0-9a-f]{8,17}$ ]]; then
+                    echo "⚠️  WARNING: Invalid VPC ID format: '$resource_id'"
+                    echo "  Expected format: vpc-xxxxxxxxx, got: $resource_id"
+                    echo "  Raw data: $resource_data"
+                    echo "  Skipping this resource..."
+                    echo ""
+                    index=$((index + 1))
+                    continue
+                fi
+                ;;
+            "SUBNETS")
+                if [[ ! "$resource_id" =~ ^subnet-[0-9a-f]{8,17}$ ]]; then
+                    echo "⚠️  WARNING: Invalid subnet ID format: '$resource_id'"
+                    echo "  Expected format: subnet-xxxxxxxxx, got: $resource_id"
+                    echo "  Raw data: $resource_data"
+                    echo "  Skipping this resource..."
+                    echo ""
+                    index=$((index + 1))
+                    continue
+                fi
+                ;;
+            "SECURITY_GROUPS")
+                if [[ ! "$resource_id" =~ ^sg-[0-9a-f]{8,17}$ ]]; then
+                    echo "⚠️  WARNING: Invalid security group ID format: '$resource_id'"
+                    echo "  Expected format: sg-xxxxxxxxx, got: $resource_id"
+                    echo "  Raw data: $resource_data"
+                    echo "  Skipping this resource..."
+                    echo ""
+                    index=$((index + 1))
+                    continue
+                fi
+                ;;
+        esac
         
         debug_log "Processing resource $index: $resource_id"
         
@@ -282,10 +351,8 @@ process_resource_type() {
         else
             echo "  Skipped: $resource_id"
         fi
-        
-        echo "$index"
+
         index=$((index + 1))
-        echo "$index"
     done
     
     debug_log "Finished processing $resource_type: processed $index resources"
@@ -317,19 +384,34 @@ EOF
 get_deletion_order_phase2() {
     cat <<EOF
 ROUTE_TABLES
+INTERNET_GATEWAYS
 NETWORK_INTERFACES
 SECURITY_GROUPS
 NETWORK_ACLS
 EFS_MOUNT_TARGETS
 EFS_FILE_SYSTEMS
 SUBNETS
-INTERNET_GATEWAYS
 ELASTIC_IPS
 VPCS
 IAM_INSTANCE_PROFILES
 IAM_POLICIES
 IAM_ROLES
 EOF
+}
+
+# Helper function to extract data from raw_data (handles nested arrays)
+extract_raw_data_element() {
+    local raw_data="$1"
+    local index="$2"
+    
+    # Check if raw_data is a nested array structure
+    if echo "$raw_data" | jq -e 'type == "array" and length > 0 and (.[0] | type) == "array"' >/dev/null 2>&1; then
+        # Nested array: extract from first sub-array
+        echo "$raw_data" | jq -r ".[0][$index]" 2>/dev/null
+    else
+        # Flat array: extract directly
+        echo "$raw_data" | jq -r ".[$index]" 2>/dev/null
+    fi
 }
 
 # Function to delete a single AWS resource
@@ -388,39 +470,218 @@ delete_aws_resource() {
             echo "  ✓ Launch Template deleted"
             ;;
         "VPCS")
-            # Retry VPC deletion as it often has lingering dependencies
+            # Comprehensive VPC cleanup - handle all remaining dependencies
+            echo "  🧹 Performing comprehensive VPC dependency cleanup..."
+            
+            # 1. Check for and delete VPC peering connections
+            echo "  ⏳ Checking for VPC peering connections..."
+            local peering_connections
+            peering_connections=$(aws ec2 describe-vpc-peering-connections --region "$region" \
+                --filters "Name=requester-vpc-info.vpc-id,Values=$resource_id" "Name=accepter-vpc-info.vpc-id,Values=$resource_id" \
+                --query 'VpcPeeringConnections[?Status.Code!=`deleted`].VpcPeeringConnectionId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$peering_connections" && "$peering_connections" != "None" ]]; then
+                for pcx_id in $peering_connections; do
+                    echo "    Deleting VPC peering connection: $pcx_id"
+                    aws ec2 delete-vpc-peering-connection --region "$region" --vpc-peering-connection-id "$pcx_id" 2>/dev/null || true
+                done
+                sleep 10
+            fi
+            
+            # 2. Check for remaining VPC endpoints
+            echo "  ⏳ Checking for remaining VPC endpoints..."
+            local vpc_endpoints
+            vpc_endpoints=$(aws ec2 describe-vpc-endpoints --region "$region" \
+                --filters "Name=vpc-id,Values=$resource_id" \
+                --query 'VpcEndpoints[?State!=`deleted`].VpcEndpointId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$vpc_endpoints" && "$vpc_endpoints" != "None" ]]; then
+                for vpce_id in $vpc_endpoints; do
+                    echo "    Deleting remaining VPC endpoint: $vpce_id"
+                    aws ec2 delete-vpc-endpoints --region "$region" --vpc-endpoint-ids "$vpce_id" 2>/dev/null || true
+                done
+                sleep 15
+            fi
+            
+            # 3. Check for remaining network ACLs (except default)
+            echo "  ⏳ Checking for custom network ACLs..."
+            local custom_nacls
+            custom_nacls=$(aws ec2 describe-network-acls --region "$region" \
+                --filters "Name=vpc-id,Values=$resource_id" "Name=default,Values=false" \
+                --query 'NetworkAcls[].NetworkAclId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$custom_nacls" && "$custom_nacls" != "None" ]]; then
+                for nacl_id in $custom_nacls; do
+                    echo "    Deleting custom network ACL: $nacl_id"
+                    aws ec2 delete-network-acl --region "$region" --network-acl-id "$nacl_id" 2>/dev/null || true
+                done
+                sleep 5
+            fi
+            
+            # 4. Check for DHCP options sets (except default)
+            echo "  ⏳ Checking for custom DHCP options sets..."
+            local dhcp_options_id
+            dhcp_options_id=$(aws ec2 describe-vpcs --region "$region" --vpc-ids "$resource_id" \
+                --query 'Vpcs[0].DhcpOptionsId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$dhcp_options_id" && "$dhcp_options_id" != "None" && "$dhcp_options_id" != "default" ]]; then
+                echo "    Dissociating custom DHCP options set: $dhcp_options_id"
+                aws ec2 associate-dhcp-options --region "$region" --dhcp-options-id default --vpc-id "$resource_id" 2>/dev/null || true
+                sleep 5
+                echo "    Deleting custom DHCP options set: $dhcp_options_id"
+                aws ec2 delete-dhcp-options --region "$region" --dhcp-options-id "$dhcp_options_id" 2>/dev/null || true
+            fi
+            
+            # 5. Final check for any remaining network interfaces
+            echo "  ⏳ Final check for remaining network interfaces..."
+            local remaining_enis
+            remaining_enis=$(aws ec2 describe-network-interfaces --region "$region" \
+                --filters "Name=vpc-id,Values=$resource_id" \
+                --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$remaining_enis" && "$remaining_enis" != "None" ]]; then
+                echo "    Found remaining network interfaces, attempting cleanup: $remaining_enis"
+                for eni in $remaining_enis; do
+                    # Try to detach if attached
+                    attachment_id=$(aws ec2 describe-network-interfaces --region "$region" --network-interface-ids "$eni" \
+                        --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null || echo "")
+                    if [[ -n "$attachment_id" && "$attachment_id" != "None" && "$attachment_id" != "null" ]]; then
+                        echo "      Detaching network interface: $eni"
+                        aws ec2 detach-network-interface --region "$region" --attachment-id "$attachment_id" --force 2>/dev/null || true
+                        sleep 5
+                    fi
+                    echo "      Deleting network interface: $eni"
+                    aws ec2 delete-network-interface --region "$region" --network-interface-id "$eni" 2>/dev/null || true
+                done
+                sleep 10
+            fi
+            
+            # 6. Retry VPC deletion with extended backoff
+            echo "  🎯 Attempting VPC deletion with comprehensive retry logic..."
             local retry_count=0
-            while [[ $retry_count -lt 5 ]]; do
+            while [[ $retry_count -lt 8 ]]; do
                 if aws ec2 delete-vpc --region "$region" --vpc-id "$resource_id" 2>/dev/null; then
-                    echo "  ✓ VPC deleted"
+                    echo "  ✅ VPC deleted successfully"
                     break
                 else
                     retry_count=$((retry_count + 1))
-                    echo "  ⏳ VPC deletion failed (attempt $retry_count/5), waiting 30s for all dependencies to clear..."
-                    sleep 30
+                    local wait_time=$((retry_count * 15))  # Progressive backoff: 15s, 30s, 45s, etc.
+                    echo "  ⏳ VPC deletion failed (attempt $retry_count/8), waiting ${wait_time}s for all dependencies to clear..."
+                    
+                    if [[ $retry_count -eq 4 ]]; then
+                        echo "    🔍 Performing mid-retry dependency scan..."
+                        # Quick check for what's still blocking
+                        aws ec2 describe-vpcs --region "$region" --vpc-ids "$resource_id" \
+                            --query 'Vpcs[0]' --output table 2>/dev/null || true
+                    fi
+                    
+                    sleep "$wait_time"
                 fi
                 
-                if [[ $retry_count -eq 5 ]]; then
-                    echo "  ❌ VPC deletion failed after 5 attempts - may have remaining dependencies"
+                if [[ $retry_count -eq 8 ]]; then
+                    echo "  ❌ VPC deletion failed after 8 attempts - dependencies may remain"
+                    echo "    💡 Suggestion: Check AWS console for remaining resources in this VPC"
+                    echo "    🔍 Resources that commonly block VPC deletion:"
+                    echo "      - Network interfaces (ENIs) attached to instances or load balancers"
+                    echo "      - VPC peering connections"
+                    echo "      - VPN connections"
+                    echo "      - Customer gateways"
+                    echo "      - VPC endpoints"
+                    echo "      - Transit gateway attachments"
                     return 1
                 fi
             done
             ;;
         "SUBNETS")
+            # Check for network interfaces in the subnet before deletion
+            echo "  ⏳ Checking for network interfaces in subnet..."
+            local subnet_enis
+            subnet_enis=$(aws ec2 describe-network-interfaces --region "$region" \
+                --filters "Name=subnet-id,Values=$resource_id" \
+                --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null || echo "")
+            
+            if [[ -n "$subnet_enis" && "$subnet_enis" != "None" ]]; then
+                echo "    Found network interfaces in subnet, attempting cleanup: $subnet_enis"
+                for eni in $subnet_enis; do
+                    # Get ENI details
+                    eni_info=$(aws ec2 describe-network-interfaces --region "$region" --network-interface-ids "$eni" \
+                        --query 'NetworkInterfaces[0].[RequesterManaged,Attachment.AttachmentId,Description]' --output text 2>/dev/null || echo "")
+                    
+                    if [[ -n "$eni_info" ]]; then
+                        local requester_managed=$(echo "$eni_info" | cut -f1)
+                        local attachment_id=$(echo "$eni_info" | cut -f2)
+                        local description=$(echo "$eni_info" | cut -f3)
+                        
+                        echo "      Processing ENI: $eni ($description)"
+                        
+                        # Try to detach if attached
+                        if [[ -n "$attachment_id" && "$attachment_id" != "None" && "$attachment_id" != "null" ]]; then
+                            echo "        Detaching network interface..."
+                            local detach_error
+                            if detach_error=$(aws ec2 detach-network-interface --region "$region" --attachment-id "$attachment_id" --force 2>&1); then
+                                echo "        ✓ Network interface detached"
+                                sleep 5
+                            else
+                                if [[ "$detach_error" == *"You do not have permission"* ]]; then
+                                    echo "        ⚠️  Permission denied: Cannot detach ENI $eni"
+                                    echo "        💡 Manual action required: Add ec2:DetachNetworkInterface permission"
+                                    echo "        📋 ENI ARN: arn:aws:ec2:$region:$(aws sts get-caller-identity --query Account --output text):network-interface/$eni"
+                                    echo "        ⏭️  Skipping this ENI - subnet deletion may fail"
+                                    continue
+                                else
+                                    echo "        ⚠️  Detach failed: $detach_error"
+                                fi
+                            fi
+                        fi
+                        
+                        # Delete the network interface
+                        echo "        Deleting network interface..."
+                        local delete_error
+                        if delete_error=$(aws ec2 delete-network-interface --region "$region" --network-interface-id "$eni" 2>&1); then
+                            echo "        ✓ Network interface deleted"
+                        else
+                            if [[ "$delete_error" == *"You do not have permission"* ]]; then
+                                echo "        ⚠️  Permission denied: Cannot delete ENI $eni"
+                                echo "        💡 Manual action required: Add ec2:DeleteNetworkInterface permission"
+                            elif [[ "$delete_error" == *"currently in use"* ]]; then
+                                echo "        ⚠️  ENI still in use (AWS-managed service dependency)"
+                            else
+                                echo "        ⚠️  Delete failed: $delete_error"
+                            fi
+                        fi
+                    fi
+                done
+                sleep 10  # Allow time for cleanup to complete
+            fi
+            
             # Retry subnet deletion as it might have lingering dependencies
             local retry_count=0
             while [[ $retry_count -lt 3 ]]; do
-                if aws ec2 delete-subnet --region "$region" --subnet-id "$resource_id" 2>/dev/null; then
+                local subnet_delete_error
+                if subnet_delete_error=$(aws ec2 delete-subnet --region "$region" --subnet-id "$resource_id" 2>&1); then
                     echo "  ✓ Subnet deleted"
                     break
                 else
                     retry_count=$((retry_count + 1))
-                    echo "  ⏳ Subnet deletion failed (attempt $retry_count/3), waiting 20s for dependencies to clear..."
-                    sleep 20
+                    if [[ "$subnet_delete_error" == *"network interface"* ]]; then
+                        echo "  ⏳ Subnet deletion failed due to network interfaces (attempt $retry_count/3)"
+                        echo "    Check for remaining ENIs or permission issues above"
+                    else
+                        echo "  ⏳ Subnet deletion failed (attempt $retry_count/3): $subnet_delete_error"
+                    fi
+                    
+                    if [[ $retry_count -lt 3 ]]; then
+                        echo "    Waiting 20s for dependencies to clear..."
+                        sleep 20
+                    fi
                 fi
                 
                 if [[ $retry_count -eq 3 ]]; then
-                    echo "  ❌ Subnet deletion failed after 3 attempts - may have remaining dependencies"
+                    echo "  ❌ Subnet deletion failed after 3 attempts"
+                    if [[ "$subnet_delete_error" == *"network interface"* ]]; then
+                        echo "  💡 Likely cause: Network interfaces still exist due to permission issues"
+                        echo "  🔧 Manual action: Check EC2 console for remaining ENIs in this subnet"
+                    fi
                     return 1
                 fi
             done
@@ -428,7 +689,7 @@ delete_aws_resource() {
         "INTERNET_GATEWAYS")
             # Need to detach first, extract VPC ID from raw data
             local vpc_id
-            vpc_id=$(echo "$raw_data" | jq -r '.[1]' 2>/dev/null)
+            vpc_id=$(extract_raw_data_element "$raw_data" 1)
             if [[ -n "$vpc_id" && "$vpc_id" != "null" ]]; then
                 echo "  ⏳ Detaching Internet Gateway from VPC..."
                 aws ec2 detach-internet-gateway --region "$region" --internet-gateway-id "$resource_id" --vpc-id "$vpc_id" 2>/dev/null || true
@@ -472,6 +733,16 @@ delete_aws_resource() {
             done
             ;;
         "ROUTE_TABLES")
+            # Check if this is the main route table (cannot be deleted)
+            local is_main_route_table
+            is_main_route_table=$(echo "$resource_raw_data" | jq -r '.[2]' 2>/dev/null || echo "false")
+            
+            if [[ "$is_main_route_table" == "true" ]]; then
+                echo "  ⏭️  Skipping main route table - will be deleted automatically with VPC"
+                echo "  ✓ Main route table marked for VPC cleanup"
+                return 0
+            fi
+            
             # Clear routes first
             echo "  ⏳ Clearing non-local routes from route table..."
             routes=$(aws ec2 describe-route-tables --region "$region" --route-table-ids "$resource_id" --query 'RouteTables[0].Routes[?GatewayId!=`local`]' --output json 2>/dev/null || echo "[]")
@@ -659,6 +930,7 @@ execute_resource_deletions() {
     
     local processed=0
     local failed=0
+    local phase1_resources_processed=0
     
     echo "🏗️  === Phase 1: Stopping Services and Load Balancers ==="
     echo ""
@@ -696,6 +968,7 @@ execute_resource_deletions() {
             
             if delete_aws_resource "$resource_type" "$resource_id" "$region" "$resource_raw_data"; then
                 processed=$((processed + 1))
+                phase1_resources_processed=$((phase1_resources_processed + 1))
                 echo ""
             else
                 echo "  ❌ Failed to delete: $resource_id"
@@ -708,10 +981,15 @@ execute_resource_deletions() {
     done <<< "$deletion_order_phase1"
     
     echo ""
-    echo "⏸️  === Phase 1 Complete - Waiting for AWS Services to Fully Terminate ==="
-    echo "Waiting 60 seconds for all services to fully terminate and release network interfaces..."
-    sleep 60
-    echo ""
+    if [[ $phase1_resources_processed -gt 0 ]]; then
+        echo "⏸️  === Phase 1 Complete - Waiting for AWS Services to Fully Terminate ==="
+        echo "Waiting 60 seconds for all services to fully terminate and release network interfaces..."
+        sleep 60
+        echo ""
+    else
+        echo "⏸️  === Phase 1 Complete - No services to terminate, proceeding immediately ==="
+        echo ""
+    fi
     
     echo "🧹 === Phase 2: Cleaning Up Networking and Infrastructure ==="
     echo ""

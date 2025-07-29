@@ -1,0 +1,13 @@
+kind: Kustomization
+
+namespace: openshift-gitops
+
+resources:
+- ./namespace.yaml
+- ./advanced-cluster-management.application.yaml
+- ./openshift-pipelines-operator.application.yaml
+- ./acm-gitops-integration.application.yaml #imports new managed clusters into argo
+- ./cluster-provisioning-metrics.application.yaml # monitors cluster provisioning
+- ./vault.application.yaml
+- ./eso.application.yaml
+- ./gitea.application.yaml

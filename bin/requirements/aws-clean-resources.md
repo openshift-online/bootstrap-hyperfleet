@@ -181,13 +181,13 @@ Total resources to delete: 5
 
 **Phase 2: Infrastructure Cleanup** (Clean up networking after services are gone)
 9. **Route Tables** → Clear all routes, disassociate subnets, then delete tables
-10. **Network Interfaces** → Delete any remaining orphaned interfaces
-11. **Security Groups** → Clear all rules with retry logic, extensive dependency cleanup
-12. **Network ACLs, EFS resources** → Network and storage layer
-13. **Subnets** → Delete with retry logic after ensuring route tables are clear
-14. **Internet Gateways** → Detach from VPC, then delete with retry logic
+10. **Internet Gateways** → Detach from VPC, then delete with retry logic (moved before subnets)
+11. **Network Interfaces** → Delete any remaining orphaned interfaces
+12. **Security Groups** → Clear all rules with retry logic, extensive dependency cleanup
+13. **Network ACLs, EFS resources** → Network and storage layer
+14. **Subnets** → Delete with retry logic after ensuring route tables and gateways are clear
 15. **Elastic IPs** → Release IP addresses
-16. **VPCs** → Container for all resources, deleted last with extensive retry logic
+16. **VPCs** → Container for all resources, deleted last with comprehensive dependency cleanup
 17. **IAM Resources** → Identity layer, cleaned up last
 
 **Special Deletion Logic**: Each resource type implements proper cleanup procedures:
@@ -195,6 +195,7 @@ Total resources to delete: 5
 - **Route Tables**: Deletes all non-local routes before table deletion
 - **Internet Gateways**: Detaches from VPC before deletion
 - **Network Interfaces**: Detaches from instances with force flag
+- **VPCs**: Comprehensive dependency cleanup including VPC peering connections, remaining VPC endpoints, custom DHCP options sets, network ACLs, and final network interface scan
 - **IAM Roles**: Detaches managed policies and deletes inline policies first
 - **IAM Instance Profiles**: Removes associated roles before deletion
 
@@ -217,6 +218,7 @@ Resources may have dependencies that prevent deletion or may no longer exist.
 5. **Route Table Association Cleanup**: Route tables are explicitly disassociated from subnets before deletion to prevent dependency violations.
 6. **Orphaned Resource Detection**: The script automatically finds and cleans up orphaned network interfaces before attempting security group deletion.
 7. **Internet Gateway Detachment**: Internet gateways are properly detached from VPCs before deletion attempts.
+8. **Resource ID Validation**: AWS resource IDs are validated using regex patterns to prevent processing malformed data (e.g., instance types instead of instance IDs). Invalid resources are skipped with detailed warnings.
 
 #### Status and Validation
 

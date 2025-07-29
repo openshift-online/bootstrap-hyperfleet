@@ -31,8 +31,13 @@ spec:
         - name: metrics-script
           mountPath: /app
         command:
-        - python3
-        - /app/metrics_exporter.py
+        - /bin/bash
+        - -c
+        - |
+          echo "Installing Python dependencies..."
+          pip install --no-cache-dir -r /app/requirements.txt
+          echo "Dependencies installed, starting metrics exporter..."
+          python3 /app/metrics_exporter.py
         resources:
           requests:
             memory: "128Mi"

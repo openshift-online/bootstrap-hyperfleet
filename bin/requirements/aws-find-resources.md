@@ -1,389 +1,233 @@
-# bin/find-aws-resources Requirements
+# bin/aws-find-resources Requirements
 
-## Functional Requirements for bin/find-aws-resources
+## Functional Requirements for bin/aws-find-resources
 
 ### Primary Objective
-Create comprehensive AWS CLI commands to discover all resources consumed by OpenShift clusters managed through this GitOps bootstrap project. Uses cluster configuration analysis to provide accurate resource discovery across all supported regions and instance types.
+Create comprehensive AWS resource discovery for OpenShift clusters using **relationship-based discovery** that follows AWS resource dependencies through IDs rather than relying solely on tags. This ensures **zero orphaned resources** are missed, including those with missing or incorrect cluster tags.
 
-### Project Analysis Summary
-
-Based on analysis of the current cluster configurations in this repository:
-
-**Active Regions:**
-- `us-east-1` (primary) - 3 OCP clusters (ocp-02, ocp-03, o1 HCP cluster)
-- `us-west-2` - 1 OCP cluster (ocp-04)  
-- `eu-west-1` - 1 OCP cluster (ocp-05)
-- `ap-southeast-1` - 2 EKS clusters (eks-01, eks-02)
-
-**Instance Types in Use:**
-- `m5.xlarge` - OCP master and worker nodes (primary)
-- `m5.large` - EKS worker nodes and some OCP worker nodes
-- `c5.4xlarge` - OCP worker nodes (base template)
-
-**Cluster Types:**
-- **OpenShift (OCP)** - Uses Hive ClusterDeployment resources
-- **Amazon EKS** - Uses CAPI AWSManagedControlPlane/AWSManagedMachinePool resources  
-- **HyperShift (HCP)** - Hosted control plane clusters
-
-### AWS Resource Discovery Commands
-
-#### Core Discovery Strategy
-Build on the proven multi-pass discovery approach from `bin/clean-aws`:
-1. **Tag-Based Search** - Find resources with cluster ID in tag values (primary)
-2. **VPC-Scoped Search** - Find additional resources by VPC association (secondary)
-3. **Pattern-Based Search** - Find resources by OpenShift-specific patterns (fallback only)
-
-**Discovery Precedence Rules:**
-- Instance type discovery only runs within VPCs that have cluster tags
-- Security group pattern matching used as tertiary fallback
-- Prevents false positives from unrelated infrastructure
-
-#### Complete Resource Discovery Commands
-
-**1. EC2 Instances**
-```bash
-# Primary: Find all instances by cluster tag
-aws ec2 describe-instances --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SubnetId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
-  --output table
-
-# Secondary (fallback): Find instances by type ONLY in cluster-related VPCs
-# First identify VPCs with cluster tags
-vpc_ids=$(aws ec2 describe-vpcs --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Vpcs[*].VpcId' --output text)
-
-# Then find instances by type only within those VPCs
-if [[ -n "$vpc_ids" ]]; then
-  aws ec2 describe-instances --region $region \
-    --filters "Name=instance-type,Values=m5.xlarge,m5.large,c5.4xlarge" \
-              "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-              "Name=vpc-id,Values=$vpc_ids" \
-    --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,Tags[?Key==`kubernetes.io/cluster`] | [0].Value || `untagged-in-cluster-vpc`]' \
-    --output table
-fi
-
-# Tertiary (OpenShift-specific): Find instances with OpenShift security group patterns
-aws ec2 describe-instances --region $region \
-  --filters "Name=instance.group-name,Values=*${cluster_id}*master*,*${cluster_id}*worker*,*${cluster_id}*node*" \
-            "Name=instance-state-name,Values=running,stopped,stopping,pending" \
-  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,State.Name,VpcId,SecurityGroups[0].GroupName]' \
-  --output table
-```
-
-**2. EBS Volumes and Snapshots**
-```bash
-# EBS Volumes (including root volumes for instances)
-aws ec2 describe-volumes --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Volumes[*].[VolumeId,Size,VolumeType,State,Encrypted,Attachments[0].InstanceId || `unattached`]' \
-  --output table
-
-# Find volumes by instance attachment (for untagged volumes)
-aws ec2 describe-volumes --region $region \
-  --filters "Name=attachment.instance-id,Values=${instance_id}" \
-  --query 'Volumes[*].[VolumeId,Size,VolumeType,Iops,State]' \
-  --output table
-
-# EBS Snapshots  
-aws ec2 describe-snapshots --region $region \
-  --owner-ids self \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Snapshots[*].[SnapshotId,VolumeSize,State,StartTime,Description]' \
-  --output table
-```
-
-**3. Load Balancers (All Types)**
-```bash
-# Application/Network Load Balancers (ALB/NLB)
-aws elbv2 describe-load-balancers --region $region \
-  --query "LoadBalancers[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerArn,LoadBalancerName,Type,State.Code,VpcId]" \
-  --output table
-
-# Classic Load Balancers
-aws elb describe-load-balancers --region $region \
-  --query "LoadBalancerDescriptions[?contains(LoadBalancerName, '${cluster_id}')].[LoadBalancerName,VPCId,Scheme,CreatedTime]" \
-  --output table
-
-# Target Groups
-aws elbv2 describe-target-groups --region $region \
-  --query "TargetGroups[?contains(TargetGroupName, '${cluster_id}')].[TargetGroupArn,TargetGroupName,Protocol,Port,VpcId]" \
-  --output table
-```
-
-**4. Auto Scaling Groups**  
-```bash
-# Auto Scaling Groups (used by EKS managed node groups and OCP machine sets)
-aws autoscaling describe-auto-scaling-groups --region $region \
-  --query "AutoScalingGroups[?contains(AutoScalingGroupName, '${cluster_id}')].[AutoScalingGroupName,DesiredCapacity,MinSize,MaxSize,VPCZoneIdentifier]" \
-  --output table
-
-# Launch Templates (used by auto scaling groups)
-aws ec2 describe-launch-templates --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'LaunchTemplates[*].[LaunchTemplateId,LaunchTemplateName,LatestVersionNumber,CreatedBy]' \
-  --output table
-```
-
-**5. Networking Resources**
-```bash
-# VPCs
-aws ec2 describe-vpcs --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Vpcs[*].[VpcId,CidrBlock,State,IsDefault,Tags[?Key==`Name`].Value|[0]]' \
-  --output table
-
-# Subnets 
-aws ec2 describe-subnets --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Subnets[*].[SubnetId,VpcId,CidrBlock,AvailabilityZone,MapPublicIpOnLaunch,Tags[?Key==`Name`].Value|[0]]' \
-  --output table
-
-# Internet Gateways
-aws ec2 describe-internet-gateways --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].VpcId,Attachments[0].State,Tags[?Key==`Name`].Value|[0]]' \
-  --output table
-
-# NAT Gateways
-aws ec2 describe-nat-gateways --region $region \
-  --filter "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'NatGateways[*].[NatGatewayId,VpcId,SubnetId,State,NatGatewayAddresses[0].PublicIp]' \
-  --output table
-
-# Route Tables
-aws ec2 describe-route-tables --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'RouteTables[*].[RouteTableId,VpcId,Associations[0].Main || `false`,Tags[?Key==`Name`].Value|[0]]' \
-  --output table
-
-# Security Groups
-aws ec2 describe-security-groups --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'SecurityGroups[*].[GroupId,GroupName,VpcId,Description]' \
-  --output table
-
-# Network ACLs
-aws ec2 describe-network-acls --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'NetworkAcls[*].[NetworkAclId,VpcId,IsDefault,Associations[0].SubnetId || `none`]' \
-  --output table
-
-# Network Interfaces (ENIs)
-aws ec2 describe-network-interfaces --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'NetworkInterfaces[*].[NetworkInterfaceId,InterfaceType,Status,VpcId,SubnetId,PrivateIpAddress,Attachment.InstanceId || `unattached`]' \
-  --output table
-
-# VPC Endpoints
-aws ec2 describe-vpc-endpoints --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'VpcEndpoints[*].[VpcEndpointId,VpcId,ServiceName,State,VpcEndpointType]' \
-  --output table
-
-# Elastic IPs
-aws ec2 describe-addresses --region $region \
-  --filters "Name=tag-value,Values=*${cluster_id}*" \
-  --query 'Addresses[*].[AllocationId,PublicIp,InstanceId || `unassociated`,NetworkInterfaceId || `none`,Domain]' \
-  --output table
-```
-
-**6. Storage Resources**
-```bash
-# EFS File Systems (if used for persistent storage)
-aws efs describe-file-systems --region $region \
-  --query "FileSystems[?contains(Name, '${cluster_id}')].[FileSystemId,Name,LifeCycleState,SizeInBytes.Value,CreationTime]" \
-  --output table
-
-# EFS Mount Targets  
-aws efs describe-mount-targets --region $region \
-  --query 'MountTargets[*].[MountTargetId,FileSystemId,SubnetId,LifeCycleState,IpAddress]' \
-  --output table
-```
-
-**7. Database Resources**
-```bash
-# RDS Instances 
-aws rds describe-db-instances --region $region \
-  --query "DBInstances[?contains(DBInstanceIdentifier, '${cluster_id}')].[DBInstanceIdentifier,DBInstanceStatus,DBInstanceClass,Engine,DBSubnetGroup.VpcId]" \
-  --output table
-
-# RDS Cluster (Aurora)
-aws rds describe-db-clusters --region $region \
-  --query "DBClusters[?contains(DBClusterIdentifier, '${cluster_id}')].[DBClusterIdentifier,Status,Engine,VpcSecurityGroups[0].VpcId]" \
-  --output table
-```
-
-**8. Container and Kubernetes Resources**
-```bash
-# EKS Clusters
-aws eks describe-cluster --region $region --name ${cluster_id} \
-  --query 'cluster.[name,status,version,platformVersion,endpoint,resourcesVpcConfig.vpcId]' \
-  --output table
-
-# EKS Node Groups
-aws eks describe-nodegroup --region $region --cluster-name ${cluster_id} --nodegroup-name ${nodegroup_name} \
-  --query 'nodegroup.[nodegroupName,status,instanceTypes[0],scalingConfig,subnets]' \
-  --output table
-
-# ECR Repositories (if using private registries)
-aws ecr describe-repositories --region $region \
-  --query "repositories[?contains(repositoryName, '${cluster_id}')].[repositoryName,repositoryUri,createdAt]" \
-  --output table
-```
-
-**9. IAM Resources**
-```bash
-# IAM Roles
-aws iam list-roles \
-  --query "Roles[?contains(RoleName, '${cluster_id}')].[RoleName,Arn,CreateDate,Description]" \
-  --output table
-
-# IAM Policies  
-aws iam list-policies --scope Local \
-  --query "Policies[?contains(PolicyName, '${cluster_id}')].[PolicyName,Arn,CreateDate,Description]" \
-  --output table
-
-# IAM Instance Profiles
-aws iam list-instance-profiles \
-  --query "InstanceProfiles[?contains(InstanceProfileName, '${cluster_id}')].[InstanceProfileName,Arn,CreateDate]" \
-  --output table
-```
-
-**10. CloudFormation Stacks**
-```bash
-# CloudFormation Stacks (used by OpenShift installer and EKS)
-aws cloudformation describe-stacks --region $region \
-  --query "Stacks[?contains(StackName, '${cluster_id}')].[StackName,StackStatus,CreationTime,Description]" \
-  --output table
-
-# Stack Resources
-aws cloudformation describe-stack-resources --region $region --stack-name ${stack_name} \
-  --query 'StackResources[*].[LogicalResourceId,PhysicalResourceId,ResourceType,ResourceStatus]' \
-  --output table
-```
-
-### Resource Discovery Execution Strategy
-
-**Multi-Region Discovery Script:**
-```bash
-#!/bin/bash
-# Example usage: ./discover-cluster-resources.sh ocp-02
-
-CLUSTER_ID=${1:-"mt-test"}
-REGIONS=("us-east-1" "us-west-2" "eu-west-1" "ap-southeast-1")
-
-echo "=== AWS Resource Discovery for Cluster: $CLUSTER_ID ==="
-echo ""
-
-for region in "${REGIONS[@]}"; do
-    echo "Region: $region"
-    echo "=================="
-    
-    # Run discovery commands for each resource type
-    # [Include all the commands above with proper error handling]
-    
-    echo ""
-done
-```
-
-### Project-Specific Discovery Patterns
-
-**Cluster Naming Conventions:**
-- OpenShift clusters: `ocp-02`, `ocp-03`, `ocp-04`, `ocp-05`
-- EKS clusters: `eks-01`, `eks-02`
-- HyperShift clusters: `hcp-01`
-- Legacy pattern: `cluster-XX` (in backup configurations)
-
-**Common Tag Patterns:**
-- `kubernetes.io/cluster/${cluster_name}=owned`
-- `kubernetes.io/cluster/${cluster_name}=shared`
-- `Name=${cluster_name}-*`
-- `sigs.k8s.io/cluster-api-provider-aws/cluster/${cluster_name}=owned` (for CAPI EKS)
-
-**Resource Naming Patterns:**
-- Load Balancers: `${cluster_name}-*-elb`
-- Auto Scaling Groups: `${cluster_name}-*-asg`
-- Launch Templates: `${cluster_name}-*-template`
-- Security Groups: `${cluster_name}-*-sg`
-
-### Integration with Existing Tools
-
-**Extends bin/clean-aws:**
-- Uses the same two-pass discovery strategy
-- Adds resource types not covered in cleanup (EFS, ECR, CloudFormation)
-- Provides detailed resource information vs. cleanup focus
-- Compatible with the same cluster ID and region inputs
-
-**Usage Patterns:**
-```bash
-# Discover resources for specific cluster (JSON output)
-./bin/aws-find-resources ocp-02 > cluster-resources.json
-
-# Discover across all regions for cluster
-./bin/aws-find-resources eks-02 --all-regions > multi-region-resources.json
-
-# Discover with progress information and summary
-./bin/aws-find-resources ocp-03 --verbose
-
-# Parse JSON output with jq for analysis
-./bin/aws-find-resources ocp-04 | jq '.[] | select(.ResourceType == "EC2_INSTANCES")'
-```
-
-**Output Format:**
-- **Default**: Raw JSON data suitable for programmatic processing
-- **Verbose Mode**: Progress information to stderr + JSON data to stdout
-- **Machine-Readable**: All discovery data in structured JSON format
-
-### Expected Resource Footprint per Cluster
-
-**OpenShift (OCP) Cluster:**
-- 3 EC2 instances (masters) + 1-3 worker instances
-- 4-6 EBS volumes (root + data volumes)
-- 1 VPC with 6 subnets (3 public, 3 private)
-- 2 load balancers (API + ingress)
-- 1 NAT gateway per AZ
-- 5-8 security groups
-- 2-3 route tables
-- Multiple network interfaces
-- CloudFormation stacks for infrastructure
-
-**EKS Cluster:**
-- 1 EKS control plane (managed)
-- 1-3 managed node group instances
-- 1-3 EBS volumes (worker node storage)
-- 1 VPC with 4-6 subnets
-- 1-2 load balancers (ingress)
-- Auto scaling group and launch template
-- 3-5 security groups
-- IAM roles and policies for node groups
-
-This comprehensive discovery approach ensures complete visibility into AWS resource consumption across all cluster types and regions used in this OpenShift bootstrap project.
-
-### False Positive Prevention
+### Discovery Strategy: Comprehensive Relationship Following
 
 **Problem Solved:**
-The original implementation found ALL instances of specific types (`m5.xlarge`, `m5.large`, `c5.4xlarge`) across the entire AWS account, leading to false positives from unrelated infrastructure.
+Traditional tag-based discovery misses resources that:
+- Lack proper cluster identification tags (common with ELB-managed network interfaces)
+- Have non-standard naming conventions (AWS service-generated names)
+- Are created by AWS services that don't inherit cluster tags
+- Exist as dependencies of properly-tagged resources
 
-**Smart Filtering Implementation:**
-- **VPC Scoping**: Instance type discovery only runs within VPCs that have cluster-related tags
-- **Conditional Execution**: Security group pattern matching only triggers if tag-based discovery finds no instances
-- **Layered Discovery**: Each method provides fallback coverage without broad spectrum false positives
+**Solution: 4-Level Dependency Hierarchy**
 
-**Expected Results:**
-- Eliminates discovery of unrelated instances in different VPCs
-- Maintains coverage for legitimate untagged cluster resources
-- Reduces noise in resource discovery output by 80-90%
+The script follows AWS resource relationships through their IDs in a structured dependency tree:
 
-## Related Tools
+```
+LEVEL 0 (ROOT): VPC + Global Resources
+├── VPCs (tagged with cluster) ← Primary entry point
+├── IAM Roles/Policies (tagged with cluster) 
+└── S3 Buckets (tagged with cluster)
 
-### Workflow Sequence
-- **[clean-aws.md](./clean-aws.md)** - Uses this tool's discovery patterns for resource cleanup
+LEVEL 1 (VPC-SCOPED): Core Infrastructure  
+├── Subnets → ALL subnets in cluster VPCs
+├── Security Groups → ALL groups in cluster VPCs
+├── Route Tables → ALL tables in cluster VPCs  
+├── Internet/NAT Gateways → attached to cluster VPCs
+└── VPC Endpoints → deployed in cluster VPCs
 
-### Validation and Testing
-- **[test-find-aws-resources.md](./test-find-aws-resources.md)** - Validates this tool's functionality and coverage
+LEVEL 2 (SUBNET-SCOPED): Deployed Services
+├── EC2 Instances → deployed in cluster subnets
+├── RDS Instances → deployed in cluster subnets  
+├── ELB/ALB → deployed in cluster subnets
+├── EFS Mount Targets → deployed in cluster subnets
+└── Network Interfaces → deployed in cluster subnets
 
-### Cluster Management
-- **[generate-cluster.md](./generate-cluster.md)** - Creates the cluster configurations that generate these AWS resources
-- **[status.md](./status.md)** - Monitor clusters that consume AWS resources
+LEVEL 3 (INSTANCE-SCOPED): Attached Resources
+├── EBS Volumes → attached to cluster EC2 instances
+├── EBS Snapshots → from cluster EBS volumes
+├── Elastic IPs → attached to cluster instances/ENIs
+└── Auto Scaling Groups → managing cluster instances
+
+LEVEL 4 (SERVICE-SCOPED): Service Resources
+├── Target Groups → attached to cluster ELBs
+├── Launch Templates → used by cluster ASGs
+├── EFS File Systems → mounted in cluster
+└── CloudFormation Stacks → created for cluster
+```
+
+### Key Discovery Functions
+
+**Level 0 Discovery (Entry Points):**
+```bash
+find_cluster_vpcs()           # Primary entry point - tagged VPCs
+find_cluster_iam_roles()      # Global IAM roles with cluster name
+find_cluster_iam_policies()   # Global IAM policies with cluster name
+```
+
+**Level 1 Discovery (VPC-Scoped):**
+```bash
+find_subnets_in_vpcs()                # ALL subnets in cluster VPCs
+find_security_groups_in_vpcs()        # ALL security groups in cluster VPCs
+find_route_tables_in_vpcs()           # ALL route tables in cluster VPCs
+find_internet_gateways_for_vpcs()     # Gateways attached to cluster VPCs
+find_nat_gateways_in_vpcs()           # NAT gateways in cluster VPCs
+find_vpc_endpoints_in_vpcs()          # VPC endpoints in cluster VPCs
+find_classic_elbs_in_vpcs()           # Classic ELBs deployed in cluster VPCs
+find_application_elbs_in_vpcs()       # Application ELBs deployed in cluster VPCs
+```
+
+**Level 2 Discovery (Subnet-Scoped):**
+```bash
+find_network_interfaces_in_subnets()  # ALL ENIs in cluster subnets
+find_ec2_instances_in_subnets()       # ALL EC2 instances in cluster subnets
+find_rds_instances_in_subnets()       # RDS instances in cluster DB subnet groups
+find_efs_mount_targets_in_subnets()   # EFS mount targets in cluster subnets
+```
+
+**Level 3 Discovery (Instance-Scoped):**
+```bash
+find_ebs_volumes_for_instances()      # Volumes attached to cluster instances
+find_ebs_snapshots_for_volumes()      # Snapshots from cluster volumes
+find_elastic_ips_for_instances()      # EIPs attached to cluster instances/ENIs
+find_auto_scaling_groups_for_instances() # ASGs managing cluster instances
+```
+
+**Level 4 Discovery (Service-Scoped):**
+```bash
+find_target_groups_for_elbs()         # Target groups attached to cluster ELBs
+find_launch_templates_for_asgs()      # Launch templates used by cluster ASGs
+find_efs_filesystems_for_mount_targets() # EFS filesystems from mount targets
+find_cloudformation_stacks_for_cluster() # CloudFormation stacks for cluster
+find_ecr_repositories_for_cluster()   # ECR repositories for cluster
+```
+
+### Comprehensive Resource Coverage
+
+**Networking Resources:**
+- VPCs, Subnets, Security Groups, Route Tables
+- Internet Gateways, NAT Gateways, VPC Endpoints
+- Network Interfaces (including ELB-managed ENIs)
+- Elastic IPs attached to instances or ENIs
+
+**Compute Resources:**
+- EC2 Instances in cluster subnets (regardless of tags)
+- Auto Scaling Groups managing cluster instances
+- Launch Templates used by cluster ASGs
+- EBS Volumes attached to cluster instances
+- EBS Snapshots from cluster volumes
+
+**Load Balancing:**
+- Classic Load Balancers deployed in cluster VPCs
+- Application/Network Load Balancers deployed in cluster VPCs  
+- Target Groups attached to cluster ELBs
+
+**Storage Resources:**
+- EFS File Systems mounted in cluster
+- EFS Mount Targets deployed in cluster subnets
+- RDS Instances in DB subnet groups using cluster subnets
+
+**Service Resources:**
+- CloudFormation Stacks containing cluster name
+- ECR Repositories containing cluster name
+- IAM Roles and Policies containing cluster name
+
+### Usage Examples
+
+**Basic Discovery:**
+```bash
+# Discover all resources for cluster (JSON output)
+./bin/aws-find-resources ocp-02
+
+# Verbose discovery with progress information
+./bin/aws-find-resources ocp-03 --verbose
+
+# Multi-region discovery
+./bin/aws-find-resources eks-02 --all-regions
+```
+
+**Integration with aws-clean-resources:**
+```bash
+# Generate deletion file from comprehensive discovery
+./bin/aws-find-resources ocp-01-mturansk-a3 > cluster-resources.json
+
+# Process deletion file with relationship-aware cleanup
+./bin/aws-clean-resources cluster-resources.json
+```
+
+### Output Format Compatibility
+
+**JSON Structure:**
+The script outputs AWS resources in the exact format expected by `aws-clean-resources`:
+
+```json
+{
+  "REGION": "us-west-2",
+  "EC2_INSTANCES": [...],
+  "EBS_VOLUMES": [...],
+  "CLASSIC_LOAD_BALANCERS": [...],
+  "SUBNETS": [...],
+  "SECURITY_GROUPS": [...],
+  "NETWORK_INTERFACES": [...],
+  ...
+}
+```
+
+**Cluster Identification:**
+Each resource includes cluster identification as the **last field**:
+- **Tagged resources**: Shows the tag value containing the cluster ID
+- **Relationship-discovered**: Shows descriptive identifiers like `vpc-relationship`, `subnet-relationship`, `instance-attachment`
+- **Service-managed**: Shows `elb-managed`, `aws-managed` for service-created resources
+
+### Project Integration
+
+**Supported Regions:**
+- `us-east-1`, `us-east-2`, `us-west-2` (primary regions)
+- `eu-west-1`, `ap-southeast-1` (additional regions)
+
+**Cluster Types Supported:**
+- **OpenShift (OCP)**: Full resource discovery including Hive-created infrastructure
+- **Amazon EKS**: Comprehensive CAPI resource discovery
+- **HyperShift (HCP)**: Hosted control plane resource discovery
+
+**Workflow Integration:**
+```bash
+# Complete cluster lifecycle management
+1. ./bin/aws-find-resources cluster-name > resources.json
+2. ./bin/aws-clean-resources resources.json
+3. # All cluster resources deleted including orphaned ones
+```
+
+### Advantages Over Tag-Based Discovery
+
+**Zero False Negatives:**
+- Discovers ELB-managed network interfaces without cluster tags
+- Finds AWS service-created resources with non-standard naming
+- Locates orphaned resources through dependency relationships
+
+**High Precision:**
+- VPC-scoping prevents false positives from unrelated infrastructure
+- Relationship following ensures discovered resources actually belong to cluster
+- Structured hierarchy prevents over-broad discovery
+
+**Operational Excellence:**
+- Compatible with existing aws-clean-resources workflow
+- Verbose mode provides clear discovery progress
+- Comprehensive coverage eliminates manual resource hunting
+
+### Relationship Discovery Success Cases
+
+**Case 1: Orphaned ELB Network Interface**
+- **Problem**: ELB deleted manually, network interface `eni-0c6c39d4ccb19ae47` remained without cluster tags
+- **Tag-based discovery**: Missed the ENI completely
+- **Relationship discovery**: Found ENI through subnet → network interface relationship
+- **Result**: Successful subnet deletion after ENI cleanup
+
+**Case 2: VPC Dependencies Without Tags**
+- **Problem**: Route tables and security groups created by AWS services lacked cluster tags
+- **Tag-based discovery**: Found 0 route tables, 0 security groups
+- **Relationship discovery**: Found 1 route table, 2 security groups through VPC relationship
+- **Result**: Complete VPC dependency cleanup
+
+**Case 3: Service-Managed Resources**
+- **Problem**: Classic ELB `a21c1256fc1a34d7fa093e492262d24d` had no cluster name in its identifier
+- **Tag-based discovery**: Never found the ELB
+- **Relationship discovery**: Found ELB through VPC deployment relationship
+- **Result**: Proper load balancer cleanup before infrastructure deletion
+
+This comprehensive relationship-based approach ensures **zero orphaned resources** and provides complete visibility into cluster AWS consumption without the limitations of tag-based discovery.

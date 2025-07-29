@@ -1,0 +1,217 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-config
+  namespace: grafana
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091
+      basicAuth: false
+      isDefault: true
+      httpHeaderName1: "Authorization"
+      httpHeaderValue1: "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IkVyYVZ4NmVrbkxYMU5IUWR3R2dhVVExZVNmMC1hSFZUNWNGb1hfNW12NGMifQ"
+      jsonData:
+        tlsSkipVerify: true
+        httpHeaderName1: "Authorization"
+      secureJsonData:
+        httpHeaderValue1: "Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-config
+  namespace: grafana
+data:
+  dashboard.yaml: |
+    apiVersion: 1
+    providers:
+    - name: 'default'
+      orgId: 1
+      folder: ''
+      folderUid: ''
+      type: file
+      disableDeletion: false
+      editable: true
+      updateIntervalSeconds: 10
+      allowUiUpdates: true
+      options:
+        path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-provisioning-dashboard
+  namespace: grafana
+data:
+  cluster-provisioning.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "OpenShift Bootstrap - Cluster Provisioning Dashboard",
+        "tags": ["openshift", "bootstrap", "cluster-provisioning", "acm", "argocd"],
+        "style": "dark",
+        "timezone": "browser",
+        "editable": true,
+        "graphTooltip": 1,
+        "time": {
+          "from": "now-6h",
+          "to": "now"
+        },
+        "timepicker": {},
+        "templating": {
+          "list": [
+            {
+              "name": "cluster",
+              "type": "query",
+              "label": "Cluster",
+              "query": "label_values(cluster_sync_wave_status, cluster_name)",
+              "regex": "",
+              "sort": 1,
+              "multi": true,
+              "includeAll": true,
+              "allValue": ".*",
+              "current": {
+                "selected": true,
+                "text": "All",
+                "value": "$__all"
+              }
+            }
+          ]
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "📊 Provisioning Overview",
+            "type": "row",
+            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+            "collapsed": false
+          },
+          {
+            "id": 2,
+            "title": "Active Provisioning Clusters",
+            "type": "stat",
+            "gridPos": { "h": 8, "w": 6, "x": 0, "y": 1 },
+            "targets": [
+              {
+                "expr": "cluster_provisioning_active_total",
+                "legendFormat": "Active Provisioning"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "thresholds" },
+                "thresholds": {
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 3 },
+                    { "color": "red", "value": 10 }
+                  ]
+                },
+                "unit": "short"
+              }
+            },
+            "options": {
+              "colorMode": "background",
+              "graphMode": "area",
+              "justifyMode": "center",
+              "orientation": "horizontal"
+            }
+          },
+          {
+            "id": 3,
+            "title": "Sync Wave Status Matrix",
+            "type": "heatmap",
+            "gridPos": { "h": 8, "w": 18, "x": 6, "y": 1 },
+            "targets": [
+              {
+                "expr": "cluster_sync_wave_status{cluster_name=~\"$cluster\"}",
+                "legendFormat": "{{ cluster_name }} Wave {{ wave_number }}"
+              }
+            ],
+            "heatmap": {
+              "yAxis": { "unit": "short", "decimals": 0 },
+              "colorMode": "spectrum",
+              "colorScale": "exponential",
+              "colorScheme": "interpolateSpectral"
+            }
+          },
+          {
+            "id": 4,
+            "title": "🌊 ArgoCD Sync Wave Progression",
+            "type": "row",
+            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+            "collapsed": false
+          },
+          {
+            "id": 5,
+            "title": "Sync Wave Applications Status",
+            "type": "graph",
+            "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+            "targets": [
+              {
+                "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"total\"}",
+                "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Total"
+              },
+              {
+                "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"synced\"}",
+                "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Synced"
+              },
+              {
+                "expr": "cluster_sync_wave_applications_total{cluster_name=~\"$cluster\", status=\"healthy\"}",
+                "legendFormat": "{{ cluster_name }} Wave {{ wave_number }} - Healthy"
+              }
+            ],
+            "yAxes": [{ "label": "Applications", "unit": "short" }],
+            "stack": false
+          },
+          {
+            "id": 6,
+            "title": "🏗️ Infrastructure Status",
+            "type": "row",
+            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+            "collapsed": false
+          },
+          {
+            "id": 7,
+            "title": "Infrastructure Status by Type",
+            "type": "stat",
+            "gridPos": { "h": 6, "w": 12, "x": 0, "y": 19 },
+            "targets": [
+              {
+                "expr": "count by (infrastructure_type, status) (cluster_infrastructure_status{cluster_name=~\"$cluster\"})",
+                "legendFormat": "{{ infrastructure_type }} - {{ status }}"
+              }
+            ],
+            "options": {
+              "colorMode": "background",
+              "graphMode": "none",
+              "justifyMode": "center"
+            }
+          },
+          {
+            "id": 8,
+            "title": "ACM ManagedCluster Status",
+            "type": "stat",
+            "gridPos": { "h": 6, "w": 12, "x": 12, "y": 19 },
+            "targets": [
+              {
+                "expr": "count by (status) (managed_cluster_status{cluster_name=~\"$cluster\"})",
+                "legendFormat": "{{ status }}"
+              }
+            ],
+            "options": {
+              "colorMode": "background",
+              "graphMode": "none"
+            }
+          }
+        ],
+        "refresh": "30s",
+        "schemaVersion": 30,
+        "version": 1
+      }
+    }
