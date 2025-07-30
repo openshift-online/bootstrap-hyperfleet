@@ -1,0 +1,228 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: eks-acm-integration-eks-01-mturansk-jul30
+  namespace: eks-01-mturansk-jul30
+spec:
+  params:
+  - name: cluster-name
+    type: string
+    default: "eks-01-mturansk-jul30"
+  - name: region
+    type: string  
+    default: "us-west-2"
+  stepTemplate:
+    env:
+    - name: AWS_DEFAULT_REGION
+      value: $(params.region)
+    volumeMounts:
+    - name: aws-credentials
+      mountPath: /root/.aws
+      readOnly: true
+  steps:
+  - name: install-tools
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      echo "Installing required tools..."
+      
+      # Install kubectl
+      curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+      chmod +x kubectl && mv kubectl /usr/local/bin/
+      
+      # Install AWS CLI
+      curl -LO "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+      unzip awscli-exe-linux-x86_64.zip && ./aws/install
+      
+      # Install OpenShift CLI
+      curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar -xz -C /usr/local/bin/ oc
+      
+      echo "Tools installed successfully"
+      
+  - name: wait-for-eks-cluster
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      
+      CLUSTER_NAME="$(params.cluster-name)"
+      REGION="$(params.region)"
+      
+      echo "Waiting for EKS cluster $CLUSTER_NAME to become ACTIVE..."
+      
+      TIMEOUT=1800  # 30 minutes
+      ELAPSED=0
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        STATUS=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION --query 'cluster.status' --output text 2>/dev/null || echo "CREATING")
+        echo "EKS cluster status: $STATUS (elapsed: ${ELAPSED}s)"
+        
+        if [ "$STATUS" = "ACTIVE" ]; then
+          echo "EKS cluster is ACTIVE"
+          break
+        fi
+        
+        sleep 30
+        ELAPSED=$((ELAPSED + 30))
+      done
+      
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "ERROR: EKS cluster did not become ACTIVE within 30 minutes"
+        exit 1
+      fi
+      
+  - name: configure-managed-cluster
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      
+      CLUSTER_NAME="$(params.cluster-name)"
+      REGION="$(params.region)"
+      
+      echo "Configuring access to managed cluster..."
+      aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION --kubeconfig /tmp/managed-kubeconfig
+      
+      echo "Skipping Klusterlet CRD installation - managed by ACM hub cluster"
+      export KUBECONFIG=/tmp/managed-kubeconfig
+      
+      echo "Waiting for EKS worker nodes to be ready..."
+      kubectl wait --for=condition=Ready nodes --all --timeout=600s
+      
+    volumeMounts:
+      
+  - name: apply-acm-import
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      
+      CLUSTER_NAME="$(params.cluster-name)"
+      REGION="$(params.region)"
+      
+      echo "Extracting ACM import manifest from hub cluster..."
+      # Use hub cluster service account token
+      export KUBECONFIG=/var/run/secrets/kubernetes.io/serviceaccount/token
+      oc get secret $CLUSTER_NAME-import -n $CLUSTER_NAME -o jsonpath='{.data.import\.yaml}' | base64 -d > /tmp/import.yaml
+      
+      echo "Applying ACM import manifest to managed cluster..."
+      export KUBECONFIG=/tmp/managed-kubeconfig
+      kubectl apply -f /tmp/import.yaml
+      
+      echo "Monitoring klusterlet deployment..."
+      sleep 60
+      
+  - name: fix-pull-secret
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      
+      CLUSTER_NAME="$(params.cluster-name)"
+      export KUBECONFIG=/tmp/managed-kubeconfig
+      
+      if kubectl get pods -n open-cluster-management-agent 2>/dev/null | grep -q "ImagePullBackOff\|ErrImagePull"; then
+        echo "Fixing image pull secret for klusterlet..."
+        
+        # Get pull secret from hub cluster
+        export KUBECONFIG=/var/run/secrets/kubernetes.io/serviceaccount/token
+        oc get secret pull-secret -n openshift-config -o yaml |           sed 's/namespace: openshift-config/namespace: open-cluster-management-agent/' |           sed 's/name: pull-secret/name: open-cluster-management-image-pull-credentials/' > /tmp/acm-pull-secret.yaml
+        
+        # Apply to managed cluster
+        export KUBECONFIG=/tmp/managed-kubeconfig
+        kubectl delete secret open-cluster-management-image-pull-credentials -n open-cluster-management-agent --ignore-not-found=true
+        kubectl apply -f /tmp/acm-pull-secret.yaml
+        kubectl rollout restart deployment/klusterlet -n open-cluster-management-agent
+        
+        echo "Pull secret fixed, waiting for klusterlet to restart..."
+        sleep 60
+      else
+        echo "No image pull issues detected"
+      fi
+      
+  - name: verify-acm-integration
+    image: registry.redhat.io/ubi9/ubi:latest
+    script: |
+      #!/bin/bash
+      set -e
+      
+      CLUSTER_NAME="$(params.cluster-name)"
+      
+      echo "Verifying ACM integration..."
+      export KUBECONFIG=/var/run/secrets/kubernetes.io/serviceaccount/token
+      
+      TIMEOUT=600  # 10 minutes
+      ELAPSED=0
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        STATUS=$(oc get managedcluster $CLUSTER_NAME -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+        echo "ManagedCluster $CLUSTER_NAME availability status: $STATUS (elapsed: ${ELAPSED}s)"
+        
+        if [ "$STATUS" = "True" ]; then
+          echo "SUCCESS: EKS cluster $CLUSTER_NAME successfully integrated with ACM"
+          oc get managedcluster $CLUSTER_NAME
+          exit 0
+        fi
+        
+        sleep 30
+        ELAPSED=$((ELAPSED + 30))
+      done
+      
+      echo "WARNING: ACM integration did not complete within 10 minutes"
+      echo "Current ManagedCluster status:"
+      oc get managedcluster $CLUSTER_NAME -o yaml
+      exit 0  # Don't fail the pipeline, cluster may still be integrating
+      
+  volumes:
+  - name: aws-credentials
+    secret:
+      secretName: aws-credentials
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: eks-01-mturansk-jul30-acm-integration
+  namespace: eks-01-mturansk-jul30
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  pipelineSpec:
+    tasks:
+    - name: integrate-with-acm
+      taskRef:
+        name: eks-acm-integration-eks-01-mturansk-jul30
+  serviceAccountName: cluster-provisioner
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-provisioner
+  namespace: eks-01-mturansk-jul30
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-provisioner-eks-01-mturansk-jul30
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["cluster.open-cluster-management.io"]
+  resources: ["managedclusters"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-provisioner-eks-01-mturansk-jul30
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-provisioner-eks-01-mturansk-jul30
+subjects:
+- kind: ServiceAccount
+  name: cluster-provisioner
+  namespace: eks-01-mturansk-jul30

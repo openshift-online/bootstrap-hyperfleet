@@ -8,6 +8,8 @@ resources:
 
 # ADD CLUSTERS HERE
 
+- ./eks-01-mturansk-jul30.yaml
+
 - ./ocp-01-mturansk-jul29.yaml
 
 
