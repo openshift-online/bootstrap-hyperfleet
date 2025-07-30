@@ -19,7 +19,7 @@ spec:
         path: pipelines/hello-world/ocp-01-mturansk-jul29
         destination: https://api.ocp-01-mturansk-jul29.rosa.mturansk-test.csu2.i3.devshift.org:6443
         syncWave: "3"
-      - component: pipelines-cloud-infrastructure-provisioning
+      - component: pipelines-cloud-infra
         path: pipelines/cloud-infrastructure-provisioning/ocp-01-mturansk-jul29
         destination: https://api.ocp-01-mturansk-jul29.rosa.mturansk-test.csu2.i3.devshift.org:6443
         syncWave: "3"
