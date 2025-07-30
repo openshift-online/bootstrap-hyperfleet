@@ -1,0 +1,77 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: capa-rbac-policy
+  namespace: open-cluster-management-policies
+  annotations:
+    policy.open-cluster-management.io/standards: NIST-CSF
+    policy.open-cluster-management.io/categories: AC Access Control
+    policy.open-cluster-management.io/controls: AC-3 Access Enforcement
+spec:
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: capa-manager-finalizers-rbac
+        spec:
+          remediationAction: enforce
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRole
+                metadata:
+                  name: capa-manager-finalizers-role
+                  labels:
+                    cluster.x-k8s.io/provider: infrastructure-aws
+                rules:
+                  - apiGroups: ["controlplane.cluster.x-k8s.io"]
+                    resources: ["awsmanagedcontrolplanes/finalizers"]
+                    verbs: ["update"]
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: capa-manager-finalizers-binding
+                  labels:
+                    cluster.x-k8s.io/provider: infrastructure-aws
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: capa-manager-finalizers-role
+                subjects:
+                  - kind: ServiceAccount
+                    name: capa-controller-manager
+                    namespace: multicluster-engine
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: capa-rbac-policy-binding
+  namespace: open-cluster-management-policies
+placementRef:
+  name: capa-rbac-policy-placement
+  kind: PlacementRule
+  apiGroup: apps.open-cluster-management.io
+subjects:
+  - name: capa-rbac-policy
+    kind: Policy
+    apiGroup: policy.open-cluster-management.io
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: PlacementRule
+metadata:
+  name: capa-rbac-policy-placement
+  namespace: open-cluster-management-policies
+spec:
+  clusterConditions:
+    - status: "True"
+      type: ManagedClusterConditionAvailable
+  clusterSelector:
+    matchLabels:
+      name: local-cluster

@@ -8,6 +8,9 @@
 - **MANDATORY**: Support three cluster types: `ocp`, `eks`, `hcp`
 - **MANDATORY**: Use zero-padded numbering: `01`, `02`, `03`, etc.
 - **MANDATORY**: Find next available number for the specified type
+- **MANDATORY**: Cluster names MUST NOT exceed 19 characters to prevent Kubernetes label length violations
+- **MANDATORY**: Cluster names must contain only lowercase letters, numbers, and hyphens
+- **MANDATORY**: Cluster names must start and end with alphanumeric characters
 - **OPTIONAL**: Allow name suffix for differentiation (e.g., `hcp-01-mytest`, `ocp-02-dev`)
 
 ### Cluster Name Generation Logic
@@ -24,6 +27,25 @@
 - First EKS cluster: `eks-01`
 - First HCP cluster: `hcp-01`
 - If `hcp-01` exists, next would be `hcp-02`
+
+### Cluster Name Length Validation
+
+**Problem**: ApplicationSet generates Kubernetes application names by combining cluster names with component names:
+- Pattern: `{cluster-name}-{component}`
+- Longest component: `pipelines-cloud-infrastructure-provisioning` (43 characters)
+- Kubernetes label length limit: 63 characters
+
+**Solution**: Maximum cluster name length = 63 - 43 - 1 (hyphen) = **19 characters**
+
+**Examples of generated ApplicationSet names**:
+- `ocp-01-cluster` (14 chars) ✅
+- `ocp-01-pipelines-cloud-infrastructure-provisioning` (50 chars) ✅
+- `ocp-01-mturansk-jul29-pipelines-cloud-infrastructure-provisioning` (67 chars) ❌ Exceeds limit
+
+**Validation prevents**:
+- Kubernetes label length violations
+- ApplicationSet generation failures
+- ArgoCD sync issues
 
 ## Features
 
@@ -93,13 +115,31 @@ Automatically calls `bin/cluster-generate` to create:
 ## Error Handling
 
 - Automatically generates semantic cluster names
+- **Validates cluster name length** (maximum 19 characters for Kubernetes compatibility)
+- **Validates cluster name format** (lowercase alphanumeric and hyphens only)
 - Validates cluster name uniqueness
 - Checks cluster type input
-- Provides clear error messages
+- Provides clear error messages with detailed explanations
 - Allows cancellation at confirmation step
 - **Automatic validation** with clear status indicators
 - **Debug commands** provided when validation fails
 - Cleans up on failure
+
+### Cluster Name Validation Errors
+
+The tool provides detailed error messages for common validation failures:
+
+```bash
+# Length validation error
+Error: Cluster name 'ocp-01-mturansk-jul29' is 20 characters long
+Maximum allowed length is 19 characters to avoid Kubernetes label length violations
+Generated ApplicationSet names like 'ocp-01-mturansk-jul29-pipelines-cloud-infrastructure-provisioning' would exceed 63 character limit
+
+# Format validation error  
+Error: Cluster name 'OCP-01-Test_Cluster' contains invalid characters
+Cluster names must contain only lowercase letters, numbers, and hyphens
+Must start and end with an alphanumeric character
+```
 
 ## Future Improvements
 

@@ -16,6 +16,8 @@ spec:
     env:
     - name: AWS_DEFAULT_REGION
       value: $(params.region)
+    - name: PATH
+      value: "/tmp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     volumeMounts:
     - name: aws-credentials
       mountPath: /root/.aws
@@ -28,18 +30,25 @@ spec:
       set -e
       echo "Installing required tools..."
       
+      # Create user bin directory and change to tmp
+      mkdir -p /tmp/bin
+      cd /tmp
+      export PATH="/tmp/bin:$PATH"
+      
       # Install kubectl
       curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
-      chmod +x kubectl && mv kubectl /usr/local/bin/
+      chmod +x kubectl && mv kubectl /tmp/bin/
       
-      # Install AWS CLI
+      # Install AWS CLI to user location  
       curl -LO "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
-      unzip awscli-exe-linux-x86_64.zip && ./aws/install
+      unzip awscli-exe-linux-x86_64.zip && ./aws/install --install-dir /tmp/aws-cli --bin-dir /tmp/bin
       
       # Install OpenShift CLI
-      curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar -xz -C /usr/local/bin/ oc
+      curl -L "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz" | tar -xz -C /tmp/bin/ oc
       
       echo "Tools installed successfully"
+      echo "PATH: $PATH"
+      ls -la /tmp/bin/
       
   - name: wait-for-eks-cluster
     image: registry.redhat.io/ubi9/ubi:latest

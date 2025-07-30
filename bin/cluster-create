@@ -92,9 +92,42 @@ generate_cluster_name() {
     printf "${type}-%02d" "$next_num"
 }
 
+# Function to validate cluster name length and format
+validate_cluster_name_format() {
+    local name="$1"
+    
+    # Validate cluster name length for Kubernetes label compatibility
+    # ApplicationSet generates names like: {cluster-name}-{component}
+    # Longest component is "pipelines-cloud-infrastructure-provisioning" (43 chars)
+    # Kubernetes labels max length is 63 chars
+    # Max cluster name = 63 - 43 - 1 (hyphen) = 19 characters
+    local max_length=19
+    if [ ${#name} -gt $max_length ]; then
+        echo "Error: Cluster name '$name' is ${#name} characters long" >&2
+        echo "Maximum allowed length is $max_length characters to avoid Kubernetes label length violations" >&2
+        echo "Generated ApplicationSet names like '$name-pipelines-cloud-infrastructure-provisioning' would exceed 63 character limit" >&2
+        return 1
+    fi
+    
+    # Validate cluster name format (alphanumeric, hyphens, must start/end with alphanumeric)
+    if ! echo "$name" | grep -q '^[a-z0-9][a-z0-9-]*[a-z0-9]$\|^[a-z0-9]$'; then
+        echo "Error: Cluster name '$name' contains invalid characters" >&2
+        echo "Cluster names must contain only lowercase letters, numbers, and hyphens" >&2
+        echo "Must start and end with an alphanumeric character" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
 # Function to validate cluster name uniqueness
 validate_cluster_name() {
     local name="$1"
+    
+    # First validate name format and length
+    if ! validate_cluster_name_format "$name"; then
+        return 1
+    fi
     
     # Check if cluster directory already exists
     if [ -d "clusters/$name" ]; then

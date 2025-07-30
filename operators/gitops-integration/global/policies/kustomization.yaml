@@ -3,3 +3,4 @@ kind: Kustomization
 
 resources:
   - gitops-integration-policy.yaml
+  - capa-rbac-policy.yaml
