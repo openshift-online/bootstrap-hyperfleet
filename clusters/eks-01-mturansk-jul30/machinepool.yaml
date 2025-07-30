@@ -15,4 +15,4 @@ spec:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: AWSManagedMachinePool
         name: eks-01-mturansk-jul30
-      version: 1.28
+      version: "1.28"

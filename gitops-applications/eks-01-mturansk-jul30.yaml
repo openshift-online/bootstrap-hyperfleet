@@ -19,7 +19,7 @@ spec:
         path: pipelines/hello-world/eks-01-mturansk-jul30
         destination: eks-01-mturansk-jul30
         syncWave: "3"
-      - component: pipelines-cloud-infrastructure-provisioning
+      - component: pipelines-cloud-infra
         path: pipelines/cloud-infrastructure-provisioning/eks-01-mturansk-jul30
         destination: eks-01-mturansk-jul30
         syncWave: "3"
