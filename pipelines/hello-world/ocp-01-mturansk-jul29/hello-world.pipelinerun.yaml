@@ -11,3 +11,5 @@ spec:
       value: ocp-01-mturansk-jul29
     - name: region
       value: us-west-2
+    - name: message
+      value: "hello from ocp-01"
