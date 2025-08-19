@@ -6,3 +6,4 @@ namespace: ocm-eks-01-mturansk-jul30
 resources:
   - ../../../bases/ocm
   - namespace.yaml
+  - postgres-demo.pipelinerun.yaml

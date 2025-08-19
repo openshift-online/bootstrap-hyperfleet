@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - postgres-demo.pipeline.yaml
+  - postgres-rbac.yaml
+
+namePrefix: postgres-demo-
+
+commonLabels:
+  app.kubernetes.io/name: postgres-demo-pipeline
+  app.kubernetes.io/component: database
+  app.kubernetes.io/part-of: bootstrap-pipelines

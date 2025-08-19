@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: trex-db-run
+  namespace: ocm-ocp-01-mturansk-jul29
+  annotations:
+    description: "PostgreSQL database deployment for ocp-01-mturansk-jul29"
+spec:
+  pipelineRef:
+    name: postgres-demo-postgres-demo-pipeline
+  params:
+    - name: database-name
+      value: trex-db
+    - name: namespace
+      value: ocm-ocp-01-mturansk-jul29
+    - name: storage-size
+      value: 20Gi
+    - name: postgres-version
+      value: "15"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi

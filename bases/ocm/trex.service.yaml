@@ -37,7 +37,7 @@ spec:
           secretName: trex
       - name: rds
         secret:
-          secretName: trex-rds
+          secretName: trex-db
       - name: authentication
         configMap:
           name: authentication
@@ -46,8 +46,8 @@ spec:
         image: quay.io/app-sre/trex:b8ad881e56c7c0b43ef3032da2bb7a783ec857bf
         imagePullPolicy: IfNotPresent
         volumeMounts:
-        - name: service
-          mountPath: /secrets/service
+#        - name: service
+#          mountPath: /secrets/service
         - name: rds
           mountPath: /secrets/rds
         command:
@@ -67,8 +67,8 @@ spec:
         volumeMounts:
         - name: tls
           mountPath: /secrets/tls
-        - name: service
-          mountPath: /secrets/service
+#        - name: service
+#          mountPath: /secrets/service
         - name: rds
           mountPath: /secrets/rds
         - name: authentication
@@ -84,9 +84,9 @@ spec:
         - --db-user-file=/secrets/rds/db.user
         - --db-password-file=/secrets/rds/db.password
         - --db-name-file=/secrets/rds/db.name
-        - --enable-ocm-mock=false
-        - --ocm-client-id-file=/secrets/service/ocm-service.clientId
-        - --ocm-client-secret-file=/secrets/service/ocm-service.clientSecret
+        - --enable-ocm-mock=true
+#        - --ocm-client-id-file=/secrets/service/ocm-service.clientId
+#        - --ocm-client-secret-file=/secrets/service/ocm-service.clientSecret
         - --enable-jwt=true
         - --enable-https=true
         - --api-server-bindaddress=:8000

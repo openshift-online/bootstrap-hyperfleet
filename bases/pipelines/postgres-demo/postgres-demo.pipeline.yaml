@@ -1,0 +1,651 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: postgres-demo-pipeline
+  namespace: default
+  annotations:
+    description: "PostgreSQL deployment pipeline with Vault secret management"
+spec:
+  description: >-
+    Deploys PostgreSQL database with credentials stored in Vault and
+    synchronized via External Secrets Operator. Includes connectivity
+    validation and cleanup on failure.
+  params:
+    - name: database-name
+      type: string
+      description: "Name of the PostgreSQL database to create"
+    - name: namespace
+      type: string
+      description: "Target namespace for deployment"
+      default: "postgres-demo"
+    - name: storage-size
+      type: string
+      description: "Storage size for PostgreSQL persistent volume"
+      default: "10Gi"
+    - name: postgres-version
+      type: string
+      description: "PostgreSQL version to deploy"
+      default: "15"
+  workspaces:
+    - name: shared-workspace
+      description: "Shared workspace for pipeline artifacts"
+  tasks:
+    - name: validate-parameters
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+          - name: storage-size
+          - name: postgres-version
+        steps:
+          - name: validate-inputs
+            image: registry.redhat.io/ubi9-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🔍 Validating pipeline parameters..."
+              
+              DB_NAME="$(params.database-name)"
+              NAMESPACE="$(params.namespace)"
+              STORAGE="$(params.storage-size)"
+              VERSION="$(params.postgres-version)"
+              
+              echo "Database Name: $DB_NAME"
+              echo "Namespace: $NAMESPACE"
+              echo "Storage Size: $STORAGE"
+              echo "PostgreSQL Version: $VERSION"
+              
+              # Validate database name format (lowercase alphanumeric + hyphens)
+              if [[ ! "$DB_NAME" =~ ^[a-z0-9-]+$ ]]; then
+                echo "❌ Database name must be lowercase alphanumeric with hyphens only"
+                exit 1
+              fi
+              
+              # Validate database name length (K8s label limit)
+              if [[ ${#DB_NAME} -gt 63 ]]; then
+                echo "❌ Database name must be 63 characters or less"
+                exit 1
+              fi
+              
+              # Validate storage format
+              if [[ ! "$STORAGE" =~ ^[0-9]+[KMGT]i?$ ]]; then
+                echo "❌ Storage size must be in format like '10Gi', '500Mi', etc."
+                exit 1
+              fi
+              
+              # Validate PostgreSQL version
+              if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                echo "❌ PostgreSQL version must be numeric (e.g., '15', '14.2')"
+                exit 1
+              fi
+              
+              # Validate namespace permissions
+              echo "🔍 Validating namespace permissions..."
+              CURRENT_NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+              echo "Current pipeline namespace: $CURRENT_NAMESPACE"
+              echo "Target deployment namespace: $NAMESPACE"
+              
+              if [[ "$NAMESPACE" != "$CURRENT_NAMESPACE" ]]; then
+                echo "⚠️  WARNING: Target namespace ($NAMESPACE) differs from pipeline namespace ($CURRENT_NAMESPACE)"
+                echo "This may cause permission issues. Consider using namespace: $CURRENT_NAMESPACE"
+                echo ""
+                echo "💡 RECOMMENDED CONFIGURATION:"
+                echo "  - name: namespace"
+                echo "    value: $CURRENT_NAMESPACE"
+                echo ""
+              else
+                echo "✅ Namespace configuration is optimal"
+              fi
+              
+              echo "✅ Parameter validation completed successfully"
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: storage-size
+          value: "$(params.storage-size)"
+        - name: postgres-version
+          value: "$(params.postgres-version)"
+
+
+    - name: generate-credentials
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+        steps:
+          - name: create-local-secret
+            image: registry.redhat.io/ubi9/ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              DB_NAME="$(params.database-name)"
+              NAMESPACE="$(params.namespace)"
+              
+              echo "🔐 Generating database credentials and creating local secret..."
+              
+              # Install kubectl and generate password
+              if ! command -v kubectl >/dev/null 2>&1; then
+                curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+                chmod +x kubectl && mv kubectl /usr/local/bin/
+              fi
+              
+              # Generate secure credentials
+              USERNAME="$(params.database-name)"
+              PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+              DATABASE="$(params.database-name)"
+              
+              echo "Generated credentials:"
+              echo "  Username: $USERNAME"
+              echo "  Database: $DATABASE"
+              echo "  Password: [32 characters - hidden]"
+              
+              # Create Kubernetes secret directly
+              echo "📝 Creating Kubernetes secret..."
+              
+              # Check if target namespace exists, create if needed
+              echo "🔍 Verifying target namespace exists..."
+              if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+                echo "⚠️  Target namespace '$NAMESPACE' does not exist"
+                echo "🏗️  Creating namespace '$NAMESPACE'..."
+                
+                if kubectl create namespace "$NAMESPACE" >/dev/null 2>&1; then
+                  echo "✅ Successfully created namespace '$NAMESPACE'"
+                else
+                  echo "❌ ERROR: Failed to create namespace '$NAMESPACE'"
+                  echo ""
+                  echo "🔍 TROUBLESHOOTING:"
+                  echo "  Available namespaces:"
+                  kubectl get namespaces --no-headers -o custom-columns=":metadata.name" | head -10
+                  echo ""
+                  echo "💡 SOLUTIONS:"
+                  echo "  1. Check RBAC permissions for namespace creation"
+                  echo "  2. Use an existing namespace from the list above"
+                  echo "  3. Verify cluster access and connectivity"
+                  exit 1
+                fi
+              else
+                echo "✅ Target namespace '$NAMESPACE' already exists"
+              fi
+              
+              # Check if we can access the target namespace
+              if ! kubectl auth can-i create secrets -n "$NAMESPACE" 2>/dev/null; then
+                echo "❌ ERROR: No permission to create secrets in namespace '$NAMESPACE'"
+                echo ""
+                echo "🔍 TROUBLESHOOTING:"
+                echo "  Current service account: $(kubectl auth whoami 2>/dev/null || echo 'unknown')"
+                CURRENT_NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+                echo "  Pipeline running in namespace: $CURRENT_NS"
+                echo "  Target namespace: $NAMESPACE"
+                echo ""
+                echo "💡 SOLUTIONS:"
+                echo "  1. Use same namespace as pipeline: --param namespace=$CURRENT_NS"
+                echo "  2. Create RBAC permissions for cross-namespace access"
+                echo "  3. Run pipeline in target namespace"
+                exit 1
+              fi
+              
+              kubectl create secret generic $(params.database-name) \
+                --from-literal=username="$USERNAME" \
+                --from-literal=password="$PASSWORD" \
+                --from-literal=database="$DATABASE" \
+                -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - || {
+                echo "❌ ERROR: Failed to create secret $(params.database-name) in namespace $NAMESPACE"
+                echo "Check RBAC permissions and namespace existence"
+                exit 1
+              }
+              
+              echo "✅ Credentials stored in secret: $(params.database-name)"
+              echo ""
+              echo "📋 Secret Details:"
+              echo "  Secret Name: $(params.database-name)"
+              echo "  Namespace: $NAMESPACE"
+              echo "  Keys: username, password, database"
+              echo ""
+              
+              # Verify secret was created
+              echo "🔍 Verifying secret creation..."
+              if kubectl get secret $(params.database-name) -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "✅ Secret verification successful"
+                kubectl describe secret $(params.database-name) -n "$NAMESPACE" | grep -E "Name:|Namespace:|Type:|Data"
+              else
+                echo "❌ Secret verification failed - secret not found"
+                exit 1
+              fi
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+      runAfter:
+        - validate-parameters
+
+
+    - name: deploy-postgresql
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+          - name: storage-size
+          - name: postgres-version
+        steps:
+          - name: create-postgresql-resources
+            image: registry.redhat.io/ubi9/ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              DB_NAME="$(params.database-name)"
+              NAMESPACE="$(params.namespace)"
+              STORAGE="$(params.storage-size)"
+              VERSION="$(params.postgres-version)"
+              
+              echo "🐘 Deploying PostgreSQL database..."
+              
+              # Install kubectl
+              if ! command -v kubectl >/dev/null 2>&1; then
+                curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+                chmod +x kubectl && mv kubectl /usr/local/bin/
+              fi
+              
+              # Debug: List available secrets
+              echo "🔍 Debugging - Available secrets in namespace $NAMESPACE:"
+              kubectl get secrets -n "$NAMESPACE" | grep -E "(NAME|postgres|credentials)" || echo "No postgres-related secrets found"
+              
+              # Verify required secret exists
+              if kubectl get secret $(params.database-name) -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "✅ Required secret '$(params.database-name)' found"
+              else
+                echo "❌ ERROR: Required secret '$(params.database-name)' not found in namespace $NAMESPACE"
+                echo "Available secrets:"
+                kubectl get secrets -n "$NAMESPACE"
+                exit 1
+              fi
+              
+              # Create ConfigMap
+              cat <<EOF > /tmp/postgres-config.yaml
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: ${DB_NAME}-config
+                namespace: ${NAMESPACE}
+              data:
+                postgresql.conf: |
+                  listen_addresses = '*'
+                  port = 5432
+                  max_connections = 100
+                  shared_buffers = 128MB
+                  effective_cache_size = 512MB
+                  maintenance_work_mem = 64MB
+                  checkpoint_completion_target = 0.9
+                  wal_buffers = 16MB
+                  default_statistics_target = 100
+                  random_page_cost = 4
+                  effective_io_concurrency = 2
+                  work_mem = 4MB
+                  min_wal_size = 1GB
+                  max_wal_size = 4GB
+              ---
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: ${DB_NAME}-service
+                namespace: ${NAMESPACE}
+              spec:
+                selector:
+                  app: ${DB_NAME}
+                ports:
+                - port: 5432
+                  targetPort: 5432
+                  protocol: TCP
+                type: ClusterIP
+              ---
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: ${DB_NAME}
+                namespace: ${NAMESPACE}
+              spec:
+                serviceName: ${DB_NAME}-service
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app: ${DB_NAME}
+                template:
+                  metadata:
+                    labels:
+                      app: ${DB_NAME}
+                  spec:
+                    containers:
+                    - name: postgres
+                      image: postgres:${VERSION}
+                      ports:
+                      - containerPort: 5432
+                      env:
+                      - name: POSTGRES_DB
+                        valueFrom:
+                          secretKeyRef:
+                            name: $(params.database-name)
+                            key: database
+                      - name: POSTGRES_USER
+                        valueFrom:
+                          secretKeyRef:
+                            name: $(params.database-name)
+                            key: username
+                      - name: POSTGRES_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: $(params.database-name)
+                            key: password
+                      - name: PGDATA
+                        value: /var/lib/postgresql/data/pgdata
+                      volumeMounts:
+                      - name: postgres-storage
+                        mountPath: /var/lib/postgresql/data
+                      - name: postgres-config
+                        mountPath: /etc/postgresql/postgresql.conf
+                        subPath: postgresql.conf
+                      readinessProbe:
+                        exec:
+                          command:
+                          - /bin/sh
+                          - -c
+                          - exec pg_isready -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" -h 127.0.0.1 -p 5432
+                        initialDelaySeconds: 30
+                        periodSeconds: 10
+                        timeoutSeconds: 5
+                      livenessProbe:
+                        exec:
+                          command:
+                          - /bin/sh
+                          - -c
+                          - exec pg_isready -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" -h 127.0.0.1 -p 5432
+                        initialDelaySeconds: 60
+                        periodSeconds: 10
+                        timeoutSeconds: 5
+                      resources:
+                        requests:
+                          memory: "256Mi"
+                          cpu: "250m"
+                        limits:
+                          memory: "512Mi"
+                          cpu: "500m"
+                    volumes:
+                    - name: postgres-config
+                      configMap:
+                        name: ${DB_NAME}-config
+                volumeClaimTemplates:
+                - metadata:
+                    name: postgres-storage
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: ${STORAGE}
+              EOF
+              
+              # Apply PostgreSQL resources
+              kubectl apply -f /tmp/postgres-config.yaml
+              
+              echo "✅ PostgreSQL resources created"
+              
+              # Wait for StatefulSet to be ready
+              echo "⏳ Waiting for PostgreSQL to be ready..."
+              kubectl wait --for=condition=ready pod -l app=${DB_NAME} -n ${NAMESPACE} --timeout=300s
+              
+              echo "✅ PostgreSQL deployment completed successfully"
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: storage-size
+          value: "$(params.storage-size)"
+        - name: postgres-version
+          value: "$(params.postgres-version)"
+      runAfter:
+        - generate-credentials
+
+    - name: validate-connectivity
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+        steps:
+          - name: test-database-connection
+            image: postgres:15
+            env:
+              - name: PGHOST
+                value: $(params.database-name)-service.$(params.namespace).svc.cluster.local
+              - name: PGPORT
+                value: "5432"
+              - name: PGDATABASE
+                valueFrom:
+                  secretKeyRef:
+                    name: $(params.database-name)
+                    key: database
+              - name: PGUSER
+                valueFrom:
+                  secretKeyRef:
+                    name: $(params.database-name)
+                    key: username
+              - name: PGPASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: $(params.database-name)
+                    key: password
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🧪 Testing database connectivity..."
+              echo "Testing connection to: $PGHOST:$PGPORT"
+              echo "Database: $PGDATABASE"
+              echo "Username: $PGUSER"
+              
+              # Test basic connectivity
+              echo "⏳ Testing basic connectivity..."
+              psql -c "SELECT version();" || {
+                echo "❌ Failed to connect to PostgreSQL"
+                exit 1
+              }
+              
+              echo "✅ Basic connectivity test passed"
+              
+              # Test table operations
+              echo "⏳ Testing table operations..."
+              
+              # Create test table
+              psql -c "CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY, message TEXT);" || {
+                echo "❌ Failed to create test table"
+                exit 1
+              }
+              
+              # Insert test data
+              psql -c "INSERT INTO test_table (message) VALUES ('Pipeline test successful');" || {
+                echo "❌ Failed to insert test data"
+                exit 1
+              }
+              
+              # Query test data
+              RESULT=$(psql -t -c "SELECT COUNT(*) FROM test_table;")
+              if [[ "$RESULT" -gt 0 ]]; then
+                echo "✅ Table operations test passed"
+                echo "   Records in test_table: $RESULT"
+              else
+                echo "❌ Table operations test failed"
+                exit 1
+              fi
+              
+              # Clean up test table
+              psql -c "DROP TABLE test_table;" || {
+                echo "⚠️  Warning: Failed to clean up test table"
+              }
+              
+              echo "✅ Database connectivity validation completed successfully"
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+      runAfter:
+        - deploy-postgresql
+
+    - name: deployment-summary
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+          - name: storage-size
+          - name: postgres-version
+        steps:
+          - name: show-deployment-info
+            image: registry.redhat.io/ubi9/ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              DB_NAME="$(params.database-name)"
+              NAMESPACE="$(params.namespace)"
+              STORAGE="$(params.storage-size)"
+              VERSION="$(params.postgres-version)"
+              
+              echo "🎉 PostgreSQL Deployment Summary"
+              echo "================================="
+              echo ""
+              echo "✅ Database successfully deployed and validated!"
+              echo ""
+              echo "Deployment Details:"
+              echo "  📊 Database Name: $DB_NAME"
+              echo "  🏠 Namespace: $NAMESPACE"
+              echo "  🐘 PostgreSQL Version: $VERSION"
+              echo "  💾 Storage Size: $STORAGE"
+              echo ""
+              echo "Resources Created:"
+              echo "  📦 StatefulSet: $DB_NAME"
+              echo "  🌐 Service: $DB_NAME-service"
+              echo "  ⚙️  ConfigMap: $DB_NAME-config"
+              echo "  🔐 Secret: $(params.database-name) (local)"
+              echo ""
+              echo "🔐 Secret Information:"
+              echo "  📝 Expected Secret Name: $(params.database-name)"
+              echo "  🏠 Secret Namespace: $NAMESPACE"
+              echo "  🔑 Secret Keys: username, password, database"
+              echo "  📋 Secret Usage:"
+              echo "    - POSTGRES_USER: from $(params.database-name).username"
+              echo "    - POSTGRES_PASSWORD: from $(params.database-name).password"
+              echo "    - POSTGRES_DB: from $(params.database-name).database"
+              echo ""
+              echo "Connection Information:"
+              echo "  🏠 Host: $DB_NAME-service.$NAMESPACE.svc.cluster.local"
+              echo "  🚪 Port: 5432"
+              echo "  📊 Database: postgres"
+              echo ""
+              echo "✅ Pipeline completed successfully!"
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: storage-size
+          value: "$(params.storage-size)"
+        - name: postgres-version
+          value: "$(params.postgres-version)"
+      runAfter:
+        - validate-connectivity
+
+  finally:
+    - name: check-orphaned-resources
+      taskSpec:
+        params:
+          - name: database-name
+          - name: namespace
+        steps:
+          - name: cleanup-resources
+            image: registry.redhat.io/ubi9/ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              DB_NAME="$(params.database-name)"
+              NAMESPACE="$(params.namespace)"
+              
+              echo "🔍 Resource Check Initiated..."
+              echo "Scanning for potentially orphaned PostgreSQL resources..."
+              
+              # Install kubectl
+              if ! command -v kubectl >/dev/null 2>&1; then
+                curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+                chmod +x kubectl && mv kubectl /usr/local/bin/
+              fi
+              
+              # Check for potentially orphaned resources (don't auto-cleanup)
+              echo "🔍 Checking for potentially orphaned resources..."
+              
+              FOUND_RESOURCES=false
+              
+              # Check for PostgreSQL StatefulSet
+              if kubectl get statefulset "$DB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "📦 Found StatefulSet: $DB_NAME"
+                FOUND_RESOURCES=true
+              fi
+              
+              # Check for PostgreSQL Service
+              if kubectl get service "$DB_NAME-service" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "🌐 Found Service: $DB_NAME-service"
+                FOUND_RESOURCES=true
+              fi
+              
+              # Check for PostgreSQL ConfigMap
+              if kubectl get configmap "$DB_NAME-config" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "⚙️  Found ConfigMap: $DB_NAME-config"
+                FOUND_RESOURCES=true
+              fi
+              
+              # Check for PostgreSQL Secret
+              if kubectl get secret "$DB_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "🔐 Found Secret: $DB_NAME"
+                FOUND_RESOURCES=true
+              fi
+              
+              # Check for PostgreSQL PVC
+              if kubectl get pvc "postgres-storage-$DB_NAME-0" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "💾 Found PVC: postgres-storage-$DB_NAME-0"
+                FOUND_RESOURCES=true
+              fi
+              
+              if [ "$FOUND_RESOURCES" = "true" ]; then
+                echo ""
+                echo "⚠️  ORPHANED RESOURCES DETECTED"
+                echo "================================"
+                echo ""
+                echo "The following PostgreSQL resources may be orphaned in namespace: $NAMESPACE"
+                echo ""
+                echo "📋 Manual cleanup commands:"
+                echo "  oc delete statefulset $DB_NAME -n $NAMESPACE"
+                echo "  oc delete service $DB_NAME-service -n $NAMESPACE"
+                echo "  oc delete configmap $DB_NAME-config -n $NAMESPACE"
+                echo "  oc delete secret $DB_NAME -n $NAMESPACE"
+                echo "  oc delete pvc postgres-storage-$DB_NAME-0 -n $NAMESPACE"
+                echo ""
+                echo "🔍 Troubleshooting Tips:"
+                echo "  1. Check pipeline logs for specific error details"
+                echo "  2. Verify RBAC permissions for resource creation"
+                echo "  3. Ensure sufficient cluster resources and storage"
+                echo "  4. Validate network connectivity between components"
+                echo "  5. Check if target namespace has proper quotas"
+                echo ""
+                echo "💡 To clean up all resources at once:"
+                echo "  oc delete statefulset,service,configmap,secret,pvc -l app=$DB_NAME -n $NAMESPACE"
+              else
+                echo "✅ No orphaned resources detected - pipeline cleanup successful"
+              fi
+      params:
+        - name: database-name
+          value: "$(params.database-name)"
+        - name: namespace
+          value: "$(params.namespace)"

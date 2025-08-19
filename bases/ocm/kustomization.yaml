@@ -5,53 +5,15 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ams.db.yaml
-  - cs.db.yaml
-  - osl.db.yaml
+#  - trex.db.yaml
   - trex.service.yaml
   - trex.route.yaml
-  - trex.db.yaml
   - trex.configmap.yaml
 
-secretGenerator:
-  - name: ams-db
-    literals:
-      - db.host="ams-db"
-      - db.name="ams-db"
-      - db.password="foobar"
-      - db.user="ams-db"
-      - db.port="5432"
-  - name: cs-db
-    literals:
-      - db.host="cs-db"
-      - db.name="cs-db"
-      - db.password="foobar"
-      - db.user="cs-db"
-      - db.port="5432"
-  - name: osl-db
-    literals:
-      - db.host="osl-db"
-      - db.name="osl-db"
-      - db.password="foobar"
-      - db.user="osl-db"
-      - db.port="5432"
-  - name: trex-db
-    literals:
-      - db.host="trex-db"
-      - db.name="trex-db"
-      - db.password="foobar"
-      - db.user="trex-db"
-      - db.port="5432"
-  - name: trex-rds
-    literals:
-      - db.host="trex-db"
-      - db.name="trex-db"
-      - db.password="foobar"
-      - db.user="trex-db"
-      - db.port="5432"
-  - name: trex
-    literals:
-      - ocm-service.clientId="dummy-client-id"
-      - ocm-service.clientSecret="dummy-client-secret"
-      - ocm-service.token="dummy-token"
-      - sentry.key="dummy-sentry-key"
+#secretGenerator:
+#  - name: trex
+#    literals:
+#      - ocm-service.clientId="dummy-client-id"
+#      - ocm-service.clientSecret="dummy-client-secret"
+#      - ocm-service.token="dummy-token"
+#      - sentry.key="dummy-sentry-key"

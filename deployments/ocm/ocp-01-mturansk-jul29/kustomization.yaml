@@ -3,6 +3,21 @@ kind: Kustomization
 
 namespace: ocm-ocp-01-mturansk-jul29
 
+generatorOptions:
+  disableNameSuffixHash: true
+
 resources:
   - ../../../bases/ocm
+  - ../../../bases/pipelines/postgres-demo
   - namespace.yaml
+  - postgres-demo.pipelinerun.yaml
+
+patches:
+  - target:
+      kind: Pipeline
+      version: v1
+      group: tekton.dev
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: ocp-01-mturansk-jul29
