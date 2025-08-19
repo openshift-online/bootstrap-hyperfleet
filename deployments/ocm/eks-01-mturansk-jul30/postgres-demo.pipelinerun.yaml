@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: postgres-demo-run
+  namespace: ocm-eks-01-mturansk-jul30
+  annotations:
+    description: "PostgreSQL database deployment for eks-01-mturansk-jul30"
+spec:
+  pipelineRef:
+    name: postgres-demo-pipeline
+  params:
+    - name: database-name
+      value: eks-01-mturansk-jul30-db
+    - name: namespace
+      value: postgres-demo
+    - name: storage-size
+      value: 20Gi
+    - name: postgres-version
+      value: "15"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi

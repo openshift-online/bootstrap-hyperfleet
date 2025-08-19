@@ -1,0 +1,43 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: postgres-pipeline-secrets-manager
+  labels:
+    app.kubernetes.io/name: postgres-demo-pipeline
+    app.kubernetes.io/component: rbac
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get", "list", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["create", "get", "list"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "pods"]
+  verbs: ["create", "get", "list", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["create", "get", "list", "update", "patch", "delete"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["selfsubjectaccessreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: postgres-pipeline-secrets-binding
+  labels:
+    app.kubernetes.io/name: postgres-demo-pipeline
+    app.kubernetes.io/component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: postgres-pipeline-secrets-manager
+subjects:
+- kind: ServiceAccount
+  name: pipeline
+  namespace: ocm-ocp-01-mturansk-jul29
+- kind: ServiceAccount
+  name: pipeline
+  namespace: ocm-eks-01-mturansk-jul30

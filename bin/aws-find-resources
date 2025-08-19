@@ -324,7 +324,7 @@ find_network_interfaces_in_subnets() {
     verbose_log "Finding network interfaces in cluster subnets"
     
     local subnet_filter
-    subnet_filter=$(echo "$subnet_ids" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    subnet_filter=$(echo "$subnet_ids" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$subnet_filter" ]] && echo "[]" && return
     
@@ -343,7 +343,7 @@ find_ec2_instances_in_subnets() {
     verbose_log "Finding EC2 instances in cluster subnets"
     
     local subnet_filter
-    subnet_filter=$(echo "$subnet_ids" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    subnet_filter=$(echo "$subnet_ids" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$subnet_filter" ]] && echo "[]" && return
     
@@ -363,7 +363,7 @@ find_rds_instances_in_subnets() {
     verbose_log "Finding RDS instances in cluster subnets"
     
     local subnet_filter
-    subnet_filter=$(echo "$subnet_ids" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    subnet_filter=$(echo "$subnet_ids" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$subnet_filter" ]] && echo "[]" && return
     
@@ -390,7 +390,7 @@ find_efs_mount_targets_in_subnets() {
     verbose_log "Finding EFS mount targets in cluster subnets"
     
     local subnet_filter
-    subnet_filter=$(echo "$subnet_ids" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    subnet_filter=$(echo "$subnet_ids" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$subnet_filter" ]] && echo "[]" && return
     
@@ -412,7 +412,7 @@ find_ebs_volumes_for_instances() {
     verbose_log "Finding EBS volumes attached to cluster instances"
     
     local instance_filter  
-    instance_filter=$(echo "$ec2_instances" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    instance_filter=$(echo "$ec2_instances" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$instance_filter" ]] && echo "[]" && return
     
@@ -431,7 +431,7 @@ find_ebs_snapshots_for_volumes() {
     verbose_log "Finding EBS snapshots from cluster volumes"
     
     local volume_filter
-    volume_filter=$(echo "$ebs_volumes" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    volume_filter=$(echo "$ebs_volumes" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$volume_filter" ]] && echo "[]" && return
     
@@ -450,8 +450,8 @@ find_elastic_ips_for_instances() {
     verbose_log "Finding Elastic IPs attached to cluster resources"
     
     local instance_ids eni_ids
-    instance_ids=$(echo "$ec2_instances" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
-    eni_ids=$(echo "$network_interfaces" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    instance_ids=$(echo "$ec2_instances" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
+    eni_ids=$(echo "$network_interfaces" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     local all_eips="[]"
     if [[ -n "$instance_ids" ]]; then
@@ -484,7 +484,7 @@ find_auto_scaling_groups_for_instances() {
     verbose_log "Finding Auto Scaling Groups managing cluster instances"
     
     local instance_filter
-    instance_filter=$(echo "$ec2_instances" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    instance_filter=$(echo "$ec2_instances" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$instance_filter" ]] && echo "[]" && return
     
@@ -506,7 +506,7 @@ find_target_groups_for_elbs() {
     verbose_log "Finding target groups for cluster ELBs"
     
     local elb_arns
-    elb_arns=$(echo "$application_elbs" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    elb_arns=$(echo "$application_elbs" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$elb_arns" ]] && echo "[]" && return
     
@@ -525,7 +525,7 @@ find_launch_templates_for_asgs() {
     
     # Extract launch template IDs from ASG configurations
     local asg_names
-    asg_names=$(echo "$auto_scaling_groups" | jq -r '.[][] | select(type == "array") | .[0]' | tr '\n' ',' | sed 's/,$//')
+    asg_names=$(echo "$auto_scaling_groups" | jq -r '.[] | .[0]' | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$asg_names" ]] && echo "[]" && return
     
@@ -545,7 +545,7 @@ find_efs_filesystems_for_mount_targets() {
     verbose_log "Finding EFS file systems for cluster mount targets"
     
     local filesystem_ids
-    filesystem_ids=$(echo "$mount_targets" | jq -r '.[][] | select(type == "array") | .[1]' | sort -u | tr '\n' ',' | sed 's/,$//')
+    filesystem_ids=$(echo "$mount_targets" | jq -r '.[] | .[1]' | sort -u | tr '\n' ',' | sed 's/,$//')
     
     [[ -z "$filesystem_ids" ]] && echo "[]" && return
     
