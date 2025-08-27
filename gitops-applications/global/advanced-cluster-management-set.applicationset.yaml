@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: advanced-cluster-management-set
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - component: acm-operator
+        path: operators/advanced-cluster-management/global/operator/overlays/release-2.13
+        syncWave: "2"
+      - component: acm-hub
+        path: operators/advanced-cluster-management/global/instance/base
+        syncWave: "3"
+      - component: acm-policies
+        path: operators/gitops-integration/global
+        syncWave: "4"
+  template:
+    metadata:
+      name: acm-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        name: in-cluster
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false
