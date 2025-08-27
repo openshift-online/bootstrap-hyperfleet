@@ -20,7 +20,7 @@ echo "Applying the GitOps Applications to complete bootstrap"
 oc apply -k ./gitops-applications
 
 echo "Waiting for openshift-gitops (aka Argo) to complete"
-./bin/wait-kube route openshift-gitops-server openshift-gitops {.kind} Route
+./bin/wait-kube route openshift-gitops-server openshift-gitops '{.metadata.name}' openshift-gitops-server
 
 echo "Waiting for ACM to complete"
 ./bin/wait-kube mch multiclusterhub open-cluster-management '{.status.conditions[?(@.type=="Complete")].message}' "All hub components ready."
