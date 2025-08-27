@@ -4,4 +4,4 @@ kind: Kustomization
 resources:
   - operator/overlays/release-2.13
   - instance/base
-  - gitops-integration
+  - ../../gitops-integration/global
