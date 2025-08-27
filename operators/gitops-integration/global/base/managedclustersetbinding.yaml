@@ -3,5 +3,7 @@ kind: ManagedClusterSetBinding
 metadata:
   name: global
   namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   clusterSet: global
