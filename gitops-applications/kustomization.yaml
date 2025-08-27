@@ -8,7 +8,6 @@ resources:
 
 # ADD CLUSTERS HERE
 
-- ./ocp-01-acme6.yaml
 
 
 
