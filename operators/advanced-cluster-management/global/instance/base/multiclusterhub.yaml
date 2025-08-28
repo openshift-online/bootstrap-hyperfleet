@@ -12,8 +12,6 @@ spec:
   enableClusterBackup: false
   overrides:
     components:
-    - name: cluster-manager
-      enabled: true
     - name: discovery
       enabled: true
     - name: hive
