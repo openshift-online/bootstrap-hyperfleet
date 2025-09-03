@@ -16,35 +16,24 @@ mindmap
     
     Reference Implementation
       *.ri.red-chesterfield.com
-        TRex Integration
-        Fleet Management
         Developer Forks
           mturansky.ri.red-chesterfield.com
           alpha-team.ri.red-chesterfield.com
     
     GCP HCP
       *.gcp.red-chesterfield.com
-        Google Cloud Platform
-        GCP Secret Manager
-        Cloud DNS Delegation
         Developer Forks
           devteam-a.gcp.red-chesterfield.com
           experiments.gcp.red-chesterfield.com
     
     FedRAMP Moderate
       *.fr.red-chesterfield.com
-        Compliance Focus
-        Enhanced Monitoring
-        Audit Logging
         Developer Forks
           compliance-test.fr.red-chesterfield.com
           security-team.fr.red-chesterfield.com
     
     On-Premises
       *.on-prem.red-chesterfield.com
-        Bare Metal Deployment
-        Air-gapped Registry
-        Static Networking
         Developer Forks
           lab-env.on-prem.red-chesterfield.com
           staging.on-prem.red-chesterfield.com
