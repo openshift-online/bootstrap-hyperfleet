@@ -12,7 +12,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/openshift-online/bootstrap.git
+    repoURL: https://github.com/openshift-online/bootstrap
     targetRevision: main
     path: operators/cluster-provisioning-metrics/global
   destination:

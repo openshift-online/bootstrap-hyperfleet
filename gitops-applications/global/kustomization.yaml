@@ -11,3 +11,13 @@ resources:
 - ./vault.application.yaml
 - ./eso.application.yaml
 - ./gitea.application.yaml
+
+patches:
+- target:
+    kind: Application
+    group: argoproj.io
+    version: v1alpha1
+  patch: |-
+    - op: replace
+      path: /spec/source/repoURL
+      value: "https://github.com/markturansky/acme"
