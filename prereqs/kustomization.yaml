@@ -1,6 +1,7 @@
 kind: Kustomization
 
 resources:
+- ./openshift-gitops.namespace.yaml
 - ./openshift-gitops.subscription.yaml
 - ./openshift-gitops.clusterrolebinding.yaml
 - ./argocd-tekton-exclusions.yaml
