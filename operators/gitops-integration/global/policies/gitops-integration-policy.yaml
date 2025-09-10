@@ -88,6 +88,7 @@ metadata:
   namespace: open-cluster-management-policies
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 placementRef:
   name: gitops-integration-policy-placement
   kind: PlacementRule
@@ -104,6 +105,7 @@ metadata:
   namespace: open-cluster-management-policies
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   clusterConditions:
     - status: "True"
