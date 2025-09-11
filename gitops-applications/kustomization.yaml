@@ -8,7 +8,7 @@ resources:
 
 # ADD CLUSTERS HERE
 
-#- ./ocp-01-mturansk.yaml
+- ./ocp-01-mturansk.yaml
 
 patches:
 # Repository URL overrides for fork-specific deployment
