@@ -64,18 +64,6 @@ patches:
     kind: Application
     group: argoproj.io
     version: v1alpha1
-    name: vault
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
     name: gitea
   patch: |-
     - op: replace
