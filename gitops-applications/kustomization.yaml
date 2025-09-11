@@ -72,3 +72,15 @@ patches:
     - op: replace
       path: /spec/source/targetRevision
       value: "OCM-16599/acme"
+- target:
+    kind: ApplicationSet
+    group: argoproj.io
+    version: v1alpha1
+    name: ocp-01-mturansk-applications
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/source/repoURL
+      value: "https://github.com/markturansky/acme"
+    - op: replace
+      path: /spec/template/spec/source/targetRevision
+      value: "OCM-16599/acme"
