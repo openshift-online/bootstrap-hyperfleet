@@ -10,9 +10,9 @@ spec:
   project: default
   source:
     path: ''
-    repoURL: https://github.com/hashicorp
+    repoURL: https://helm.releases.hashicorp.com
     targetRevision: 0.30.0
-    chart: vault-helm
+    chart: vault
     helm:
       parameters:
         - name: global.openshift
