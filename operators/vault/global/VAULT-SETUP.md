@@ -45,7 +45,7 @@ oc apply -f gitops-applications/global/vault.application.yaml
 oc apply -f gitops-applications/global/eso.application.yaml
 
 # Wait for deployments
-oc wait --for=condition=available deployment/vault-0 -n vault --timeout=300s
+oc wait --for=condition=Ready pod -l app.kubernetes.io/instance=vault  -n vault
 oc wait --for=condition=available deployment/external-secrets -n external-secrets --timeout=300s
 ```
 
@@ -55,12 +55,18 @@ oc wait --for=condition=available deployment/external-secrets -n external-secret
 # Initialize Vault (if not already done)
 oc exec vault-0 -n vault -- vault operator init -key-shares=1 -key-threshold=1
 
+# the UNSEAL_KEY may be in the pod's logs for temporary vaults, such as:
+#    The unseal key and root token are displayed below in case you want to
+#    seal/unseal the Vault or re-authenticate.
+#    Unseal Key: I95...p8=
+#    Root Token: root
+
 # Save the unseal key and root token securely
 # Unseal Vault
 oc exec vault-0 -n vault -- vault operator unseal <UNSEAL_KEY>
 
 # Login with root token
-oc exec vault-0 -n vault -- vault auth -method=token <ROOT_TOKEN>
+oc exec vault-0 -n vault -- vault auth -method=token root
 ```
 
 ### Step 3: Configure Kubernetes Authentication
@@ -81,20 +87,19 @@ oc exec vault-0 -n vault -- vault write auth/kubernetes/config \
 ```bash
 # Create ServiceAccount and RBAC for Vault authentication
 oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
+
+# Create ServiceAccount for External Secrets Operator to read secrets
+oc apply -f operators/vault/global/vault-secret-reader-serviceaccount.yaml
 ```
 
 ### Step 5: Configure Secret Policies
 
 ```bash
 # Create policy for cluster secrets
-oc exec vault-0 -n vault -- vault policy write cluster-secrets - << EOF
-path "secret/data/aws-credentials" {
-  capabilities = ["read"]
-}
-path "secret/data/pull-secret" {
-  capabilities = ["read"]
-}
-EOF
+echo 'path "secret/data/aws-credentials" { capabilities = ["read"] }
+  path "secret/data/pull-secret" { capabilities = ["read"] }' | oc exec vault-0 -n vault -i -- vault policy write cluster-secrets -
+
+
 
 # Create Kubernetes role
 oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
@@ -122,23 +127,23 @@ oc get clustersecretstore vault-cluster-store -o yaml
 ```bash
 # Store AWS credentials in Vault
 oc exec vault-0 -n vault -- vault kv put secret/aws-credentials \
-    aws_access_key_id="AKIA..." \
-    aws_secret_access_key="secret_key_here"
+    aws_access_key_id="$(cat .secrets/aws.secret.id)..." \
+    aws_secret_access_key="$(cat .secrets/aws.secret.key)"
 ```
 
 #### Pull Secret
 ```bash
 # Store pull secret in Vault
 oc exec vault-0 -n vault -- vault kv put secret/pull-secret \
-    .dockerconfigjson="$(cat pull-secret.json)"
+    .dockerconfigjson="$(cat .secrets/pull-secret.txt)"
 ```
 
 #### Custom Secrets
 ```bash
 # Add custom application secrets
 oc exec vault-0 -n vault -- vault kv put secret/database-credentials \
-    username="dbuser" \
-    password="secure_password"
+    username="gitea" \
+    password="$(cat .secrets/gitea.txt)"
 ```
 
 ### Deploying Secrets to Clusters

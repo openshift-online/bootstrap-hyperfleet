@@ -4,4 +4,11 @@ kind: Kustomization
 resources:
 - hashicorp-helm-repository.yaml
 - vault-auth-serviceaccount.yaml
+- vault-secret-reader-serviceaccount.yaml
 - cluster-secret-store.yaml
+
+# Config files for Vault setup
+configMapGenerator:
+- name: vault-policies
+  files:
+  - cluster-secrets-policy.hcl
