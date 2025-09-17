@@ -17,10 +17,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: advanced-cluster-management-set
+  name: advanced-cluster-management
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -30,7 +31,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
-
+    targetRevision: "OCM-16599/acme"
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -39,6 +40,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -48,6 +50,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -57,6 +60,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -66,6 +70,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -75,6 +80,7 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -84,3 +90,4 @@ metadata:
 spec:
   source:
     repoURL: https://github.com/openshift-online/bootstrap
+    targetRevision: "OCM-16599/acme"
