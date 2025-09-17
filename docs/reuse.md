@@ -1,3 +1,5 @@
+TODO:  all of this is subject to review, rework, and/or removal.
+
 # Bootstrap Reuse Architecture
 
 ## Overview
