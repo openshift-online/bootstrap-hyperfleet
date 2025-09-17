@@ -1,0 +1,86 @@
+# Repository URL Patch
+# 
+# This patch file allows users to override the default GitHub repository URL
+# for all ArgoCD applications in this directory.
+# 
+# Usage:
+#   1. Edit the repoURL value below to point to your fork or different repository
+#   2. All ArgoCD applications will automatically use the new URL
+#
+# Default: https://github.com/openshift-online/bootstrap
+# Examples:
+#   - https://github.com/your-username/bootstrap
+#   - https://gitea.example.com/organization/bootstrap.git
+#   - http://gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: advanced-cluster-management-set
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openshift-pipelines-operator
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: acm-gitops-integration
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-provisioning-metrics
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eso
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitea
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-bootstrap
+spec:
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap

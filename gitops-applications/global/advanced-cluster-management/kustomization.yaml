@@ -4,4 +4,4 @@ kind: Kustomization
 namespace: openshift-gitops
 
 resources:
-  - advanced-cluster-management-set.application.yaml
+  - advanced-cluster-management.application.yaml
