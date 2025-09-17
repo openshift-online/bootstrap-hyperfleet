@@ -19,6 +19,42 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+      - name: generate-secrets
+        image: registry.redhat.io/openshift4/ose-cli
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "🔐 Generating Gitea security secrets..."
+          
+          # Generate random secrets
+          SECRET_KEY=$(openssl rand -hex 32)
+          INTERNAL_TOKEN=$(openssl rand -base64 32)
+          
+          # Create temporary app.ini with generated secrets
+          cp /etc/gitea/app.ini /tmp/secrets/app.ini
+          
+          # Replace placeholder values with generated secrets
+          sed -i "s/SECRET_KEY = \$(openssl rand -hex 32)/SECRET_KEY = ${SECRET_KEY}/g" /tmp/secrets/app.ini
+          sed -i "s/INTERNAL_TOKEN = \$(openssl rand -base64 32)/INTERNAL_TOKEN = ${INTERNAL_TOKEN}/g" /tmp/secrets/app.ini
+          
+          echo "✅ Generated unique security secrets for Gitea"
+        volumeMounts:
+        - name: gitea-app-ini
+          mountPath: /etc/gitea
+          readOnly: true
+        - name: gitea-secrets
+          mountPath: /tmp/secrets
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
       containers:
       - name: gitea
         image: quay.io/gpte-devops-automation/gitea:latest
@@ -47,7 +83,7 @@ spec:
         volumeMounts:
         - name: gitea-data
           mountPath: /tmp/gitea
-        - name: gitea-app-ini
+        - name: gitea-secrets
           mountPath: /home/gitea/conf
           readOnly: true
         env:
@@ -86,3 +122,5 @@ spec:
       - name: gitea-app-ini
         configMap:
           name: gitea-app-ini
+      - name: gitea-secrets
+        emptyDir: {}

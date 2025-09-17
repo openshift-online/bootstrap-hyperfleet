@@ -1,26 +1,24 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: advanced-cluster-management
+  name: acm-gitops-integration
   namespace: openshift-gitops
 spec:
   destination:
     name: in-cluster
   project: default
   source:
-    path: operators/advanced-cluster-management/global
+    path: operators/gitops-integration/global
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:
     automated:
       selfHeal: true
       allowEmpty: false
-    syncOptions:
-    - SkipDryRunOnMissingResource=true
-    prune: false
-    retry: # Extending the backoff / retry because ACM has to install before all CRs can finalize
+    prune: true
+    retry:
       limit: 15
       backoff:
         duration: 15s
         factor: 2
-        maxDuration: 10m
+        maxDuration: 3m

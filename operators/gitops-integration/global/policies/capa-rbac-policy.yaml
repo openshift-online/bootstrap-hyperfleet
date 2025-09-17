@@ -7,7 +7,8 @@ metadata:
     policy.open-cluster-management.io/standards: NIST-CSF
     policy.open-cluster-management.io/categories: AC Access Control
     policy.open-cluster-management.io/controls: AC-3 Access Enforcement
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   remediationAction: enforce
   disabled: false
@@ -56,7 +57,8 @@ metadata:
   name: capa-rbac-policy-binding
   namespace: open-cluster-management-policies
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 placementRef:
   name: capa-rbac-policy-placement
   kind: PlacementRule
@@ -72,7 +74,8 @@ metadata:
   name: capa-rbac-policy-placement
   namespace: open-cluster-management-policies
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   clusterConditions:
     - status: "True"

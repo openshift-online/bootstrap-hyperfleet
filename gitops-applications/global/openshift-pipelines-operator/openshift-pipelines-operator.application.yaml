@@ -1,18 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: acm-gitops-integration
+  name: openshift-pipelines-operator
   namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   destination:
     name: in-cluster
   project: default
   source:
-    path: operators/gitops-integration/global
+    path: operators/openshift-pipelines/global/overlays/pipelines-1.18
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:
     automated:
       selfHeal: true
       allowEmpty: false
-    prune: true
+    prune: false

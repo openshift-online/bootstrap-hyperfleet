@@ -100,12 +100,12 @@ data:
     [server]
     APP_DATA_PATH = /tmp/gitea
     BUILTIN_SSH_SERVER_USER = 
-    DOMAIN = gitea-gitea-system.apps.acme-test-002.rosa.mturansk-test.csu2.i3.devshift.org
+    DOMAIN = gitea.gitea-system.svc.cluster.local
     HTTP_ADDR = 0.0.0.0
     HTTP_PORT = 3000
     PROTOCOL = http
     REDIRECT_OTHER_PORT = false
-    ROOT_URL = https://gitea-gitea-system.apps.acme-test-002.rosa.mturansk-test.csu2.i3.devshift.org/
+    ROOT_URL = http://gitea.gitea-system.svc.cluster.local:3000/
     ROUTER_LOG_LEVEL = Info
     STATIC_ROOT_PATH = 
     ENABLE_GZIP = false
@@ -144,10 +144,10 @@ data:
 
     [security]
     INSTALL_LOCK = true
-    SECRET_KEY = 47b4184cc5872da21dac65321398c3f15b2bc1f5c13b8e5d7b8e99a2a8e8e8e8
+    SECRET_KEY = $(openssl rand -hex 32)
     REVERSE_PROXY_LIMIT = 1
     REVERSE_PROXY_TRUSTED_PROXIES = *
-    INTERNAL_TOKEN = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYmYiOjE1NDc2MzUzNzZ9.4Dbt4Fb_Xp_PQQ_GKwCp9xbV_P9X5mL6UgHjhJq_Zuo
+    INTERNAL_TOKEN = $(openssl rand -base64 32)
     PASSWORD_HASH_ALGO = pbkdf2
 
     [openid]

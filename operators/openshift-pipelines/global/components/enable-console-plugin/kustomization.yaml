@@ -9,6 +9,6 @@ generatorOptions:
   disableNameSuffixHash: true
 
 configMapGenerator:
-  - name: job-tekton-console-plugin
+  - name: job-tekton-console-plugin-scripts
     files:
       - console-plugin-job.sh

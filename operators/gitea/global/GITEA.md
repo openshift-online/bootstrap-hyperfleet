@@ -76,8 +76,9 @@ Gitea is deployed as an internal git server to solve the ArgoCD dependency issue
 
 The installation automatically creates:
 - **Admin User**: `mturansk` (password: `acmeprototype321#`)
+- **ServiceAccount User**: `gitea-argocd` (Kubernetes token-based auth)
 - **Repository**: `bootstrap/bootstrap` 
-- **ArgoCD Integration**: Repository secret configured
+- **ArgoCD Integration**: Repository secret configured with ServiceAccount authentication
 
 ## Usage
 
@@ -150,15 +151,17 @@ spec:
 - **Port**: 3000 (HTTP)
 
 ### Security Configuration
-- **Authentication**: Local user accounts
-- **Admin User**: `bootstrap` (first user, automatically admin)
+- **Authentication**: Kubernetes ServiceAccount tokens + Local user accounts
+- **Admin User**: `mturansk` (password-based, for administration)
+- **ArgoCD User**: `gitea-argocd` (ServiceAccount token-based)
 - **Registration**: Disabled by default
 - **Network**: Internal cluster access only (no external exposure)
 
 ### ArgoCD Integration
 - **Repository URL**: `http://gitea.gitea-system.svc.cluster.local:3000/bootstrap/bootstrap.git`
-- **Authentication**: Username/password via Kubernetes secret
+- **Authentication**: ServiceAccount token via Kubernetes secret
 - **Secret Name**: `gitea-bootstrap-repo` (in `openshift-gitops` namespace)
+- **ServiceAccount**: `gitea-argocd` (in `openshift-gitops` namespace)
 
 ## Troubleshooting
 
@@ -197,7 +200,21 @@ oc get secret gitea-bootstrap-repo -n openshift-gitops -o yaml
 oc exec -n openshift-gitops deployment/argocd-server -- curl -s http://gitea.gitea-system.svc.cluster.local:3000/api/v1/version
 ```
 
-#### 4. Push to Gitea Fails
+#### 4. ServiceAccount Authentication Issues
+```bash
+# Check ServiceAccount token
+oc get secret gitea-argocd-token -n openshift-gitops -o jsonpath='{.data.token}' | base64 -d | wc -c
+
+# Check authentication setup job
+oc get jobs -n gitea-system gitea-auth-setup
+oc logs job/gitea-auth-setup -n gitea-system
+
+# Test token authentication
+SA_TOKEN=$(oc get secret gitea-argocd-token -n openshift-gitops -o jsonpath='{.data.token}' | base64 -d)
+oc exec -n gitea-system deployment/gitea -- curl -H "Authorization: token ${SA_TOKEN}" http://localhost:3000/api/v1/user
+```
+
+#### 5. Push to Gitea Fails
 ```bash
 # Check recent push job logs
 oc get jobs -n gitea-system | grep gitea-push
@@ -205,7 +222,7 @@ oc get jobs -n gitea-system | grep gitea-push
 # Check job logs
 oc logs job/gitea-push-[cluster-name] -n gitea-system
 
-# Common fix: Verify credentials
+# Common fix: Verify credentials (fallback to admin user)
 oc exec -n gitea-system deployment/gitea -- curl -u "mturansk:acmeprototype321#" http://localhost:3000/api/v1/user
 ```
 
