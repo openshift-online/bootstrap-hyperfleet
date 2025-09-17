@@ -11,4 +11,6 @@ resources:
   - app-ini-configmap.yaml
   - pvc.yaml
   - route.yaml
+  - gitea-argocd-serviceaccount.yaml
   - argocd-gitea-secret.yaml
+  - gitea-auth-setup-job.yaml

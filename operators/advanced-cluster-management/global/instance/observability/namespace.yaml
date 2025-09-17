@@ -4,7 +4,7 @@ kind: Namespace
 metadata:
   name: open-cluster-management-observability
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "3"
   labels:
     openshift.io/cluster-monitoring: "true"
     argocd.argoproj.io/managed-by: openshift-gitops

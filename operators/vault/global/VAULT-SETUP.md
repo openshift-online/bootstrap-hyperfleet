@@ -46,7 +46,7 @@ oc apply -f gitops-applications/global/eso.application.yaml
 
 # Wait for deployments
 oc wait --for=condition=Ready pod -l app.kubernetes.io/instance=vault  -n vault
-oc wait --for=condition=available deployment/external-secrets -n external-secrets --timeout=300s
+oc wait --for=condition=available deployment/eso-external-secrets -n external-secrets --timeout=300s
 ```
 
 ### Step 2: Initialize Vault
@@ -68,8 +68,14 @@ oc exec vault-0 -n vault -- vault operator unseal <UNSEAL_KEY>
 # Login with root token
 oc exec vault-0 -n vault -- vault auth -method=token root
 ```
+### Step 3: Setup Authentication RBAC
 
-### Step 3: Configure Kubernetes Authentication
+```bash
+# Create ServiceAccount and RBAC for Vault authentication
+oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
+```
+
+### Step 4: Configure Kubernetes Authentication
 
 ```bash
 # Enable Kubernetes auth method
@@ -77,20 +83,13 @@ oc exec vault-0 -n vault -- vault auth enable kubernetes
 
 # Configure Kubernetes auth
 oc exec vault-0 -n vault -- vault write auth/kubernetes/config \
-    token_reviewer_jwt="$(oc get secret vault-auth-token -n vault -o jsonpath='{.data.token}' | base64 -d)" \
     kubernetes_host="$(oc config view --minify -o jsonpath='{.clusters[0].cluster.server}')" \
-    kubernetes_ca_cert="$(oc get secret vault-auth-token -n vault -o jsonpath='{.data.ca\.crt}' | base64 -d)"
+    kubernetes_ca_cert="$(oc get secret vault-auth-token -n vault -o jsonpath='{.data.ca\.crt}' | base64 -d)" \
+    disable_iss_validation=true \
+    disable_local_ca_jwt=false
 ```
 
-### Step 4: Setup Authentication RBAC
 
-```bash
-# Create ServiceAccount and RBAC for Vault authentication
-oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
-
-# Create ServiceAccount for External Secrets Operator to read secrets
-oc apply -f operators/vault/global/vault-secret-reader-serviceaccount.yaml
-```
 
 ### Step 5: Configure Secret Policies
 
@@ -103,10 +102,11 @@ echo 'path "secret/data/aws-credentials" { capabilities = ["read"] }
 
 # Create Kubernetes role
 oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
-    bound_service_account_names=vault-secret-reader \
-    bound_service_account_namespaces="*" \
+    bound_service_account_names=vault-auth \
+    bound_service_account_namespaces=vault \
     policies=cluster-secrets \
     ttl=1h
+
 ```
 
 ### Step 6: Deploy ClusterSecretStore
@@ -116,7 +116,11 @@ oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
 oc apply -f operators/vault/global/cluster-secret-store.yaml
 
 # Verify ESO can connect to Vault
-oc get clustersecretstore vault-cluster-store -o yaml
+oc get clustersecretstore vault-cluster-store
+
+# Should show: STATUS=Valid, READY=True
+# If not ready, restart ESO deployment:
+# oc rollout restart deployment/eso-external-secrets -n external-secrets
 ```
 
 ## Secret Management

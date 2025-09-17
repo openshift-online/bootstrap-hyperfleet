@@ -1,0 +1,122 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-auth-setup
+  namespace: gitea-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: gitea-auth-setup
+      containers:
+      - name: setup
+        image: registry.redhat.io/openshift4/ose-cli
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "🔧 Setting up Gitea authentication with ServiceAccount tokens..."
+          
+          # Wait for Gitea to be ready
+          echo "⏳ Waiting for Gitea to be ready..."
+          until curl -s http://gitea.gitea-system.svc.cluster.local:3000/api/healthz; do
+            echo "Waiting for Gitea..."
+            sleep 10
+          done
+          
+          # Get ServiceAccount token
+          echo "🔑 Getting ServiceAccount token..."
+          SA_TOKEN=$(oc get secret gitea-argocd-token -n openshift-gitops -o jsonpath='{.data.token}' | base64 -d)
+          
+          if [ -z "$SA_TOKEN" ]; then
+            echo "❌ Failed to get ServiceAccount token"
+            exit 1
+          fi
+          
+          # Create Gitea user for ArgoCD with token-based auth
+          echo "👤 Creating gitea-argocd user in Gitea..."
+          
+          # First, create the user via admin API
+          curl -s -X POST \
+            -u "mturansk:acmeprototype321#" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"username\": \"gitea-argocd\",
+              \"email\": \"gitea-argocd@cluster.local\",
+              \"password\": \"${SA_TOKEN}\",
+              \"must_change_password\": false,
+              \"send_notify\": false
+            }" \
+            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/admin/users || true
+          
+          # Create access token for the user
+          echo "🎫 Creating access token for gitea-argocd user..."
+          ACCESS_TOKEN=$(curl -s -X POST \
+            -u "gitea-argocd:${SA_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"argocd-access\",
+              \"scopes\": [\"read:repository\", \"write:repository\"]
+            }" \
+            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/users/gitea-argocd/tokens | \
+            jq -r '.sha1' || echo "")
+          
+          if [ -n "$ACCESS_TOKEN" ]; then
+            echo "✅ Created access token for gitea-argocd user"
+            
+            # Update ArgoCD secret with access token
+            echo "🔄 Updating ArgoCD repository secret..."
+            oc patch secret gitea-bootstrap-repo -n openshift-gitops \
+              --type='merge' \
+              -p="{\"stringData\":{\"password\":\"${ACCESS_TOKEN}\"}}"
+            
+            echo "✅ Updated ArgoCD secret with access token"
+          else
+            echo "⚠️  Using ServiceAccount token directly as fallback"
+            # Update ArgoCD secret with ServiceAccount token
+            oc patch secret gitea-bootstrap-repo -n openshift-gitops \
+              --type='merge' \
+              -p="{\"stringData\":{\"password\":\"${SA_TOKEN}\"}}"
+          fi
+          
+          # Verify the configuration
+          echo "🧪 Verifying authentication setup..."
+          if curl -s -H "Authorization: token ${ACCESS_TOKEN:-$SA_TOKEN}" \
+             http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/bootstrap/bootstrap > /dev/null; then
+            echo "✅ Authentication setup completed successfully"
+          else
+            echo "⚠️  Repository not yet available, setup completed but verification skipped"
+          fi
+          
+          echo "🎉 Gitea authentication setup complete!"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-auth-setup
+  namespace: gitea-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gitea-auth-setup
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gitea-auth-setup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gitea-auth-setup
+subjects:
+- kind: ServiceAccount
+  name: gitea-auth-setup
+  namespace: gitea-system

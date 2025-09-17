@@ -26,6 +26,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: job-tekton-console-plugin
+    namespace: openshift-operators
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -56,7 +57,7 @@ spec:
       volumes:
         - name: scripts
           configMap:
-            name: job-tekton-console-plugin
+            name: job-tekton-console-plugin-scripts
             defaultMode: 0755
       restartPolicy: Never
       serviceAccount: job-tekton-console-plugin

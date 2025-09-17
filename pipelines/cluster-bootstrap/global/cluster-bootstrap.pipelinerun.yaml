@@ -1,0 +1,41 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cluster-bootstrap-global
+  annotations:
+    description: "Bootstrap pipeline run for global cluster configuration"
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  pipelineRef:
+    name: cluster-bootstrap-pipeline
+  params:
+    - name: cluster-name
+      value: "global"
+    - name: target-namespace
+      value: "openshift-gitops"
+    - name: vault-enabled
+      value: "true"
+    - name: gitops-enabled
+      value: "true"
+    - name: dry-run
+      value: "false"
+  workspaces:
+    - name: shared-workspace
+      persistentVolumeClaim:
+        claimName: cluster-bootstrap-workspace
+  taskRunTemplate:
+    serviceAccountName: pipeline
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cluster-bootstrap-workspace
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

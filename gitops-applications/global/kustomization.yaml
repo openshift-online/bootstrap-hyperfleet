@@ -1,12 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: openshift-gitops
 
 resources:
-- ./advanced-cluster-management-set.application.yaml
-- ./openshift-pipelines-operator.application.yaml
-- ./acm-gitops-integration.application.yaml #imports new managed clusters into argo
-- ./cluster-provisioning-metrics.application.yaml # monitors cluster provisioning
-- ./vault.application.yaml
-- ./eso.application.yaml
-- ./gitea.application.yaml
+  - advanced-cluster-management-set/
+  - openshift-pipelines-operator/
+  - acm-gitops-integration/ # imports new managed clusters into argo
+  - cluster-provisioning-metrics/ # monitors cluster provisioning
+  - vault/
+  - eso/
+  - gitea/
+  - cluster-bootstrap/
