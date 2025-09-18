@@ -5,7 +5,7 @@ metadata:
   namespace: ocp-01
   name: ocp-01
 spec:
-  baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
+  baseDomain: bootstrap.red-chesterfield.com
   clusterName: ocp-01
   controlPlaneConfig:
     servingCertificates: {}

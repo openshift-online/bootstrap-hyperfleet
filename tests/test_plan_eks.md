@@ -88,7 +88,7 @@ metadata:
 spec:
   type: eks
   region: us-west-2
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   compute:
     instanceType: m5.large

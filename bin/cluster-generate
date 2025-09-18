@@ -68,12 +68,12 @@ CLUSTER_OUTPUT_DIR="clusters/$FULL_CLUSTER_NAME"
 PIPELINES_HELLO_WORLD_DIR="pipelines/hello-world/$FULL_CLUSTER_NAME"
 PIPELINES_CLOUD_INFRA_DIR="pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME"
 DEPLOYMENTS_OUTPUT_DIR="deployments/ocm/$FULL_CLUSTER_NAME"
-GITOPS_OUTPUT_DIR="gitops-applications"
+GITOPS_OUTPUT_DIR="gitops-applications/clusters"
 
 # Defaults
 CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
 REGION=${REGION:-"us-west-2"}
-DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+DOMAIN=${DOMAIN:-"bootstrap.red-chesterfield.com"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
 REPLICAS=${REPLICAS:-3}
 KUBERNETES_VERSION=${KUBERNETES_VERSION:-"1.31"}
@@ -1150,7 +1150,7 @@ update_gitops_kustomization() {
     
     # Check if the cluster ApplicationSet is already in the kustomization
     if ! grep -q "\\- \\./$FULL_CLUSTER_NAME\\.yaml" "$kustomization_file"; then
-        echo "Adding $FULL_CLUSTER_NAME ApplicationSet to gitops-applications/kustomization.yaml"
+        echo "Adding $FULL_CLUSTER_NAME ApplicationSet to gitops-applications/clusters/kustomization.yaml"
         
         # Find the line number where cluster applications start (after global/eso.application.yaml)
         local insert_line

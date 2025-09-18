@@ -184,6 +184,7 @@ data:
     ALLOW_CROSS_REPOSITORY_DEPENDENCIES = true
     ENABLE_USER_DELETE = true
     VALID_SITE_URL_SCHEMES = http,https
+    FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN = false
 
     [mailer]
     ENABLED = false

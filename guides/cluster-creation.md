@@ -15,7 +15,7 @@ The interactive tool will prompt for:
 - **Cluster Name** (validates uniqueness)
 - **Type** ("ocp" or "eks") 
 - **Region** (default: "us-west-2")
-- **Domain** (default: "rosa.mturansk-test.csu2.i3.devshift.org")
+- **Domain** (default: "bootstrap.red-chesterfield.com")
 - **Instance Type** (default: "m5.2xlarge")
 - **Replicas** (default: "2")
 
@@ -47,7 +47,7 @@ Please provide the following information for your new cluster:
 Cluster Name: my-new-cluster
 Cluster Type (ocp/eks) [ocp]: eks
 Region [us-west-2]: us-east-1
-Base Domain [rosa.mturansk-test.csu2.i3.devshift.org]: 
+Base Domain [bootstrap.red-chesterfield.com]: 
 Instance Type [m5.2xlarge]: m5.large
 Number of Replicas [2]: 3
 
@@ -56,7 +56,7 @@ Configuration Summary:
 Cluster Name: my-new-cluster
 Type: eks
 Region: us-east-1
-Domain: rosa.mturansk-test.csu2.i3.devshift.org
+Domain: bootstrap.red-chesterfield.com
 Instance Type: m5.large
 Replicas: 3
 

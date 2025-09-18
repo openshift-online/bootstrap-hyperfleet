@@ -63,7 +63,7 @@ The tool prompts for 5 required inputs with validation:
   - Checks for existing cluster directories and GitOps applications
 - **Region** (string, default: "us-west-2")
   - AWS region for cluster deployment
-- **Domain** (string, default: "rosa.mturansk-test.csu2.i3.devshift.org")
+- **Domain** (string, default: "bootstrap.red-chesterfield.com")
   - Base domain for cluster endpoints
 - **Instance Type** (string, default: "m5.2xlarge")
   - EC2 instance type for cluster nodes

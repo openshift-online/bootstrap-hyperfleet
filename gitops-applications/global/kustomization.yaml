@@ -13,5 +13,3 @@ resources:
   - gitea/
   - cluster-bootstrap/
 
-patchesStrategicMerge:
-  - your-overrides-here.yaml

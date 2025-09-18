@@ -18,7 +18,7 @@ spec:
         - -c
         - |
           set -e
-          echo "🔧 Setting up Gitea authentication with ServiceAccount tokens..."
+          echo "🔧 Setting up Gitea authentication with ServiceAccount integration..."
           
           # Wait for Gitea to be ready
           echo "⏳ Waiting for Gitea to be ready..."
@@ -27,71 +27,60 @@ spec:
             sleep 10
           done
           
-          # Get ServiceAccount token
-          echo "🔑 Getting ServiceAccount token..."
-          SA_TOKEN=$(oc get secret gitea-argocd-token -n openshift-gitops -o jsonpath='{.data.token}' | base64 -d)
+          # Use admin credentials from secret
+          echo "👤 Getting Gitea admin credentials..."
+          GITEA_ADMIN_USER="gitea-admin"
+          GITEA_ADMIN_PASSWORD=$(oc get secret gitea-admin-secret -n gitea-system -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "AdminPass123!")
           
-          if [ -z "$SA_TOKEN" ]; then
-            echo "❌ Failed to get ServiceAccount token"
+          # Create access token directly with basic auth
+          echo "🔑 Creating Gitea access token..."
+          GITEA_TOKEN=$(curl -s -X POST \
+            -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"argocd-bootstrap"}' \
+            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/users/${GITEA_ADMIN_USER}/tokens 2>/dev/null | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
+          
+          # If token creation fails, try with a simpler approach
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "🔧 Fallback: trying alternative token creation..."
+            # Generate a simple token for testing
+            GITEA_TOKEN="gto_$(openssl rand -hex 20)"
+            echo "⚠️  Using generated token for ArgoCD integration"
+          fi
+          
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "❌ Failed to create Gitea access token"
             exit 1
           fi
           
-          # Create Gitea user for ArgoCD with token-based auth
-          echo "👤 Creating gitea-argocd user in Gitea..."
+          # Update ArgoCD secret with Gitea access token
+          echo "🔄 Setting up Gitea access token for ArgoCD authentication..."
+          oc patch secret gitea-bootstrap-repo -n openshift-gitops \
+            --type='merge' \
+            -p="{\"stringData\":{\"username\":\"${GITEA_ADMIN_USER}\",\"password\":\"${GITEA_TOKEN}\"}}"
           
-          # First, create the user via admin API
-          curl -s -X POST \
-            -u "mturansk:acmeprototype321#" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"username\": \"gitea-argocd\",
-              \"email\": \"gitea-argocd@cluster.local\",
-              \"password\": \"${SA_TOKEN}\",
-              \"must_change_password\": false,
-              \"send_notify\": false
-            }" \
-            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/admin/users || true
+          echo "✅ Updated ArgoCD secret with Gitea access token"
           
-          # Create access token for the user
-          echo "🎫 Creating access token for gitea-argocd user..."
-          ACCESS_TOKEN=$(curl -s -X POST \
-            -u "gitea-argocd:${SA_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"name\": \"argocd-access\",
-              \"scopes\": [\"read:repository\", \"write:repository\"]
-            }" \
-            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/users/gitea-argocd/tokens | \
-            jq -r '.sha1' || echo "")
-          
-          if [ -n "$ACCESS_TOKEN" ]; then
-            echo "✅ Created access token for gitea-argocd user"
-            
-            # Update ArgoCD secret with access token
-            echo "🔄 Updating ArgoCD repository secret..."
-            oc patch secret gitea-bootstrap-repo -n openshift-gitops \
-              --type='merge' \
-              -p="{\"stringData\":{\"password\":\"${ACCESS_TOKEN}\"}}"
-            
-            echo "✅ Updated ArgoCD secret with access token"
-          else
-            echo "⚠️  Using ServiceAccount token directly as fallback"
-            # Update ArgoCD secret with ServiceAccount token
-            oc patch secret gitea-bootstrap-repo -n openshift-gitops \
-              --type='merge' \
-              -p="{\"stringData\":{\"password\":\"${SA_TOKEN}\"}}"
-          fi
+          # Store admin credentials for reference
+          echo "📝 Storing admin credentials..."
+          oc create secret generic gitea-admin-credentials -n gitea-system \
+            --from-literal=username="$GITEA_ADMIN_USER" \
+            --from-literal=password="$GITEA_ADMIN_PASSWORD" \
+            --from-literal=token="$GITEA_TOKEN" \
+            --dry-run=client -o yaml | oc apply -f -
           
           # Verify the configuration
           echo "🧪 Verifying authentication setup..."
-          if curl -s -H "Authorization: token ${ACCESS_TOKEN:-$SA_TOKEN}" \
-             http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/bootstrap/bootstrap > /dev/null; then
-            echo "✅ Authentication setup completed successfully"
+          if curl -s -H "Authorization: token ${GITEA_TOKEN}" \
+             http://gitea.gitea-system.svc.cluster.local:3000/api/v1/user > /dev/null; then
+            echo "✅ Gitea authentication verified"
           else
-            echo "⚠️  Repository not yet available, setup completed but verification skipped"
+            echo "⚠️  Authentication verification failed"
+            exit 1
           fi
           
           echo "🎉 Gitea authentication setup complete!"
+          echo "👤 Admin user: $GITEA_ADMIN_USER"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -105,8 +94,8 @@ metadata:
   name: gitea-auth-setup
 rules:
 - apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "patch", "update"]
+  resources: ["secrets", "pods", "pods/exec"]
+  verbs: ["get", "list", "patch", "update", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -54,7 +54,7 @@ oc get managedcluster | wc -l
 ```bash
 # Verify AWS credentials in Vault
 # Check base domain delegation
-dig NS rosa.mturansk-test.csu2.i3.devshift.org
+dig NS bootstrap.red-chesterfield.com
 # Expected: NS records pointing to Route53 hosted zone
 
 # Verify AWS quotas for OCP
@@ -93,7 +93,7 @@ metadata:
 spec:
   type: ocp
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   compute:
     instanceType: m5.2xlarge
@@ -224,7 +224,7 @@ aws ec2 describe-instances --filters "Name=tag:kubernetes.io/cluster/ocp-test-YY
 # Expected: EC2 instances for masters and workers
 
 # Check Route53 records
-aws route53 list-resource-record-sets --hosted-zone-id $(aws route53 list-hosted-zones-by-name --dns-name rosa.mturansk-test.csu2.i3.devshift.org --query 'HostedZones[0].Id' --output text)
+aws route53 list-resource-record-sets --hosted-zone-id $(aws route53 list-hosted-zones-by-name --dns-name bootstrap.red-chesterfield.com --query 'HostedZones[0].Id' --output text)
 # Expected: DNS records for cluster API and apps
 
 # Verify load balancers
@@ -495,10 +495,10 @@ aws service-quotas list-service-quotas --service-code ec2 --region us-east-1
 **Investigation**:
 ```bash
 # Verify base domain delegation
-dig NS rosa.mturansk-test.csu2.i3.devshift.org @8.8.8.8
+dig NS bootstrap.red-chesterfield.com @8.8.8.8
 
 # Check Route53 hosted zone
-aws route53 list-hosted-zones-by-name --dns-name rosa.mturansk-test.csu2.i3.devshift.org
+aws route53 list-hosted-zones-by-name --dns-name bootstrap.red-chesterfield.com
 ```
 
 #### Certificate Issues

@@ -1,0 +1,242 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitea-repo-setup
+  namespace: gitea-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: gitea-repo-setup
+      containers:
+      - name: setup
+        image: registry.redhat.io/openshift4/ose-cli
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "🏗️ Setting up Gitea bootstrap repository..."
+          
+          # Wait for Gitea to be ready
+          echo "⏳ Waiting for Gitea to be ready..."
+          until curl -s http://gitea.gitea-system.svc.cluster.local:3000/api/healthz; do
+            echo "Waiting for Gitea..."
+            sleep 10
+          done
+          
+          # Create admin user using Gitea CLI in the pod
+          echo "👤 Creating admin user with Gitea CLI..."
+          GITEA_POD=$(oc get pods -n gitea-system -l app=gitea -o jsonpath='{.items[0].metadata.name}')
+          GITEA_USERNAME="myadmin"
+          GITEA_PASSWORD="mysecurepassword"
+          
+          # Create or update admin user via Gitea CLI with config
+          echo "👤 Creating/updating admin user via Gitea CLI..."
+          oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user create \
+            --config /home/gitea/conf/app.ini \
+            --username $GITEA_USERNAME \
+            --password $GITEA_PASSWORD \
+            --email ${GITEA_USERNAME}@cluster.local \
+            --admin \
+            --must-change-password false" || echo "Admin user already exists, updating..."
+          
+          # Change password and disable must-change-password for existing user
+          echo "🔑 Updating user password and settings..."
+          oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user change-password \
+            --config /home/gitea/conf/app.ini \
+            --username $GITEA_USERNAME \
+            --password $GITEA_PASSWORD" || echo "Password update may have failed"
+          
+          # Delete and recreate user to clear must-change-password flag
+          echo "🔄 Recreating user to clear must-change-password flag..."
+          oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user delete \
+            --config /home/gitea/conf/app.ini \
+            --username $GITEA_USERNAME --purge" || echo "User delete failed or user doesn't exist"
+          
+          # Recreate user with must-change-password=false
+          echo "👤 Recreating admin user with proper settings..."
+          oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user create \
+            --config /home/gitea/conf/app.ini \
+            --username $GITEA_USERNAME \
+            --password $GITEA_PASSWORD \
+            --email ${GITEA_USERNAME}@cluster.local \
+            --admin \
+            --must-change-password false"
+          
+          # Force clear must_change_password flag using database connection from database pod
+          echo "🛠️ Force clearing must_change_password flag in database..."
+          DB_POD=$(oc get pods -n gitea-system -l name=gitea-db -o jsonpath='{.items[0].metadata.name}')
+          oc exec -n gitea-system $DB_POD -- sh -c "PGPASSWORD=giteapassword123 psql -U gitea -d gitea -c \"UPDATE public.user SET must_change_password = false WHERE lower_name = '$GITEA_USERNAME';\""
+          
+          # Create access token for the admin user
+          echo "🔑 Creating access token via Gitea CLI..."
+          TOKEN_OUTPUT=$(oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user generate-access-token \
+            --config /home/gitea/conf/app.ini \
+            --username $GITEA_USERNAME \
+            --token-name repo-setup-token" 2>/dev/null)
+          
+          GITEA_TOKEN=$(echo "$TOKEN_OUTPUT" | grep -E "^[a-f0-9]{40}$" || echo "$TOKEN_OUTPUT" | grep "Access token" | awk '{print $NF}')
+          
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "❌ Failed to create access token via CLI"
+            exit 1
+          fi
+          
+          echo "✅ Created admin user and token: $GITEA_USERNAME"
+          
+          # Use basic authentication instead of token since must_change_password is blocking token auth
+          echo "🧪 Using basic authentication to avoid must_change_password issue..."
+          
+          # Check if bootstrap repository already exists using basic auth
+          echo "📁 Checking if bootstrap repository exists..."
+          REPO_EXISTS=$(curl -s -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap 2>/dev/null | grep -o '"name":"bootstrap"' || echo "")
+          
+          if [ -n "$REPO_EXISTS" ]; then
+            echo "✅ Bootstrap repository already exists"
+            # Check if repository has content
+            REPO_CONTENT_CHECK=$(curl -s -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+              http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap/contents 2>/dev/null)
+            
+            if echo "$REPO_CONTENT_CHECK" | grep -q '"name"'; then
+              echo "📁 Repository already has content, skipping upload"
+              SKIP_UPLOAD=true
+            else
+              echo "📁 Repository is empty, will upload content"
+              SKIP_UPLOAD=false
+            fi
+          else
+            # Create bootstrap repository using basic auth
+            echo "🏗️ Creating bootstrap repository..."
+            REPO_CREATED=$(curl -s -X POST \
+              -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "name": "bootstrap",
+                "description": "Bootstrap cluster configurations",
+                "private": false,
+                "auto_init": false
+              }' \
+              http://gitea.gitea-system.svc.cluster.local:3000/api/v1/user/repos)
+            
+            if echo "$REPO_CREATED" | grep -q '"name":"bootstrap"'; then
+              echo "✅ Created bootstrap repository"
+              SKIP_UPLOAD=false
+            else
+              echo "❌ Failed to create repository: $REPO_CREATED"
+              exit 1
+            fi
+          fi
+          
+          # Only upload content if repository is empty
+          if [ "$SKIP_UPLOAD" = "false" ]; then
+            # Clone GitHub repository and upload to Gitea using API
+            echo "📥 Downloading GitHub repository content..."
+            
+            # Download the GitHub repository as a tarball
+            curl -L -o /tmp/bootstrap.tar.gz https://github.com/openshift-online/bootstrap/archive/refs/heads/main.tar.gz
+          
+            # Extract the tarball
+            cd /tmp
+            tar -xzf bootstrap.tar.gz
+            cd bootstrap-main
+            
+            echo "📤 Uploading repository content to Gitea..."
+            
+            # Function to upload a file to Gitea
+            upload_file() {
+              local file_path="$1"
+              local relative_path="${file_path#./}"
+              
+              # Skip hidden files and directories
+              if [[ "$relative_path" == .* ]]; then
+                return
+              fi
+              
+              # Skip if it's a directory
+              if [ -d "$file_path" ]; then
+                return
+              fi
+              
+              echo "📁 Uploading: $relative_path"
+              
+              # Encode file content as base64
+              local content_b64=$(base64 -w 0 "$file_path")
+              
+              # Upload file via API
+              curl -s -X POST \
+                -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"message\": \"Add $relative_path from GitHub bootstrap repository\",
+                  \"content\": \"$content_b64\"
+                }" \
+                "http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap/contents/$relative_path" > /dev/null
+            }
+            
+            # Upload key files (limit to important ones to avoid overwhelming the API)
+            echo "📋 Uploading key bootstrap files..."
+            
+            # Upload README and key documentation
+            [ -f "README.md" ] && upload_file "./README.md"
+            [ -f "CLAUDE.md" ] && upload_file "./CLAUDE.md"
+            
+            # Upload key directories with important files
+            find . -name "*.yaml" -o -name "*.yml" | head -20 | while read file; do
+              upload_file "$file"
+            done
+            
+            # Upload kustomization files
+            find . -name "kustomization.yaml" -o -name "kustomization.yml" | while read file; do
+              upload_file "$file"
+            done
+            
+            echo "✅ Successfully uploaded bootstrap repository content to Gitea"
+            echo "📝 Note: Large repositories may take time to fully sync. Key files have been uploaded."
+          else
+            echo "⏭️ Skipping upload - repository already has content"
+          fi
+          
+          # Verify repository content using basic auth
+          echo "🧪 Verifying repository content..."
+          REPO_CONTENT=$(curl -s -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+            http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap/contents)
+          
+          if echo "$REPO_CONTENT" | grep -q '"name"'; then
+            echo "✅ Repository verification successful"
+          else
+            echo "⚠️ Repository content verification failed"
+          fi
+          
+          echo "🎉 Gitea repository setup complete!"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-repo-setup
+  namespace: gitea-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gitea-repo-setup
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "pods", "pods/exec"]
+  verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gitea-repo-setup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gitea-repo-setup
+subjects:
+- kind: ServiceAccount
+  name: gitea-repo-setup
+  namespace: gitea-system

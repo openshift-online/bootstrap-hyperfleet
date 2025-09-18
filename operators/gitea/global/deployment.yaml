@@ -15,6 +15,7 @@ spec:
       labels:
         app: gitea
     spec:
+      serviceAccountName: gitea-init
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -32,6 +33,7 @@ spec:
           # Generate random secrets
           SECRET_KEY=$(openssl rand -hex 32)
           INTERNAL_TOKEN=$(openssl rand -base64 32)
+          ADMIN_PASSWORD=$(openssl rand -base64 32)
           
           # Create temporary app.ini with generated secrets
           cp /etc/gitea/app.ini /tmp/secrets/app.ini
@@ -39,6 +41,9 @@ spec:
           # Replace placeholder values with generated secrets
           sed -i "s/SECRET_KEY = \$(openssl rand -hex 32)/SECRET_KEY = ${SECRET_KEY}/g" /tmp/secrets/app.ini
           sed -i "s/INTERNAL_TOKEN = \$(openssl rand -base64 32)/INTERNAL_TOKEN = ${INTERNAL_TOKEN}/g" /tmp/secrets/app.ini
+          
+          # Update admin password secret
+          oc patch secret gitea-admin-secret -n gitea-system --type='merge' -p="{\"data\":{\"password\":\"$(echo -n $ADMIN_PASSWORD | base64)\"}}"
           
           echo "✅ Generated unique security secrets for Gitea"
         volumeMounts:
@@ -103,6 +108,15 @@ spec:
           value: "/tmp/gitea"
         - name: GITEA_CUSTOM
           value: "/tmp/gitea"
+        - name: GITEA_ADMIN_USERNAME
+          value: "gitea-admin"
+        - name: GITEA_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: gitea-admin-secret
+              key: password
+        - name: GITEA_ADMIN_EMAIL
+          value: "admin@example.com"
         livenessProbe:
           httpGet:
             path: /api/healthz

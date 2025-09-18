@@ -1,3 +1,4 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: openshift-gitops
@@ -6,68 +7,4 @@ resources:
 # Global applications (base cluster infrastructure)
 - ./global/
 
-# ADD CLUSTERS HERE
-#
-#
-patches:
-# Repository URL overrides for fork-specific deployment
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
-    name: advanced-cluster-management
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
-    name: openshift-pipelines-operator
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
-    name: acm-gitops-integration
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
-    name: cluster-provisioning-metrics
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
-- target:
-    kind: Application
-    group: argoproj.io
-    version: v1alpha1
-    name: gitea
-  patch: |-
-    - op: replace
-      path: /spec/source/repoURL
-      value: "https://github.com/markturansky/acme"
-    - op: replace
-      path: /spec/source/targetRevision
-      value: "OCM-16599/acme"
+- ../clusters/ # cluster-specific ApplicationSets
