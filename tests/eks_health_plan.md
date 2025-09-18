@@ -45,7 +45,7 @@ Following the successful health plan methodology, this plan implements EKS clust
 - **Configuration**:
   - Type: `eks`
   - Region: `us-east-2` 
-  - Domain: `rosa.mturansk-test.csu2.i3.devshift.org`
+  - Domain: `bootstrap.red-chesterfield.com`
   - Instance Type: `m5.large` 
   - Replicas: `3`
   - Kubernetes Version: `1.28`

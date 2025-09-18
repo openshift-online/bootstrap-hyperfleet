@@ -286,7 +286,7 @@ check_dns_delegation() {
     
     log_info "Checking DNS delegation..."
     
-    local test_domain="rosa.mturansk-test.csu2.i3.devshift.org"
+    local test_domain="bootstrap.red-chesterfield.com"
     
     if [[ "$CHECK_DNS" == "true" ]]; then
         log_info "Checking DNS delegation for $test_domain..."

@@ -45,8 +45,8 @@ Parses regional specification files to extract:
 ```
 CLUSTER NAME        TYPE  REGION     DOMAIN                                    INSTANCE TYPE  REPLICAS  VERSION
 =================== ===== ========== ========================================= ============== ======== =========
-ocp-01-mturansk-a   ocp   us-west-2  rosa.mturansk-test.csu2.i3.devshift.org  m5.2xlarge     2        4.15
-ocp-01-mturansk-test ocp  us-west-2  rosa.mturansk-test.csu2.i3.devshift.org  m5.large       3        4.15
+ocp-01-mturansk-a   ocp   us-west-2  bootstrap.red-chesterfield.com  m5.2xlarge     2        4.15
+ocp-01-mturansk-test ocp  us-west-2  bootstrap.red-chesterfield.com  m5.large       3        4.15
 ```
 
 ## Command Line Interface

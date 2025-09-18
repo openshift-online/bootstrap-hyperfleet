@@ -47,7 +47,7 @@ metadata:
 spec:
   type: ocp
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   # Minimal compute config
   compute:
@@ -65,7 +65,7 @@ metadata:
 spec:
   type: eks
   region: us-east-2
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   # Minimal compute config
   compute:
@@ -137,7 +137,7 @@ defaults:
       replicas: 3
       scaling: {min: 1, max: 10}
       
-  domain: rosa.mturansk-test.csu2.i3.devshift.org  # Global default
+  domain: bootstrap.red-chesterfield.com  # Global default
 ```
 
 ## Before/After Comparison
@@ -157,7 +157,7 @@ defaults:
 ```yaml
 # Before: install-config.yaml (46+ lines)
 apiVersion: v1
-baseDomain: rosa.mturansk-test.csu2.i3.devshift.org
+baseDomain: bootstrap.red-chesterfield.com
 metadata:
   name: ocp-02
 compute:
@@ -177,7 +177,7 @@ metadata:
 spec:
   type: ocp
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   # Minimal compute config
   compute:

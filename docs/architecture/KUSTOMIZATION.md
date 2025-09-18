@@ -194,7 +194,7 @@ Each overlay (`regional-deployments/overlays/cluster-X/`) provides:
 ### Current Issues
 
 #### 1. Hardcoded Cluster URLs
-**Problem**: ArgoCD Application manifests contain static server URLs like `https://api.ocp-02.rosa.mturansk-test.csu2.i3.devshift.org:6443`
+**Problem**: ArgoCD Application manifests contain static server URLs like `https://api.ocp-02.bootstrap.red-chesterfield.com:6443`
 
 **Explanation**: Each cluster application hardcodes its destination server URL, requiring manual updates when:
 - Adding new clusters

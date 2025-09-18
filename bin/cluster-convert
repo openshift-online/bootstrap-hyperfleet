@@ -68,7 +68,7 @@ convert_ocp_cluster() {
     
     # Default values if not found
     region=${region:-"us-east-1"}
-    domain=${domain:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+    domain=${domain:-"bootstrap.red-chesterfield.com"}
     instance_type=${instance_type:-"m5.xlarge"}
     replicas=${replicas:-3}
     
@@ -116,7 +116,7 @@ convert_eks_cluster() {
     
     # Default values
     region=${region:-"us-east-1"}
-    domain=${domain:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+    domain=${domain:-"bootstrap.red-chesterfield.com"}
     version=${version:-"1.28"}
     instance_type=${instance_type:-"m5.large"}
     replicas=${replicas:-3}

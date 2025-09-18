@@ -73,7 +73,7 @@ GITOPS_OUTPUT_DIR="gitops-applications/clusters"
 # Defaults
 CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
 REGION=${REGION:-"us-west-2"}
-DOMAIN=${DOMAIN:-"rosa.mturansk-test.csu2.i3.devshift.org"}
+DOMAIN=${DOMAIN:-"bootstrap.red-chesterfield.com"}
 INSTANCE_TYPE=${INSTANCE_TYPE:-"m5.large"}
 REPLICAS=${REPLICAS:-3}
 KUBERNETES_VERSION=${KUBERNETES_VERSION:-"1.31"}

@@ -58,7 +58,7 @@ aws iam list-roles | grep -i hypershift
 # Expected: HyperShift-related IAM roles if configured
 
 # Verify base domain and hosted zones
-dig NS rosa.mturansk-test.csu2.i3.devshift.org
+dig NS bootstrap.red-chesterfield.com
 # Expected: Proper NS delegation for subdomain creation
 
 # Check AWS region support for HyperShift
@@ -97,7 +97,7 @@ metadata:
 spec:
   type: hcp
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   compute:
     instanceType: m5.large
@@ -265,7 +265,7 @@ aws ec2 describe-security-groups --filters "Name=tag:kubernetes.io/cluster/hcp-t
 # Expected: Security groups for hosted cluster networking
 
 # Check Route53 records for hosted cluster
-aws route53 list-resource-record-sets --hosted-zone-id $(aws route53 list-hosted-zones-by-name --dns-name rosa.mturansk-test.csu2.i3.devshift.org --query 'HostedZones[0].Id' --output text) | grep hcp-test-YYYYMMDD
+aws route53 list-resource-record-sets --hosted-zone-id $(aws route53 list-hosted-zones-by-name --dns-name bootstrap.red-chesterfield.com --query 'HostedZones[0].Id' --output text) | grep hcp-test-YYYYMMDD
 # Expected: DNS records for hosted cluster API
 ```
 
@@ -550,7 +550,7 @@ aws ec2 describe-subnets --filters "Name=tag:kubernetes.io/cluster/hcp-test-YYYY
 aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-load-balancers --region us-east-1 | grep -A 20 hcp-test-YYYYMMDD | grep TargetGroupArn)
 
 # Check DNS resolution
-nslookup api.hcp-test-YYYYMMDD.rosa.mturansk-test.csu2.i3.devshift.org
+nslookup api.hcp-test-YYYYMMDD.bootstrap.red-chesterfield.com
 ```
 
 ### Success Criteria: Complete Test

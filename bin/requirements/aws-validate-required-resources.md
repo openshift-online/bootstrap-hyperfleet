@@ -62,7 +62,7 @@ metadata:
 spec:
   type: ocp
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   # Compute configuration (always required)
   compute:

@@ -118,7 +118,7 @@ defaults:
 ### Global Defaults
 ```yaml
 defaults:
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   aws:
     rootVolume:
       size: 100
@@ -140,7 +140,7 @@ metadata:
 spec:
   type: ocp                           # or 'eks', 'hcp'
   region: us-east-1
-  domain: rosa.mturansk-test.csu2.i3.devshift.org
+  domain: bootstrap.red-chesterfield.com
   
   # Minimal compute config
   compute:

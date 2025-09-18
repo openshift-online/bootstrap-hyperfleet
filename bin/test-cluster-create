@@ -17,7 +17,7 @@ NC='\033[0m'
 # Default configuration
 CLUSTER_TYPE="ocp"
 REGION="us-east-1"
-DOMAIN="rosa.mturansk-test.csu2.i3.devshift.org"
+DOMAIN="bootstrap.red-chesterfield.com"
 INSTANCE_TYPE="m5.2xlarge"
 REPLICAS="2"
 CLEANUP_AFTER=""
@@ -327,7 +327,7 @@ Usage: $0 [OPTIONS]
 Options:
   --type TYPE              Cluster type: ocp, eks, hcp (default: ocp)
   --region REGION          AWS region (default: us-east-1)
-  --domain DOMAIN          Base domain (default: rosa.mturansk-test.csu2.i3.devshift.org)
+  --domain DOMAIN          Base domain (default: bootstrap.red-chesterfield.com)
   --instance-type TYPE     EC2 instance type (default: m5.2xlarge)
   --replicas COUNT         Number of worker nodes (default: 2)
   --cleanup-after DURATION Auto-cleanup after duration (e.g., 2h, 30m, 1d)

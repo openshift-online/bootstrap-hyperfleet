@@ -63,7 +63,7 @@ Simple YAML files that drive complete cluster generation:
 name: my-cluster
 type: eks  # or "ocp"
 region: us-west-2
-domain: rosa.mturansk-test.csu2.i3.devshift.org
+domain: bootstrap.red-chesterfield.com
 instanceType: m5.large
 replicas: 3
 ```
