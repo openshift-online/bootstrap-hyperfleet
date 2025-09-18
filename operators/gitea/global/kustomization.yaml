@@ -13,4 +13,7 @@ resources:
   - route.yaml
   - gitea-argocd-serviceaccount.yaml
   - argocd-gitea-secret.yaml
+  - gitea-admin-secret.yaml
+  - gitea-init-rbac.yaml
   - gitea-auth-setup-job.yaml
+  - gitea-repo-setup-job.yaml
