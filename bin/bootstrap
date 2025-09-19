@@ -9,9 +9,9 @@ fi
 echo "Content will be deployed to the cluster running at:";
 oc cluster-info
 
-# Deploy prereqs, including the OpenShift GitOps Operator
-echo "Applying a subscription to the OpenShift GitOps Operator"
-oc apply -k ./prereqs
+# Install the OpenShift GitOps Operator
+echo "Installing the OpenShift GitOps Operator"
+oc apply -k operators/openshift-gitops/global
 
 ./bin/monitor-status applications.argoproj.io
 
