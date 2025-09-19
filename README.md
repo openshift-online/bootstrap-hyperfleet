@@ -1,15 +1,33 @@
 # OpenShift Bootstrap
 
-**GitOps-driven multi-cluster management for OpenShift and EKS.** Deploy and manage regional clusters at scale using a centralized hub cluster approach.
+**A reusable GitOps framework for multi-cluster management.** Clone this repository to instantly deploy a complete OpenShift hub cluster that can provision and manage regional clusters at scale.
 
-This repository provides a complete automation framework for:
-- **Cluster provisioning** - OpenShift (via Hive) and EKS (via CAPI) clusters across multiple AWS regions
-- **GitOps automation** - ArgoCD ApplicationSets orchestrate deployments with proper dependency ordering  
-- **Operations at scale** - Advanced Cluster Management (ACM) provides unified cluster lifecycle management
-- **Pipeline automation** - Tekton pipelines deploy consistently across all managed clusters
-- **Service deployment** - OCM database services and applications deploy automatically to target clusters
+## Quick Reuse
 
-**Key benefits:** Single command cluster creation, automatic GitOps integration, semantic directory organization for intuitive navigation, and support for hybrid OpenShift/EKS environments.
+```bash
+# 1. Clone and bootstrap
+git clone https://github.com/openshift-online/bootstrap.git
+cd bootstrap
+oc login https://api.your-hub-cluster.example.com:6443
+oc apply -k operators/openshift-gitops/global
+oc apply -k gitops-applications/
+
+# 2. Add your first cluster
+./bin/cluster-create
+
+# 3. Done - GitOps handles the rest
+```
+
+## What You Get
+
+This repository provides a **complete reusable infrastructure**:
+- **Self-Managing Hub** - ArgoCD, ACM, Vault, Pipelines all configured automatically
+- **Two-Phase Reuse** - GitHub for bootstrap, internal Gitea for cluster-specific configs  
+- **Automatic Provisioning** - OpenShift (via Hive) and EKS (via CAPI) cluster creation
+- **Zero-Config GitOps** - ApplicationSets with proper dependency ordering
+- **Semantic Organization** - Intuitive directory structure for easy navigation
+
+**Key benefit:** From zero to production-ready multi-cluster environment in minutes, not days.
 
 ## 🏗️ Architecture Overview
 
@@ -139,39 +157,44 @@ ls operators/vault/           # → global/
 - **Semantic organization**: Resource type first, then deployment target
 - **Global vs Regional**: Clear separation between hub cluster (`global/`) and managed cluster (`cluster-XX/`) deployments
 
-## 🚀 Quick Start
+## 🚀 How Reuse Works
 
-### Adding a New Cluster (3 simple steps)
+### Two-Phase Bootstrap Pattern
 
-1. **Create regional specification:**
+**Phase 1: Bootstrap from GitHub**
 ```bash
-./bin/cluster-create
+git clone https://github.com/openshift-online/bootstrap.git
+oc apply -k operators/openshift-gitops/global
+oc apply -k gitops-applications/
 ```
 
-2. **Generate complete cluster overlay:**
+**Phase 2: Self-Referential Management**
+After bootstrap, your cluster becomes self-managing:
+- Internal Gitea service contains cluster-specific configurations
+- ArgoCD switches to internal Git for ongoing management
+- New clusters reference their own internal Git repository
+
+### Adding Clusters (Simple)
+
 ```bash
-# Automatically called by new-cluster, but can be run manually:
-./bin/cluster-generate regions/us-west-2/ocp-05/
+./bin/cluster-create    # Interactive cluster specification
+# GitOps automatically handles the rest
 ```
 
-3. **Deploy via GitOps:**
-```bash
-./bin/bootstrap.sh
-```
-
-**That's it!** The system automatically:
-- ✅ Creates cluster provisioning resources (OCP via Hive, EKS via CAPI)
-- ✅ Generates pipeline deployments (Hello World, Cloud Infrastructure)
-- ✅ Sets up operator installations (OpenShift Pipelines)
-- ✅ Configures service deployments (OCM database services)
-- ✅ Creates ApplicationSet with proper sync wave ordering
-- ✅ Integrates with ACM for cluster management
+**The system automatically:**
+- ✅ Creates cluster provisioning resources (OpenShift/EKS)
+- ✅ Generates pipeline deployments  
+- ✅ Configures operator installations
+- ✅ Sets up service deployments
+- ✅ Orders deployment with sync waves
+- ✅ Integrates with ACM management
 
 ## 📖 Documentation
 
-- **[docs/getting-started/production-installation.md](./docs/getting-started/production-installation.md)** - Complete installation guide (hub setup + adding regions)
-- **[NEWREGION.md](./NEWREGION.md)** - Detailed test plan for new cluster deployment
-- **[CLAUDE.md](./CLAUDE.md)** - Project overview and development guidance  
+- **[REUSE.md](./REUSE.md)** - How to clone and reuse this repository
+- **[BOOTSTRAP.md](./BOOTSTRAP.md)** - Step-by-step bootstrap walkthrough  
+- **[docs/getting-started/QUICKSTART.md](./docs/getting-started/QUICKSTART.md)** - 5-minute overview
+- **[docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md)** - Visual architecture diagrams  
 
 ## 🏛️ Architecture & Components
 
