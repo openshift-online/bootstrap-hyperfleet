@@ -12,7 +12,7 @@ The `bootstrap.sh` script orchestrates the complete initialization of an OpenShi
 - **Exit Condition**: Must exit with error code 1 if authentication fails
 
 ### Deployment Sequence
-1. **Prerequisites Deployment**: Deploy OpenShift GitOps Operator via `oc apply -k ./prereqs`
+1. **Operator Installation**: Install OpenShift GitOps Operator directly via subscription manifest
 2. **Operator Readiness**: Wait for GitOps CRDs to be available via `status.sh applications.argoproj.io`
 3. **GitOps Applications**: Deploy all GitOps applications via `oc apply -k ./gitops-applications`
 4. **Component Readiness**: Wait for core components (GitOps, ACM) to be fully operational
@@ -86,8 +86,7 @@ oc cluster-info && ./bin/bootstrap.sh
 - `bootstrap.vault-integration.sh` - Vault secret management setup
 
 ### Kustomize Configurations
-- `./prereqs` - Operator subscriptions and prerequisites
-- `./gitops-applications` - GitOps ApplicationSets and Applications
+- `./gitops-applications` - GitOps ApplicationSets and Applications (includes OpenShift GitOps operator management)
 
 ### Required Permissions
 - **cluster-admin** role for operator deployment

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- hub-provisioner.pipeline.yaml
+- rbac.yaml
+
+commonLabels:
+  app.kubernetes.io/name: hub-provisioner
+  app.kubernetes.io/component: pipeline
+  app.kubernetes.io/part-of: bootstrap-infrastructure

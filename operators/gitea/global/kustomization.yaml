@@ -16,4 +16,5 @@ resources:
   - gitea-admin-secret.yaml
   - gitea-init-rbac.yaml
   - gitea-auth-setup-job.yaml
-  - gitea-repo-setup-job.yaml
+  - gitea-repo-setup-pipeline.yaml
+  - gitea-repo-setup-pipelinerun.yaml

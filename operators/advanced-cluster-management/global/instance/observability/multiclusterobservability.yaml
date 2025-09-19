@@ -5,7 +5,6 @@ metadata:
   name: observability
   annotations:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    argocd.argoproj.io/sync-wave: "3"
     mco-disable-alerting: true
 spec:
   enableDownsampling: true

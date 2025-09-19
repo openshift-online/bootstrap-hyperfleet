@@ -4,7 +4,7 @@ metadata:
   name: gitea
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   destination:
     namespace: gitea-system

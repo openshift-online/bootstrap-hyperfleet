@@ -1,0 +1,277 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-init
+rules:
+- apiGroups: [""]
+  resources: ["pods", "secrets", "serviceaccounts"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods/exec", "pods/log"]
+  verbs: ["create", "get"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "create", "update", "patch", "escalate", "bind"]
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  verbs: ["create"]
+- apiGroups: ["external-secrets.io"]
+  resources: ["clustersecretstores"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-init
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-init
+subjects:
+- kind: ServiceAccount
+  name: vault-init
+  namespace: vault
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-vault-job
+  namespace: vault
+  annotations: {}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: vault-init
+      containers:
+      - name: vault-init
+        image: registry.redhat.io/openshift4/ose-cli
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "🔐 Initializing Vault for development environment..."
+          
+          # Wait for Vault pod to be ready
+          echo "⏳ Waiting for Vault pod to be ready..."
+          until oc get pod vault-0 -n vault >/dev/null 2>&1; do
+            echo "Waiting for vault-0 pod..."
+            sleep 10
+          done
+          
+          oc wait --for=condition=Ready pod vault-0 -n vault --timeout=300s
+          echo "✅ Vault pod is ready"
+          
+          # Wait for Vault service to be accessible
+          echo "⏳ Waiting for Vault service..."
+          until oc exec vault-0 -n vault -- vault status >/dev/null 2>&1; do
+            echo "Waiting for Vault service..."
+            sleep 10
+          done
+          
+          # Check if Vault is already initialized
+          if oc exec vault-0 -n vault -- vault status | grep -q "Initialized.*true"; then
+            echo "✅ Vault is already initialized"
+            
+            # Get unseal key from logs
+            echo "🔍 Getting unseal key from pod logs..."
+            UNSEAL_KEY=$(oc logs vault-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | head -1)
+            
+            if [ -z "$UNSEAL_KEY" ]; then
+              echo "❌ Could not find unseal key in logs"
+              exit 1
+            fi
+            
+            echo "🔓 Found unseal key: $UNSEAL_KEY"
+            
+            # Unseal if needed
+            if oc exec vault-0 -n vault -- vault status | grep -q "Sealed.*true"; then
+              echo "🔓 Unsealing Vault..."
+              oc exec vault-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
+            else
+              echo "✅ Vault is already unsealed"
+            fi
+          else
+            echo "🚀 Initializing Vault..."
+            oc exec vault-0 -n vault -- vault operator init -key-shares=1 -key-threshold=1
+            
+            # Get unseal key from logs
+            echo "🔍 Getting unseal key from pod logs..."
+            sleep 5  # Wait for logs to be written
+            UNSEAL_KEY=$(oc logs vault-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | tail -1)
+            
+            if [ -z "$UNSEAL_KEY" ]; then
+              echo "❌ Could not find unseal key in logs"
+              exit 1
+            fi
+            
+            echo "🔓 Unsealing Vault with key: $UNSEAL_KEY"
+            oc exec vault-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
+          fi
+          
+          # Authenticate with root token
+          echo "🔑 Authenticating with root token..."
+          oc exec vault-0 -n vault -- vault login -method=token root
+          
+          # Create ServiceAccount and RBAC for authentication
+          echo "👤 Creating Vault authentication ServiceAccount..."
+          cat <<EOF | oc apply -f -
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: vault-auth
+            namespace: vault
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: vault-auth
+          rules:
+          - apiGroups: [""]
+            resources: ["serviceaccounts/token"]
+            verbs: ["create"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: vault-auth
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: vault-auth
+          subjects:
+          - kind: ServiceAccount
+            name: vault-auth
+            namespace: vault
+          EOF
+          
+          # Enable Kubernetes authentication
+          echo "🔐 Setting up Kubernetes authentication..."
+          if ! oc exec vault-0 -n vault -- vault auth list | grep -q kubernetes; then
+            oc exec vault-0 -n vault -- vault auth enable kubernetes
+          else
+            echo "✅ Kubernetes auth already enabled"
+          fi
+          
+          # Configure Kubernetes auth
+          echo "⚙️ Configuring Kubernetes auth..."
+          # Get Kubernetes API server URL from environment
+          K8S_HOST="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"
+          
+          # Get CA cert from the pod's mounted service account token
+          K8S_CA_CERT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt)
+          
+          oc exec vault-0 -n vault -- vault write auth/kubernetes/config \
+            kubernetes_host="$K8S_HOST" \
+            kubernetes_ca_cert="$K8S_CA_CERT" \
+            disable_iss_validation=true \
+            disable_local_ca_jwt=false
+          
+          # Create cluster secrets policy
+          echo "📝 Creating cluster secrets policy..."
+          cat <<'POLICY' | oc exec vault-0 -n vault -i -- vault policy write cluster-secrets -
+          path "secret/data/aws-credentials" { capabilities = ["read"] }
+          path "secret/data/pull-secret" { capabilities = ["read"] }
+          POLICY
+          
+          # Create Kubernetes role
+          echo "🎭 Creating Kubernetes role..."
+          oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
+            bound_service_account_names=vault-auth \
+            bound_service_account_namespaces=vault \
+            policies=cluster-secrets \
+            ttl=1h
+          
+          # Deploy ClusterSecretStore
+          echo "🗄️ Deploying ClusterSecretStore..."
+          cat <<EOF | oc apply -f -
+          apiVersion: external-secrets.io/v1
+          kind: ClusterSecretStore
+          metadata:
+            name: vault-cluster-store
+          spec:
+            provider:
+              vault:
+                server: "http://vault.vault.svc.cluster.local:8200"
+                path: "secret"
+                version: "v2"
+                auth:
+                  kubernetes:
+                    mountPath: "kubernetes"
+                    role: "cluster-role"
+                    serviceAccountRef:
+                      name: "vault-auth"
+                      namespace: "vault"
+          EOF
+          
+          # Store secrets from existing cluster secrets
+          echo "🔐 Looking for existing cluster secrets to store in Vault..."
+          
+          # Check for AWS credentials secret
+          if oc get secret aws-creds -n kube-system >/dev/null 2>&1; then
+            echo "📦 Found aws-creds secret, storing in Vault..."
+            AWS_ACCESS_KEY=$(oc get secret aws-creds -n kube-system -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
+            AWS_SECRET_KEY=$(oc get secret aws-creds -n kube-system -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
+            
+            oc exec vault-0 -n vault -- vault kv put secret/aws-credentials \
+              aws_access_key_id="$AWS_ACCESS_KEY" \
+              aws_secret_access_key="$AWS_SECRET_KEY"
+            echo "✅ AWS credentials stored in Vault"
+          else
+            echo "⚠️ aws-creds secret not found in kube-system namespace"
+          fi
+          
+          # Check for pull secret
+          if oc get secret pull-secret -n openshift-config >/dev/null 2>&1; then
+            echo "📦 Found pull-secret, storing in Vault..."
+            PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d)
+            
+            oc exec vault-0 -n vault -- vault kv put secret/pull-secret \
+              .dockerconfigjson="$PULL_SECRET"
+            echo "✅ Pull secret stored in Vault"
+          else
+            echo "⚠️ pull-secret not found in openshift-config namespace"
+          fi
+          
+          echo "ℹ️ Secret migration complete. You can manually add more secrets with:"
+          echo "   oc exec vault-0 -n vault -- vault kv put secret/aws-credentials aws_access_key_id=\"KEY\" aws_secret_access_key=\"SECRET\""
+          echo "   oc exec vault-0 -n vault -- vault kv put secret/pull-secret .dockerconfigjson=\"CONTENT\""
+          
+          # Verify ClusterSecretStore status
+          echo "🧪 Verifying ClusterSecretStore..."
+          sleep 10  # Give ESO time to process
+          
+          if oc get clustersecretstore vault-cluster-store >/dev/null 2>&1; then
+            echo "✅ ClusterSecretStore deployed successfully"
+            oc get clustersecretstore vault-cluster-store
+          else
+            echo "❌ ClusterSecretStore not found"
+            exit 1
+          fi
+          
+          echo "🎉 Vault initialization completed successfully!"
+          echo "📋 Summary:"
+          echo "  - Vault initialized and unsealed"
+          echo "  - Kubernetes authentication configured"
+          echo "  - Cluster secrets policy created"
+          echo "  - ClusterSecretStore deployed"
+          echo "  - Ready for secret management"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault

@@ -4,7 +4,6 @@ metadata:
   name: cluster-bootstrap-global
   annotations:
     description: "Bootstrap pipeline run for global cluster configuration"
-    argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   pipelineRef:
@@ -12,6 +11,16 @@ spec:
   params:
     - name: cluster-name
       value: "global"
+    - name: cluster-type
+      value: "ocp"
+    - name: region
+      value: "us-west-2"
+    - name: domain
+      value: "bootstrap.red-chesterfield.com"
+    - name: instance-type
+      value: "m5.2xlarge"
+    - name: replicas
+      value: "2"
     - name: target-namespace
       value: "openshift-gitops"
     - name: vault-enabled
@@ -32,7 +41,6 @@ kind: PersistentVolumeClaim
 metadata:
   name: cluster-bootstrap-workspace
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
 spec:
   accessModes:
     - ReadWriteOnce

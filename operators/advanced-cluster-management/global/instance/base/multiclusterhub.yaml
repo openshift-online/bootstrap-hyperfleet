@@ -6,7 +6,6 @@ metadata:
   namespace: open-cluster-management
   annotations:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    argocd.argoproj.io/sync-wave: "3"
 spec:
   availabilityConfig: High
   enableClusterBackup: false

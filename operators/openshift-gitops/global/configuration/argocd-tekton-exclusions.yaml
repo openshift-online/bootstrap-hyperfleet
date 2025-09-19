@@ -3,6 +3,7 @@ kind: Job
 metadata:
   name: patch-argocd-tekton-exclusions
   namespace: openshift-gitops
+  annotations: {}
 spec:
   template:
     spec:

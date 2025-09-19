@@ -1,0 +1,70 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hub-provisioner-sa
+  namespace: openshift-pipelines
+  annotations:
+    description: "Service account for hub provisioner pipeline with cluster-wide permissions"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hub-provisioner-role
+  annotations:
+    description: "Cluster role for hub provisioner pipeline operations"
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "applicationsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["hive.openshift.io"]
+  resources: ["clusterdeployments", "clusterprovisions"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["hypershift.openshift.io"]
+  resources: ["hostedclusters", "nodepools"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["cluster.x-k8s.io"]
+  resources: ["clusters", "machines", "machinesets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["infrastructure.cluster.x-k8s.io"]
+  resources: ["awsclusters", "awsmachines"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["bootstrap.cluster.x-k8s.io"]
+  resources: ["kubeadmconfigs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["controlplane.cluster.x-k8s.io"]
+  resources: ["kubeadmcontrolplanes"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "taskruns", "pipelines", "tasks"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hub-provisioner-binding
+  annotations:
+    description: "Cluster role binding for hub provisioner pipeline"
+subjects:
+- kind: ServiceAccount
+  name: hub-provisioner-sa
+  namespace: openshift-pipelines
+roleRef:
+  kind: ClusterRole
+  name: hub-provisioner-role
+  apiGroup: rbac.authorization.k8s.io

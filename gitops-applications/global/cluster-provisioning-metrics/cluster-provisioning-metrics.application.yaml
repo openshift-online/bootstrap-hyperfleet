@@ -4,7 +4,7 @@ metadata:
   name: cluster-provisioning-metrics
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     app.kubernetes.io/name: cluster-provisioning-metrics
     app.kubernetes.io/component: observability
