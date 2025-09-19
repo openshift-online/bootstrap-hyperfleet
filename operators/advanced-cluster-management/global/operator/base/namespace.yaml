@@ -3,7 +3,6 @@ kind: Namespace
 metadata:
   annotations:
     openshift.io/display-name: "Advanced Cluster Management for Kubernetes"
-    argocd.argoproj.io/sync-wave: "3"
   labels:
     openshift.io/cluster-monitoring: 'true'
     argocd.argoproj.io/managed-by: openshift-gitops

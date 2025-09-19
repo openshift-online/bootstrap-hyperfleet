@@ -38,8 +38,7 @@ kind: Job
 metadata:
   name: job-tekton-console-plugin
   namespace: openshift-operators
-  annotations:
-    argocd.argoproj.io/sync-wave: "10"
+  annotations: {}
 spec:
   template:
     spec:

@@ -3,8 +3,7 @@ kind: Job
 metadata:
   name: patch-argocd-tekton-exclusions
   namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
+  annotations: {}
 spec:
   template:
     spec:

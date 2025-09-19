@@ -3,8 +3,7 @@ kind: Job
 metadata:
   name: gitea-auth-setup
   namespace: gitea-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "10"
+  annotations: {}
 spec:
   template:
     spec:

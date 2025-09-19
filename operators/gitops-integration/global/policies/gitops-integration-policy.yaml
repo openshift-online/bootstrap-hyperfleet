@@ -7,7 +7,6 @@ metadata:
     policy.open-cluster-management.io/standards: NIST-CSF
     policy.open-cluster-management.io/categories: CM Configuration Management
     policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
-    argocd.argoproj.io/sync-wave: "3"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   remediationAction: enforce
@@ -87,7 +86,6 @@ metadata:
   name: gitops-integration-policy-binding
   namespace: open-cluster-management-policies
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 placementRef:
   name: gitops-integration-policy-placement
@@ -104,7 +102,6 @@ metadata:
   name: gitops-integration-policy-placement
   namespace: open-cluster-management-policies
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   clusterConditions:

@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-bootstrap-internal
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  generators:
+  - clusters:
+      selector:
+        matchLabels:
+          cluster-type: internal
+  template:
+    metadata:
+      name: '{{name}}-bootstrap-internal'
+      namespace: openshift-gitops
+    spec:
+      project: default
+      source:
+        # Self-referential: points to internal Gitea instead of external GitHub
+        repoURL: 'http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git'
+        targetRevision: main
+        path: 'clusters/{{name}}'
+      destination:
+        server: '{{server}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+        - CreateNamespace=true
+        - SkipDryRunOnMissingResource=true
+        retry:
+          limit: 10
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

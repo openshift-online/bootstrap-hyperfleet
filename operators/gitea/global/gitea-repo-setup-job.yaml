@@ -3,8 +3,7 @@ kind: Job
 metadata:
   name: gitea-repo-setup-v4
   namespace: gitea-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "15"
+  annotations: {}
 spec:
   template:
     spec:

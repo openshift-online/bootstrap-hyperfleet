@@ -9,5 +9,3 @@ components:
 resources:
   - cluster-bootstrap.pipelinerun.yaml
 
-commonAnnotations:
-  argocd.argoproj.io/sync-wave: "2"

@@ -4,7 +4,6 @@ metadata:
   name: hub-provisioner-pipeline
   annotations:
     description: "Pipeline for regional cluster provisioning using hub infrastructure"
-    argocd.argoproj.io/sync-wave: "1"
 spec:
   description: >-
     Hub provisioner pipeline that creates regional cluster specifications

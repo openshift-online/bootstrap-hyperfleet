@@ -4,8 +4,7 @@ kind: Pipeline
 metadata:
   name: gitea-repo-setup
   namespace: gitea-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "15"
+  annotations: {}
 spec:
   params:
     - name: source-url

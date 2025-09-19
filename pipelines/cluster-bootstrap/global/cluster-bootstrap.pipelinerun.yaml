@@ -4,7 +4,6 @@ metadata:
   name: cluster-bootstrap-global
   annotations:
     description: "Bootstrap pipeline run for global cluster configuration"
-    argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   pipelineRef:
@@ -42,7 +41,6 @@ kind: PersistentVolumeClaim
 metadata:
   name: cluster-bootstrap-workspace
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
 spec:
   accessModes:
     - ReadWriteOnce

@@ -47,8 +47,7 @@ kind: Job
 metadata:
   name: init-vault-job
   namespace: vault
-  annotations:
-    argocd.argoproj.io/sync-wave: "20"
+  annotations: {}
 spec:
   template:
     spec:

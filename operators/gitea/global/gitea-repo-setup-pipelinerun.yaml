@@ -4,8 +4,7 @@ kind: PipelineRun
 metadata:
   name: gitea-repo-setup-run
   namespace: gitea-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "16"
+  annotations: {}
 spec:
   pipelineRef:
     name: gitea-repo-setup

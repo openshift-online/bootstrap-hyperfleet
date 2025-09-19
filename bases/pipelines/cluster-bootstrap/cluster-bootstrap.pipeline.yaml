@@ -4,7 +4,6 @@ metadata:
   name: cluster-bootstrap-pipeline
   annotations:
     description: "Pipeline for pre-ACM cluster configuration and bootstrap setup"
-    argocd.argoproj.io/sync-wave: "1"
 spec:
   description: >-
     Bootstrap pipeline that configures foundational cluster components

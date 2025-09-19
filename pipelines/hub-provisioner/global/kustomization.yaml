@@ -6,5 +6,3 @@ namespace: openshift-pipelines
 resources:
   - ../../../bases/pipelines/hub-provisioner
 
-commonAnnotations:
-  argocd.argoproj.io/sync-wave: "2"
