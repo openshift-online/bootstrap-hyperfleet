@@ -6,6 +6,7 @@ resources:
 - vault-auth-serviceaccount.yaml
 - vault-secret-reader-serviceaccount.yaml
 - cluster-secret-store.yaml
+- init-vault-job.yaml
 
 # Config files for Vault setup
 configMapGenerator:

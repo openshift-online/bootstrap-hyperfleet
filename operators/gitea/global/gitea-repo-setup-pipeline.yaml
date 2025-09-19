@@ -1,0 +1,207 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: gitea-repo-setup
+  namespace: gitea-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
+spec:
+  params:
+    - name: source-url
+      type: string
+      description: "GitHub repository URL to clone"
+      default: "https://github.com/openshift-online/bootstrap.git"
+    - name: gitea-url
+      type: string
+      description: "Gitea repository URL"
+      default: "http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git"
+  workspaces:
+    - name: shared-data
+      description: "Workspace for cloned repository"
+  tasks:
+    - name: setup-gitea-user
+      taskSpec:
+        steps:
+          - name: setup-user
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              echo "🏗️ Setting up Gitea admin user..."
+              
+              # Wait for Gitea to be ready
+              echo "⏳ Waiting for Gitea to be ready..."
+              until curl -s http://gitea.gitea-system.svc.cluster.local:3000/api/healthz; do
+                echo "Waiting for Gitea..."
+                sleep 10
+              done
+              
+              GITEA_POD=$(oc get pods -n gitea-system -l app=gitea -o jsonpath='{.items[0].metadata.name}')
+              GITEA_USERNAME="myadmin"
+              GITEA_PASSWORD="mysecurepassword"
+              
+              # Create admin user
+              oc exec -n gitea-system $GITEA_POD -- sh -c "./gitea admin user create \
+                --config /home/gitea/conf/app.ini \
+                --username $GITEA_USERNAME \
+                --password $GITEA_PASSWORD \
+                --email ${GITEA_USERNAME}@cluster.local \
+                --admin \
+                --must-change-password false" || echo "User may already exist"
+              
+              # Force clear must_change_password flag
+              DB_POD=$(oc get pods -n gitea-system -l name=gitea-db -o jsonpath='{.items[0].metadata.name}')
+              oc exec -n gitea-system $DB_POD -- sh -c "PGPASSWORD=giteapassword123 psql -U gitea -d gitea -c \"UPDATE public.user SET must_change_password = false WHERE lower_name = '$GITEA_USERNAME';\""
+              
+              # Delete existing repository if it exists
+              echo "📁 Deleting existing bootstrap repository if it exists..."
+              curl -s -X DELETE \
+                -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+                http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap || echo "Repository may not exist"
+              
+              # Create bootstrap repository
+              echo "🏗️ Creating bootstrap repository..."
+              REPO_CREATED=$(curl -s -X POST \
+                -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "name": "bootstrap",
+                  "description": "Bootstrap cluster configurations",
+                  "private": false,
+                  "auto_init": false
+                }' \
+                http://gitea.gitea-system.svc.cluster.local:3000/api/v1/user/repos)
+              
+              if echo "$REPO_CREATED" | grep -q '"name":"bootstrap"'; then
+                echo "✅ Created bootstrap repository"
+              else
+                echo "❌ Failed to create repository: $REPO_CREATED"
+                exit 1
+              fi
+              
+              echo "✅ Gitea setup complete"
+
+    - name: clone-source
+      runAfter: ["setup-gitea-user"]
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: URL
+          value: $(params.source-url)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: shared-data
+
+    - name: push-to-gitea
+      runAfter: ["clone-source"]
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-cli
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: GIT_USER_NAME
+          value: "Gitea Repository Setup"
+        - name: GIT_USER_EMAIL
+          value: "gitea-setup@cluster.local"
+        - name: GIT_SCRIPT
+          value: |
+            echo "📤 Pushing repository content to Gitea..."
+            
+            # Show what we're about to push
+            echo "📋 Repository contents:"
+            ls -la
+            echo "📁 Bin directory contents:"
+            ls -la bin/ || echo "No bin directory found"
+            
+            # Add Gitea remote with credentials
+            git remote add gitea http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git
+            
+            # Push to Gitea
+            git push gitea main --force
+            
+            echo "✅ Successfully pushed bootstrap repository content to Gitea"
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+    - name: verify-repo
+      runAfter: ["push-to-gitea"]
+      taskSpec:
+        steps:
+          - name: verify
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              echo "🧪 Verifying repository content..."
+              GITEA_USERNAME="myadmin"
+              GITEA_PASSWORD="mysecurepassword"
+              
+              # Check repository contents
+              REPO_CONTENT=$(curl -s -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+                http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap/contents)
+              
+              if echo "$REPO_CONTENT" | grep -q '"name"'; then
+                echo "✅ Repository verification successful"
+                echo "📋 Repository contents:"
+                echo "$REPO_CONTENT" | jq -r '.[].name' 2>/dev/null || echo "$REPO_CONTENT"
+              else
+                echo "⚠️ Repository content verification failed"
+                echo "Response: $REPO_CONTENT"
+                exit 1
+              fi
+              
+              # Check bin directory specifically
+              BIN_CONTENT=$(curl -s -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+                http://gitea.gitea-system.svc.cluster.local:3000/api/v1/repos/$GITEA_USERNAME/bootstrap/contents/bin)
+              
+              if echo "$BIN_CONTENT" | grep -q '"name"'; then
+                echo "✅ Bin directory found with contents:"
+                echo "$BIN_CONTENT" | jq -r '.[].name' 2>/dev/null || echo "$BIN_CONTENT"
+              else
+                echo "⚠️ Bin directory not found or empty"
+              fi
+              
+              echo "🎉 Gitea repository setup complete!"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitea-pipeline-sa
+  namespace: gitea-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gitea-pipeline-role
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "pods", "pods/exec"]
+  verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gitea-pipeline-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gitea-pipeline-role
+subjects:
+- kind: ServiceAccount
+  name: gitea-pipeline-sa
+  namespace: gitea-system
