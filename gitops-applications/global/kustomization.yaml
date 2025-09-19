@@ -7,7 +7,6 @@ resources:
   - openshift-gitops/
   - advanced-cluster-management/
   - openshift-pipelines-operator/
-  - acm-gitops-integration/ # imports new managed clusters into argo
   - cluster-provisioning-metrics/ # monitors cluster provisioning
   - vault/
   - eso/
