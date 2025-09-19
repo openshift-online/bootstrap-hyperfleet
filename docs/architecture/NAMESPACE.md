@@ -20,9 +20,9 @@ The OpenShift Bootstrap project implements a **semantic namespace architecture**
 **Purpose**: Contains cluster provisioning CRDs and resources
 
 **Examples**:
-- `ocp-01-mturansk-t3` - Hive ClusterDeployment, ManagedCluster, ExternalSecrets
-- `ocp-01-mturansk-t10` - OpenShift cluster provisioning resources  
-- `eks-01-mturansk-t2` - CAPI Cluster, AWSManagedControlPlane, AWSManagedMachinePool
+- `my-cluster` - Hive ClusterDeployment, ManagedCluster, ExternalSecrets
+- `prod-api` - OpenShift cluster provisioning resources  
+- `eks-cluster` - CAPI Cluster, AWSManagedControlPlane, AWSManagedMachinePool
 
 **Resources Included**:
 ```yaml
@@ -53,9 +53,9 @@ The OpenShift Bootstrap project implements a **semantic namespace architecture**
 **Purpose**: OpenShift Cluster Manager services for cluster lifecycle management
 
 **Examples**:
-- `ocm-ocp-01-mturansk-t3`
-- `ocm-ocp-01-mturansk-t10` 
-- `ocm-eks-01-mturansk-t2`
+- `ocm-my-cluster`
+- `ocm-prod-api` 
+- `ocm-eks-cluster`
 
 **Resources Included**:
 - Database services (PostgreSQL instances for AMS, CS, OSL)
@@ -68,8 +68,8 @@ The OpenShift Bootstrap project implements a **semantic namespace architecture**
 **Purpose**: Tekton pipelines for infrastructure automation
 
 **Examples**:
-- `pipelines-ocp-01-mturansk-t3`
-- `pipelines-eks-01-mturansk-t2`
+- `pipelines-my-cluster`
+- `pipelines-eks-cluster`
 
 **Resources Included**:
 - Tekton Pipeline definitions
@@ -121,21 +121,21 @@ pipelines-{cluster-name}:
 1. **Cluster Provisioning** (Wave 1)
    ```yaml
    # Created on hub cluster
-   namespace: ocp-01-mturansk-t3
+   namespace: my-cluster
    # Contains: ClusterDeployment, ManagedCluster, etc.
    ```
 
 2. **Service Preparation** (Wave 2)  
    ```yaml
    # Created on hub cluster
-   namespace: ocm-ocp-01-mturansk-t3
+   namespace: ocm-my-cluster
    # Contains: OCM service definitions
    ```
 
 3. **Managed Cluster Services** (Wave 3+)
    ```yaml
-   # Created on managed cluster ocp-01-mturansk-t3
-   namespace: ocm-ocp-01-mturansk-t3
+   # Created on managed cluster my-cluster
+   namespace: ocm-my-cluster
    # Contains: Local OCM services, pipelines, applications
    ```
 
@@ -154,41 +154,41 @@ pipelines-{cluster-name}:
 ```yaml
 # Sync Wave 1: Cluster provisioning (to hub)
 - component: cluster
-  path: clusters/ocp-01-mturansk-t3
+  path: clusters/my-cluster
   destination: https://kubernetes.default.svc  # Hub cluster
   syncWave: "1"
-  # Creates namespace: ocp-01-mturansk-t3
+  # Creates namespace: my-cluster
 
 # Sync Wave 2+: Service deployment (to managed cluster)  
 - component: operators
-  path: operators/openshift-pipelines/ocp-01-mturansk-t3
-  destination: ocp-01-mturansk-t3  # Managed cluster
+  path: operators/openshift-pipelines/my-cluster
+  destination: my-cluster  # Managed cluster
   syncWave: "2"  
-  # Creates namespace: ocm-ocp-01-mturansk-t3
+  # Creates namespace: ocm-my-cluster
 
 - component: deployments-ocm
-  path: deployments/ocm/ocp-01-mturansk-t3
-  destination: ocp-01-mturansk-t3  # Managed cluster  
+  path: deployments/ocm/my-cluster
+  destination: my-cluster  # Managed cluster  
   syncWave: "4"
-  # Deploys to namespace: ocm-ocp-01-mturansk-t3
+  # Deploys to namespace: ocm-my-cluster
 ```
 
 ## Current Implementation Examples
 
-### Cluster: `ocp-01-mturansk-t3`
+### Cluster: `my-cluster`
 
 **Hub Cluster Namespaces**:
 ```bash
 # Provisioning namespace
-ocp-01-mturansk-t3/
-├── ClusterDeployment/ocp-01-mturansk-t3
-├── ManagedCluster/ocp-01-mturansk-t3  
-├── MachinePool/ocp-01-mturansk-t3-worker
+my-cluster/
+├── ClusterDeployment/my-cluster
+├── ManagedCluster/my-cluster  
+├── MachinePool/my-cluster-worker
 ├── ExternalSecret/aws-credentials
 └── ExternalSecret/pull-secret
 
 # OCM services namespace  
-ocm-ocp-01-mturansk-t3/
+ocm-my-cluster/
 ├── PostgreSQL databases (AMS, CS, OSL)
 ├── Service configurations
 └── Initialization jobs
@@ -197,32 +197,32 @@ ocm-ocp-01-mturansk-t3/
 **Managed Cluster Namespaces** (post-provisioning):
 ```bash
 # OCM services (replicated)
-ocm-ocp-01-mturansk-t3/
+ocm-my-cluster/
 ├── Local OCM services
 ├── Database connections
 └── Cluster-specific configurations
 
 # Pipeline services  
-pipelines-ocp-01-mturansk-t3/
+pipelines-my-cluster/
 ├── Tekton Pipeline definitions
 ├── PipelineRun executions
 └── Pipeline ServiceAccounts
 ```
 
-### Cluster: `eks-01-mturansk-t2`
+### Cluster: `eks-cluster`
 
 **Hub Cluster Namespaces**:
 ```bash
 # EKS provisioning namespace
-eks-01-mturansk-t2/
-├── Cluster/eks-01-mturansk-t2 (CAPI)
-├── AWSManagedControlPlane/eks-01-mturansk-t2
-├── AWSManagedMachinePool/eks-01-mturansk-t2-workers
-├── ManagedCluster/eks-01-mturansk-t2
+eks-cluster/
+├── Cluster/eks-cluster (CAPI)
+├── AWSManagedControlPlane/eks-cluster
+├── AWSManagedMachinePool/eks-cluster-workers
+├── ManagedCluster/eks-cluster
 └── ExternalSecret/aws-credentials
 
 # OCM services namespace
-ocm-eks-01-mturansk-t2/
+ocm-eks-cluster/
 ├── EKS-specific OCM configurations  
 ├── Service mesh integration
 └── Cross-cluster networking
@@ -262,23 +262,23 @@ ocm-eks-01-mturansk-t2/
 #### Provisioning Namespace Stuck
 ```bash
 # Check cluster provisioning status
-oc get clusterdeployment -n ocp-01-mturansk-t3
-oc get managedcluster ocp-01-mturansk-t3  
-oc get externalsecrets -n ocp-01-mturansk-t3
+oc get clusterdeployment -n my-cluster
+oc get managedcluster my-cluster  
+oc get externalsecrets -n my-cluster
 ```
 
 #### Service Namespace Missing on Managed Cluster
 ```bash
 # Verify ArgoCD sync status for service deployments
-oc get application -n openshift-gitops | grep ocp-01-mturansk-t3
-oc describe application ocp-01-mturansk-t3-operators -n openshift-gitops
+oc get application -n openshift-gitops | grep my-cluster
+oc describe application my-cluster-operators -n openshift-gitops
 ```
 
 #### Namespace Permission Issues
 ```bash
 # Check ServiceAccount permissions in service namespaces
-oc get sa -n ocm-ocp-01-mturansk-t3
-oc describe clusterrolebinding | grep ocp-01-mturansk-t3
+oc get sa -n ocm-my-cluster
+oc describe clusterrolebinding | grep my-cluster
 ```
 
 ## Related Documentation

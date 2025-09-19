@@ -1,42 +1,66 @@
 # OpenShift Bootstrap Architecture
 
+## Two-Phase Bootstrap Pattern
+
+### Phase 1: Bootstrap from GitHub
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                 HUB CLUSTER                                         │
-│                            (OpenShift + ArgoCD + ACM)                               │
+│                          EXTERNAL BOOTSTRAP (GitHub)                               │
+│                            oc apply -k gitops-applications/                        │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐                  │
-│  │   ArgoCD        │    │      ACM        │    │   Tekton        │                  │
-│  │   GitOps        │    │ MultiClusterHub │    │   Pipelines     │                  │
+│  │   OpenShift     │    │      ACM        │    │     Vault       │                  │
+│  │   GitOps        │    │ApplicationSet   │    │   + ESO         │                  │
 │  │                 │    │                 │    │                 │                  │
 │  │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │                  │
-│  │ │Applications │ │    │ │Infrastructur│ │    │ │   Global    │ │                  │
-│  │ │    ets      │ │    │ │  Providers  │ │    │ │  Operators  │ │                  │
+│  │ │Self-Managing│ │    │ │Wave 2: Oper │ │    │ │Secret Mgmt  │ │                  │
+│  │ │  ArgoCD     │ │    │ │Wave 3: Hub  │ │    │ │Integration  │ │                  │
+│  │ │             │ │    │ │Wave 4: Pol. │ │    │ │             │ │                  │
+│  │ │Applications │ │    │ │             │ │    │ │External Sec │ │                  │
+│  │ │ApplicationS │ │    │ │Multi-Cluster│ │    │ │ Operator    │ │                  │
+│  │ │    ets      │ │    │ │  Management │ │    │ │             │ │                  │
+│  │ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │                  │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘                  │
+│                                                                                     │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐                  │
+│  │    Tekton       │    │     Gitea       │    │  Cluster        │                  │
+│  │   Pipelines     │    │ Internal Git    │    │ Bootstrap       │                  │
+│  │                 │    │                 │    │                 │                  │
+│  │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │                  │
+│  │ │Hub Cluster  │ │    │ │Self-Ref     │ │    │ │Pipeline for │ │                  │
+│  │ │ Pipelines   │ │    │ │Repository   │ │    │ │Cluster Prov │ │                  │
 │  │ │             │ │    │ │             │ │    │ │             │ │                  │
-│  │ │• ocp-02     │ │    │ │• AWS (EKS)  │ │    │ │• Pipelines  │ │                  │
-│  │ │• ocp-03     │ │    │ │• Azure(AKS) │ │    │ │  Operator   │ │                  │
-│  │ │• ocp-04     │ │    │ │• GCP (GKE)  │ │    │ │             │ │                  │
-│  │ │• eks-02     │ │    │ │• vSphere    │ │    │ │             │ │                  │
-│  │ └─────────────┘ │    │ │• OpenStack  │ │    │ └─────────────┘ │                  │
-│  └─────────────────┘    │ │• BareMetal  │ │    └─────────────────┘                  │
-│                         │ └─────────────┘ │                                         │
-│                         └─────────────────┘                                         │
+│  │ │Global Oper. │ │    │ │Bootstrap    │ │    │ │Hub Provision│ │                  │
+│  │ │Installation │ │    │ │Clone        │ │    │ │  Workflows  │ │                  │
+│  │ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │                  │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘                  │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │ Self-Reference Transition
+                                          │
+### Phase 2: Self-Referential Management (Internal Gitea)
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                       SELF-REFERENTIAL CLUSTER MANAGEMENT                          │
+│                     http://gitea.gitea-system.svc.cluster.local:3000               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐    │
-│  │                      CAPI CRDs & Resources                                  │    │
+│  │                    Cluster Provisioning & Management                       │    │
 │  │                                                                             │    │
 │  │  OCP Clusters (Hive)           EKS Clusters (CAPI)                          │    │
 │  │  ┌─────────────────┐            ┌─────────────────┐                         │    │
 │  │  │ClusterDeployment│            │AWSManagedControl│                         │    │
 │  │  │MachinePool      │            │Plane            │                         │    │
 │  │  │InstallConfig    │            │AWSManagedMachine│                         │    │
-│  │  │                 │            │Pool             │                         │    │
-│  │  └─────────────────┘            └─────────────────┘                         │    │
+│  │  │ManagedCluster   │            │Pool             │                         │    │
+│  │  └─────────────────┘            │ManagedCluster   │                         │    │
+│  │                                 └─────────────────┘                         │    │
 │  └─────────────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
-                                          │ GitOps Sync
+                                          │ Regional Cluster Deployment
                                           │
       ┌───────────────────────────────────┼───────────────────────────────────┐
       │                                   │                                   │
@@ -45,119 +69,199 @@
 │   us-east-1     │              │   us-west-2     │              │ ap-southeast-1  │
 │                 │              │                 │              │                 │
 │  ┌───────────┐  │              │  ┌───────────┐  │              │  ┌───────────┐  │
-│  │ocp-02     │  │              │  │ocp-04     │  │              │  │eks-02     │  │
+│  │my-cluster │  │              │  │prod-api   │  │              │  │eks-cluster │  │
 │  │   (OCP)   │  │              │  │   (OCP)   │  │              │  │   (EKS)   │  │
 │  │           │  │              │  │           │  │              │  │           │  │
 │  │┌─────────┐│  │              │  │┌─────────┐│  │              │  │┌─────────┐│  │
 │  ││Pipelines││  │              │  ││Pipelines││  │              │  ││Pipelines││  │
-│  ││• Hello  ││  │              │  ││• Hello  ││  │              │  ││• Hello  ││  │
-│  ││• Cloud  ││  │              │  ││• Cloud  ││  │              │  ││• Cloud  ││  │
-│  ││  Infra  ││  │              │  ││  Infra  ││  │              │  ││  Infra  ││  │
+│  ││• Cluster││  │              │  ││• Cluster││  │              │  ││• Cluster││  │
+│  ││  Bootstr││  │              │  ││  Bootstr││  │              │  ││  Bootstr││  │
+│  ││• Hub    ││  │              │  ││• Hub    ││  │              │  ││• Hub    ││  │
+│  ││  Provis ││  │              │  ││  Provis ││  │              │  ││  Provis ││  │
 │  │└─────────┘│  │              │  │└─────────┘│  │              │  │└─────────┘│  │
 │  │           │  │              │  │           │  │              │  │           │  │
 │  │┌─────────┐│  │              │  │┌─────────┐│  │              │  │┌─────────┐│  │
-│  ││OCM      ││  │              │  ││OCM      ││  │              │  ││OCM      ││  │
+│  ││Regional ││  │              │  ││Regional ││  │              │  ││Regional ││  │
 │  ││Services ││  │              │  ││Services ││  │              │  ││Services ││  │
-│  ││• AMS-DB ││  │              │  ││• AMS-DB ││  │              │  ││• AMS-DB ││  │
-│  ││• OSL-DB ││  │              │  ││• OSL-DB ││  │              │  ││• OSL-DB ││  │
-│  ││• CS-DB  ││  │              │  ││• CS-DB  ││  │              │  ││• CS-DB  ││  │
+│  ││• Config ││  │              │  ││• Config ││  │              │  ││• Config ││  │
+│  ││• Deploy ││  │              │  ││• Deploy ││  │              │  ││• Deploy ││  │
 │  │└─────────┘│  │              │  │└─────────┘│  │              │  │└─────────┘│  │
 │  └───────────┘  │              │  └───────────┘  │              │  └───────────┘  │
-│                 │              │                 │              │                 │
-│  ┌───────────┐  │              │                 │              │                 │
-│  │ocp-03     │  │              │                 │              │                 │
-│  │   (OCP)   │  │              │                 │              │                 │
-│  │           │  │              │                 │              │                 │
-│  │┌─────────┐│  │              │                 │              │                 │
-│  ││Pipelines││  │              │                 │              │                 │
-│  ││• Hello  ││  │              │                 │              │                 │
-│  ││• Cloud  ││  │              │                 │              │                 │
-│  ││  Infra  ││  │              │                 │              │                 │
-│  │└─────────┘│  │              │                 │              │                 │
-│  │           │  │              │                 │              │                 │
-│  │┌─────────┐│  │              │                 │              │                 │
-│  ││OCM      ││  │              │                 │              │                 │
-│  ││Services ││  │              │                 │              │                 │
-│  ││• AMS-DB ││  │              │                 │              │                 │
-│  ││• OSL-DB ││  │              │                 │              │                 │
-│  ││• CS-DB  ││  │              │                 │              │                 │
-│  │└─────────┘│  │              │                 │              │                 │
-│  └───────────┘  │              │                 │              │                 │
 └─────────────────┘              └─────────────────┘              └─────────────────┘
 
 ───────────────────────────────────────────────────────────────────────────────────────
 
-GitOps Sync Wave Flow:
+## Current GitOps Sync Wave Flow
+
+### Application-Level Sync Wave Orchestration
+```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                     │
-│  Wave 1: Cluster Provisioning                                                      │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Hub Cluster → cluster-XX namespace → CAPI/Hive Resources                    │   │
-│  │ • OCP: ClusterDeployment + MachinePool + InstallConfig                      │   │
-│  │ • EKS: Cluster + AWSManagedControlPlane + AWSManagedMachinePool             │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                               │
-│                                    ▼                                               │
-│  Wave 2: Operators Installation                                                    │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • OpenShift Pipelines Operator                                              │   │
-│  │ • CRDs: Pipeline, PipelineRun, Task, TaskRun                                │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                               │
-│                                    ▼                                               │
-│  Wave 3: Pipeline Deployment                                                       │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • Hello World Pipeline + PipelineRun                                        │   │
-│  │ • Cloud Infrastructure Pipeline + PipelineRun                               │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                               │
-│                                    ▼                                               │
-│  Wave 4: Service Deployment                                                        │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Hub Cluster → Managed Cluster                                               │   │
-│  │ • OCM Services: AMS-DB, OSL-DB, CS-DB                                       │   │
-│  │ • Persistent Volumes + Services + Deployments                               │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                     │
+│                          GitOps Applications Deployment Order                      │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
-Repository Structure:
-├── regions/                     # Regional specifications
-│   ├── us-east-1/
-│   │   ├── ocp-02/         # region.yaml (type: ocp)
-│   │   └── ocp-03/         # region.yaml (type: ocp)
-│   ├── us-west-2/
-│   │   └── ocp-04/         # region.yaml (type: ocp)
-│   └── ap-southeast-1/
-│       └── eks-02/         # region.yaml (type: eks)
-├── clusters/                   # Generated cluster configs
-│   ├── ocp-02/            # OCP: Hive resources
-│   ├── ocp-03/            # OCP: Hive resources  
-│   ├── ocp-04/            # OCP: Hive resources
-│   └── eks-02/            # EKS: CAPI resources
-├── pipelines/                 # Tekton pipelines per cluster
-│   ├── hello-world/
-│   └── cloud-infrastructure-provisioning/
-├── deployments/ocm/           # Service deployments per cluster
-├── gitops-applications/       # ArgoCD ApplicationSets
-│   ├── ocp-02.yaml
-│   ├── ocp-03.yaml
-│   ├── ocp-04.yaml
-│   └── eks-02.yaml
-└── operators/                 # Operator installations per cluster
-    ├── ocp-02/
-    ├── ocp-03/
-    ├── ocp-04/
-    └── openshift-pipelines/
+Wave -1: Self-Managing GitOps
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ OpenShift GitOps (self-referential)                                            │
+│ • ArgoCD manages its own configuration                                         │
+│ • Self-managing Application for GitOps operator                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+Wave 1: Platform Operators
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ OpenShift Pipelines Operator                                                   │
+│ • Tekton operator installation on hub cluster                                  │
+│ • CRDs: Pipeline, PipelineRun, Task, TaskRun                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+Wave 2: Secret Management
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Vault + External Secrets Operator                                              │
+│ • Vault deployment for secure credential storage                               │
+│ • ESO deployment for secret synchronization                                    │
+│ • Integration with AWS credentials and pull secrets                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+Wave 3: Advanced Cluster Management (Ordered ApplicationSet)
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ACM ApplicationSet with Internal Ordering:                                     │
+│ • Sub-Wave 2: ACM Operator (installs MCH CRD)                                  │
+│ • Sub-Wave 3: ACM Hub (creates MultiClusterHub instance)                       │
+│ • Sub-Wave 4: ACM Policies (GitOps integration policies)                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+Wave 4: GitOps Integration & Configuration
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Cluster Provisioning Metrics + Integration                                     │
+│ • ACM GitOps cluster integration (automatic cluster registration)              │
+│ • Cluster provisioning monitoring and metrics                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+Wave 5: Internal Services & Self-Reference
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Gitea + Cluster Bootstrap                                                      │
+│ • Internal Gitea service for self-referential repository                       │
+│ • Cluster Bootstrap ApplicationSet (references internal Gitea)                 │
+│ • Self-referential cluster provisioning capability                             │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Key Architecture Features:
+### Regional Cluster Provisioning Flow
+Once the hub cluster is bootstrapped, regional clusters are provisioned automatically:
 
-1. **Single Hub Cluster**: Manages all regional clusters via GitOps
-2. **Multi-Provider Support**: OCP (Hive) + EKS (CAPI) + AKS/GKE (planned)
-3. **Automatic CRD Management**: ACM infrastructure providers handle CAPI CRDs
-4. **Sync Wave Ordering**: Ensures proper deployment sequence
-5. **Regional Isolation**: Each region contains independent clusters
-6. **Unified GitOps**: Single ArgoCD manages all cluster types and regions
+```
+Hub Cluster ApplicationSet
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Cluster-Specific Deployment (per cluster via ApplicationSet)                   │
+│                                                                                 │
+│ 1. Cluster Provisioning (Wave 1)                                              │
+│    • OCP: ClusterDeployment + MachinePool + InstallConfig                      │
+│    • EKS: Cluster + AWSManagedControlPlane + AWSManagedMachinePool             │
+│    • Target: Hub cluster → cluster-specific namespace                          │
+│                                                                                 │
+│ 2. Operator Installation (Wave 2)                                              │
+│    • OpenShift Pipelines operator to managed cluster                           │
+│    • Target: Managed cluster once provisioned                                  │
+│                                                                                 │
+│ 3. Pipeline Deployment (Wave 3)                                                │
+│    • Cluster Bootstrap pipelines                                               │
+│    • Hub Provisioner pipelines                                                 │
+│    • Target: Managed cluster                                                   │
+│                                                                                 │
+│ 4. Service Deployment (Wave 4)                                                 │
+│    • Regional services and applications                                        │
+│    • Target: Managed cluster                                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Repository Structure
+
+### Current Directory Organization
+```
+bootstrap/
+├── regions/                        # ✅ Regional cluster specifications (input)
+│   ├── us-east-1/
+│   │   ├── my-cluster/             # Simple region.yaml format
+│   │   └── prod-api/               # Minimal cluster configuration
+│   ├── us-west-2/
+│   │   └── staging-cluster/
+│   └── ap-southeast-1/
+│       └── eks-cluster/
+│
+├── clusters/                       # ✅ Generated cluster configs (auto-generated)
+│   ├── my-cluster/                 # OCP: Hive resources
+│   ├── prod-api/                   # OCP: Hive resources  
+│   ├── staging-cluster/            # OCP: Hive resources
+│   └── eks-cluster/                # EKS: CAPI resources
+│
+├── operators/                      # ✅ Operator deployments by type and target
+│   ├── openshift-gitops/global/    # Self-managing GitOps operator
+│   ├── advanced-cluster-management/global/  # ACM ApplicationSet
+│   ├── openshift-pipelines/global/ # Pipelines hub deployment
+│   ├── vault/global/               # Vault secret management
+│   └── external-secrets/global/    # ESO for secret sync
+│
+├── pipelines/                      # ✅ Tekton pipelines per cluster
+│   ├── cluster-bootstrap/global/   # Bootstrap pipelines
+│   └── hub-provisioner/global/     # Cluster provisioning pipelines
+│
+├── deployments/                    # ✅ Service deployments per cluster
+│   └── ocm/                        # OCM services (currently minimal)
+│
+├── gitops-applications/            # ✅ ArgoCD ApplicationSets and Applications
+│   ├── global/                     # Hub cluster applications
+│   │   ├── openshift-gitops/       # Self-managing GitOps
+│   │   ├── advanced-cluster-management/  # ACM ApplicationSet
+│   │   ├── vault/                  # Vault application
+│   │   ├── eso/                    # ESO application
+│   │   ├── gitea/                  # Internal Git service
+│   │   └── cluster-bootstrap/      # Bootstrap application
+│   └── clusters/                   # Self-referential cluster ApplicationSets
+│       └── cluster-bootstrap-applicationset.yaml  # Internal Gitea reference
+│
+└── bases/                          # ✅ Reusable templates
+    ├── clusters/                   # Cluster provisioning templates
+    └── pipelines/                  # Pipeline templates
+```
+## Key Architecture Features
+
+### 1. **Two-Phase Reuse Pattern**
+- **Phase 1**: External GitHub for initial bootstrap deployment
+- **Phase 2**: Internal Gitea for ongoing cluster-specific management
+- **Self-Referential**: Clusters manage themselves using internal Git service
+
+### 2. **Application-Level Sync Wave Orchestration**
+- **8 sync waves** with proper dependency ordering
+- **ApplicationSet approach** for ACM with internal wave ordering
+- **Self-managing ArgoCD** that configures itself
+
+### 3. **Multi-Provider Cluster Support**
+- **OpenShift (OCP)**: Via Hive ClusterDeployment
+- **EKS**: Via CAPI AWSManagedControlPlane
+- **Unified Management**: Same ApplicationSet pattern for all cluster types
+
+### 4. **Regional Specification Simplicity**
+- **Single file per cluster**: Simple region.yaml format
+- **Auto-generation**: Complex Kustomize overlays generated from simple specs
+- **Regional organization**: Physical location obvious from directory structure
+
+### 5. **Secret Management Integration**
+- **Vault**: Secure credential storage on hub cluster
+- **External Secrets Operator**: Automatic secret synchronization
+- **No secrets in Git**: All credentials managed through Vault
+
+### 6. **Pipeline-Driven Provisioning**
+- **Cluster Bootstrap**: Automated cluster preparation pipelines
+- **Hub Provisioner**: Centralized cluster creation workflows
+- **Self-Service**: Interactive cluster creation tools
+
+### 7. **GitOps-Native Operations**
+- **Single command bootstrap**: `oc apply -k gitops-applications/`
+- **Automatic cluster registration**: ACM integration with ArgoCD
+- **Declarative management**: All cluster state maintained in Git
