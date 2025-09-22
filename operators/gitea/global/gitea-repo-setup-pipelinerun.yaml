@@ -10,6 +10,15 @@ spec:
     name: gitea-repo-setup
   taskRunTemplate:
     serviceAccountName: gitea-pipeline-sa
+#    podTemplate:
+#      securityContext:
+#        fsGroup: 65532
   workspaces:
     - name: shared-data
-      emptyDir: {}
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
