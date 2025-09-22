@@ -83,20 +83,29 @@ spec:
 
     - name: clone-source
       runAfter: ["setup-gitea-user"]
-      taskRef:
-        resolver: cluster
-        params:
-          - name: kind
-            value: task
-          - name: name
-            value: git-clone
-          - name: namespace
-            value: openshift-pipelines
-      params:
-        - name: URL
-          value: $(params.source-url)
-        - name: deleteExisting
-          value: "true"
+      taskSpec:
+        workspaces:
+          - name: output
+            description: "Workspace for cloned repository"
+        steps:
+          - name: clone-repo
+            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
+            script: |
+              #!/bin/bash
+              set -e
+              echo "📥 Cloning repository with proper permissions..."
+              
+              # Create repo directory with proper permissions
+              mkdir -p /workspace/output/repo
+              cd /workspace/output/repo
+              
+              # Clone the repository
+              git clone $(params.source-url) .
+              
+              echo "✅ Repository cloned successfully"
+              echo "📁 Repository contents:"
+              ls -la
+
       workspaces:
         - name: output
           workspace: shared-data
@@ -121,19 +130,33 @@ spec:
           value: |
             echo "📤 Pushing repository content to Gitea..."
             
-            # Show what we're about to push
-            echo "📋 Repository contents:"
+            # Navigate to the cloned repository subdirectory
+            cd repo
+            echo "📍 Current directory:"
+            pwd
+            echo "📋 Current directory contents:"
             ls -la
             echo "📁 Bin directory contents:"
             ls -la bin/ || echo "No bin directory found"
             
-            # Add Gitea remote with credentials
-            git remote add gitea http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git
-            
-            # Push to Gitea
-            git push gitea main --force
-            
-            echo "✅ Successfully pushed bootstrap repository content to Gitea"
+            # Check if this is a git repository
+            if [ -d .git ]; then
+              echo "✅ Found .git directory"
+              
+              # Mark directory as safe
+              git config --global --add safe.directory /workspace/source/repo
+              
+              git status
+              git remote -v
+              
+              # Push directly to Gitea URL (no need to add remote)
+              git push http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git main --force
+              
+              echo "✅ Successfully pushed bootstrap repository content to Gitea"
+            else
+              echo "❌ No .git directory found, not a git repository"
+              exit 1
+            fi
       workspaces:
         - name: source
           workspace: shared-data
