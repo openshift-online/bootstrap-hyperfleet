@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cluster-bootstrap
+  name: hub-provisioner
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/sync-wave: "6"
 spec:
   destination:
     name: in-cluster
-    namespace: openshift-pipelines
+    namespace: bootstrap
   project: default
   source:
-    path: pipelines/cluster-bootstrap/global
+    path: pipelines/hub-provisioner/global
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:

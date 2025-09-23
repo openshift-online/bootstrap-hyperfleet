@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hub-provisioner
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"

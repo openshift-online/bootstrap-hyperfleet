@@ -6,4 +6,4 @@ kind: Kustomization
 # via its own internal Git service populated by the bootstrap process
 
 resources:
-- cluster-bootstrap-applicationset.yaml
+- clusters-applicationset.yaml
