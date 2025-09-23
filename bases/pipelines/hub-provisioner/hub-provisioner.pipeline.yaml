@@ -186,11 +186,11 @@ spec:
           - name: kubernetes-version
           - name: dry-run
         workspaces:
-          - name: source-repo
+          - name: output
         steps:
           - name: create-regional-spec
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)/repo
+            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -291,7 +291,7 @@ spec:
         - name: dry-run
           value: "$(params.dry-run)"
       workspaces:
-        - name: source-repo
+        - name: output
           workspace: shared-data
       runAfter:
         - clone-source-repository
@@ -306,11 +306,11 @@ spec:
           - name: name-suffix
           - name: dry-run
         workspaces:
-          - name: source-repo
+          - name: output
         steps:
           - name: run-cluster-generate
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)/repo
+            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -331,6 +331,22 @@ spec:
               fi
               
               echo "Running cluster-generate for: $SPEC_DIR"
+              
+              # Debug: Check current directory and contents
+              echo "📍 Current working directory:"
+              pwd
+              echo "📋 Directory contents:"
+              ls -la
+              echo "📁 Bin directory contents:"
+              ls -la bin/ || echo "No bin directory found"
+              
+              # Verify bin/cluster-generate exists
+              if [ ! -f "./bin/cluster-generate" ]; then
+                echo "❌ bin/cluster-generate not found in $(pwd)"
+                echo "Looking for cluster-generate in other locations..."
+                find . -name "cluster-generate" -type f 2>/dev/null || echo "cluster-generate not found anywhere"
+                exit 1
+              fi
               
               # Make bin/cluster-generate executable and run it
               chmod +x ./bin/cluster-generate
@@ -354,7 +370,7 @@ spec:
         - name: dry-run
           value: "$(params.dry-run)"
       workspaces:
-        - name: source-repo
+        - name: output
           workspace: shared-data
       runAfter:
         - generate-regional-specification
@@ -367,16 +383,22 @@ spec:
           - name: name-suffix
           - name: dry-run
         workspaces:
-          - name: source-repo
+          - name: output
         steps:
           - name: validate-kustomize-configs
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)/repo
+            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
               
               echo "🧪 Validating generated cluster configuration..."
+              
+              # Debug: Check current directory and contents
+              echo "📍 Current working directory:"
+              pwd
+              echo "📋 Directory contents:"
+              ls -la
               
               # Determine final cluster name
               FINAL_CLUSTER_NAME="$(params.cluster-name)"
@@ -411,10 +433,27 @@ spec:
               
               # Validate GitOps applications
               echo "Validating GitOps applications..."
+              
+              # Ensure clusters/kustomization.yaml exists
+              if [ ! -f "clusters/kustomization.yaml" ]; then
+                echo "📝 Creating missing clusters/kustomization.yaml..."
+                mkdir -p clusters
+                echo "apiVersion: kustomize.config.k8s.io/v1beta1" > clusters/kustomization.yaml
+                echo "kind: Kustomization" >> clusters/kustomization.yaml
+                echo "" >> clusters/kustomization.yaml
+                echo "# This directory will contain auto-generated cluster configurations" >> clusters/kustomization.yaml
+                echo "# Generated from regions/ by the cluster-create tool" >> clusters/kustomization.yaml
+                echo "" >> clusters/kustomization.yaml
+                echo "resources: []" >> clusters/kustomization.yaml
+              fi
+              
               if oc kustomize "gitops-applications/" > /dev/null 2>&1; then
                 echo "✅ GitOps applications configuration is valid"
               else
                 echo "❌ GitOps applications validation failed"
+                echo ""
+                oc kustomize "gitops-applications/"
+                echo ""
                 validation_failed=true
               fi
               
@@ -434,7 +473,7 @@ spec:
         - name: dry-run
           value: "$(params.dry-run)"
       workspaces:
-        - name: source-repo
+        - name: output
           workspace: shared-data
       runAfter:
         - generate-cluster-configuration
@@ -468,27 +507,28 @@ spec:
           value: |
             echo "📝 Committing and pushing generated cluster configuration..."
             
-            # Navigate to the cloned repository subdirectory
-            cd repo
+            # Debug workspace issue
+            echo "📁 Contents of /workspace/:"
+            ls -la /workspace/
+            echo "📁 Contents of /workspace/source/:"
+            ls -la /workspace/source/ || echo "No /workspace/source"
+            echo "📁 Contents of /workspace/output/:"
+            ls -la /workspace/output/ || echo "No /workspace/output"
+            
+            # Check if the repo exists in output workspace
+            if [ -d "/workspace/output/repo" ]; then
+              echo "✅ Found repo in /workspace/output/, copying to source workspace"
+              mkdir -p /workspace/source
+              cp -r /workspace/output/repo /workspace/source/repo
+              cd /workspace/source/repo
+            else
+              echo "❌ No repo directory found in any workspace"
+              exit 1
+            fi
             echo "📍 Current directory:"
             pwd
             echo "📋 Current directory contents:"
             ls -la
-            
-            # Determine final cluster name from parameters
-            FINAL_CLUSTER_NAME="$(params.cluster-name)"
-            if [ -n "$(params.name-suffix)" ]; then
-              FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-            fi
-            
-            echo "Cluster: $FINAL_CLUSTER_NAME"
-            echo "Type: $(params.cluster-type)"
-            echo "Region: $(params.region)"
-            
-            if [ "$(params.dry-run)" = "true" ]; then
-              echo "🔍 DRY RUN MODE - Would commit and push changes for $FINAL_CLUSTER_NAME"
-              exit 0
-            fi
             
             # Check if this is a git repository
             if [ -d .git ]; then
@@ -496,6 +536,9 @@ spec:
               
               # Mark directory as safe
               git config --global --add safe.directory /workspace/source/repo
+              
+              git status
+              git remote -v
               
               # Add all generated files
               echo "📦 Adding generated files..."
@@ -511,18 +554,8 @@ spec:
               echo "📋 Files to be committed:"
               git diff --cached --name-only
               
-              # Commit changes
-              git commit -m "Add $FINAL_CLUSTER_NAME cluster configuration
-
-Generated by hub-provisioner pipeline:
-- Cluster Name: $FINAL_CLUSTER_NAME  
-- Cluster Type: $(params.cluster-type)
-- Region: $(params.region)
-- Generated: $(date -Iseconds)
-
-🤖 Generated with Hub Provisioner Pipeline
-
-Co-Authored-By: Hub Provisioner <hub-provisioner@bootstrap.red-chesterfield.com>"
+              # Commit changes with simple message
+              git commit -m "Add new cluster configuration - Generated by hub-provisioner pipeline"
               
               # Push directly to Gitea URL (no need to add remote)
               git push http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git main --force
