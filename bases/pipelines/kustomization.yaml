@@ -5,7 +5,7 @@ components:
   - hello-world
   - cloud-infrastructure-provisioning
   - postgres-demo
-  - cluster-bootstrap
+  - bootstrap
 
 commonAnnotations:
   version: "v0.0.1"

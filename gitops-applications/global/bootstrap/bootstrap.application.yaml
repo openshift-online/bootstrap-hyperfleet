@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bootstrap
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  destination:
+    name: in-cluster
+    namespace: openshift-pipelines
+  project: default
+  source:
+    path: pipelines/bootstrap/global
+    repoURL: 'https://github.com/openshift-online/bootstrap'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      allowEmpty: false
+    prune: false
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true

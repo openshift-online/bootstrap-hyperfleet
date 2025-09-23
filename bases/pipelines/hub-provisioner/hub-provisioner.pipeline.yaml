@@ -54,26 +54,27 @@ spec:
       description: "Perform dry run without making changes"
       default: "false"
   workspaces:
-    - name: shared-workspace
-      description: "Shared workspace for pipeline artifacts"
-    - name: source-repo
-      description: "Source repository workspace"
+    - name: shared-data
+      description: "Shared workspace for repository and pipeline artifacts"
   tasks:
     - name: clone-source-repository
       taskSpec:
         workspaces:
-          - name: source-repo
+          - name: output
+            description: "Workspace for cloned repository"
         steps:
-          - name: git-clone
-            image: alpine/git:latest
-            workingDir: $(workspaces.source-repo.path)
+          - name: clone-repo
+            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
             script: |
-              #!/bin/sh
+              #!/bin/bash
               set -e
-              
               echo "📦 Cloning source repository from internal gitea..."
               
-              # Clone the repository
+              # Create repo directory with proper permissions
+              mkdir -p /workspace/output/repo
+              cd /workspace/output/repo
+              
+              # Clone the repository from internal gitea
               git clone http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git .
               
               echo "✅ Repository cloned successfully"
@@ -88,8 +89,8 @@ spec:
                 exit 1
               fi
       workspaces:
-        - name: source-repo
-          workspace: source-repo
+        - name: output
+          workspace: shared-data
 
     - name: validate-provisioning-parameters
       taskSpec:
@@ -189,7 +190,7 @@ spec:
         steps:
           - name: create-regional-spec
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)
+            workingDir: $(workspaces.source-repo.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -291,7 +292,7 @@ spec:
           value: "$(params.dry-run)"
       workspaces:
         - name: source-repo
-          workspace: source-repo
+          workspace: shared-data
       runAfter:
         - clone-source-repository
         - validate-provisioning-parameters
@@ -309,7 +310,7 @@ spec:
         steps:
           - name: run-cluster-generate
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)
+            workingDir: $(workspaces.source-repo.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -354,7 +355,7 @@ spec:
           value: "$(params.dry-run)"
       workspaces:
         - name: source-repo
-          workspace: source-repo
+          workspace: shared-data
       runAfter:
         - generate-regional-specification
 
@@ -370,7 +371,7 @@ spec:
         steps:
           - name: validate-kustomize-configs
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.source-repo.path)
+            workingDir: $(workspaces.source-repo.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -434,48 +435,67 @@ spec:
           value: "$(params.dry-run)"
       workspaces:
         - name: source-repo
-          workspace: source-repo
+          workspace: shared-data
       runAfter:
         - generate-cluster-configuration
 
     - name: commit-and-push-changes
-      taskSpec:
+      taskRef:
+        resolver: cluster
         params:
-          - name: cluster-name
-          - name: cluster-type
-          - name: region
-          - name: name-suffix
-          - name: dry-run
-        workspaces:
-          - name: source-repo
-        steps:
-          - name: git-commit-push
-            image: alpine/git:latest
-            workingDir: $(workspaces.source-repo.path)
-            script: |
-              #!/bin/sh
-              set -e
+          - name: kind
+            value: task
+          - name: name
+            value: git-cli
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: GIT_USER_NAME
+          value: "Hub Provisioner Pipeline"
+        - name: GIT_USER_EMAIL
+          value: "hub-provisioner@bootstrap.red-chesterfield.com"
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+        - name: cluster-type
+          value: "$(params.cluster-type)"
+        - name: region
+          value: "$(params.region)"
+        - name: name-suffix
+          value: "$(params.name-suffix)"
+        - name: dry-run
+          value: "$(params.dry-run)"
+        - name: GIT_SCRIPT
+          value: |
+            echo "📝 Committing and pushing generated cluster configuration..."
+            
+            # Navigate to the cloned repository subdirectory
+            cd repo
+            echo "📍 Current directory:"
+            pwd
+            echo "📋 Current directory contents:"
+            ls -la
+            
+            # Determine final cluster name from parameters
+            FINAL_CLUSTER_NAME="$(params.cluster-name)"
+            if [ -n "$(params.name-suffix)" ]; then
+              FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
+            fi
+            
+            echo "Cluster: $FINAL_CLUSTER_NAME"
+            echo "Type: $(params.cluster-type)"
+            echo "Region: $(params.region)"
+            
+            if [ "$(params.dry-run)" = "true" ]; then
+              echo "🔍 DRY RUN MODE - Would commit and push changes for $FINAL_CLUSTER_NAME"
+              exit 0
+            fi
+            
+            # Check if this is a git repository
+            if [ -d .git ]; then
+              echo "✅ Found .git directory"
               
-              echo "📝 Committing and pushing generated cluster configuration..."
-              
-              # Determine final cluster name
-              FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
-              
-              echo "Cluster: $FINAL_CLUSTER_NAME"
-              echo "Type: $(params.cluster-type)"
-              echo "Region: $(params.region)"
-              
-              if [ "$(params.dry-run)" = "true" ]; then
-                echo "🔍 DRY RUN MODE - Would commit and push changes for $FINAL_CLUSTER_NAME"
-                exit 0
-              fi
-              
-              # Configure git
-              git config user.name "Hub Provisioner Pipeline"
-              git config user.email "hub-provisioner@bootstrap.red-chesterfield.com"
+              # Mark directory as safe
+              git config --global --add safe.directory /workspace/source/repo
               
               # Add all generated files
               echo "📦 Adding generated files..."
@@ -494,35 +514,27 @@ spec:
               # Commit changes
               git commit -m "Add $FINAL_CLUSTER_NAME cluster configuration
 
-              Generated by hub-provisioner pipeline:
-              - Cluster Name: $FINAL_CLUSTER_NAME
-              - Cluster Type: $(params.cluster-type)
-              - Region: $(params.region)
-              - Generated: $(date -Iseconds)
+Generated by hub-provisioner pipeline:
+- Cluster Name: $FINAL_CLUSTER_NAME  
+- Cluster Type: $(params.cluster-type)
+- Region: $(params.region)
+- Generated: $(date -Iseconds)
+
+🤖 Generated with Hub Provisioner Pipeline
+
+Co-Authored-By: Hub Provisioner <hub-provisioner@bootstrap.red-chesterfield.com>"
               
-              🤖 Generated with Hub Provisioner Pipeline
+              # Push directly to Gitea URL (no need to add remote)
+              git push http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git main --force
               
-              Co-Authored-By: Hub Provisioner <hub-provisioner@bootstrap.red-chesterfield.com>"
-              
-              # Push changes
-              echo "🚀 Pushing changes to gitea..."
-              git push origin main
-              
-              echo "✅ Changes committed and pushed successfully"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: cluster-type
-          value: "$(params.cluster-type)"
-        - name: region
-          value: "$(params.region)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-        - name: dry-run
-          value: "$(params.dry-run)"
+              echo "✅ Successfully pushed cluster configuration to Gitea"
+            else
+              echo "❌ No .git directory found, not a git repository"
+              exit 1
+            fi
       workspaces:
-        - name: source-repo
-          workspace: source-repo
+        - name: source
+          workspace: shared-data
       runAfter:
         - validate-generated-configuration
 

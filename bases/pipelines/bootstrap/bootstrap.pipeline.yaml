@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: cluster-bootstrap-pipeline
+  name: bootstrap-pipeline
   annotations:
     description: "Pipeline for pre-ACM cluster configuration and bootstrap setup"
 spec:

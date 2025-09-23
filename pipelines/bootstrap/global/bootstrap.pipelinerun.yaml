@@ -1,13 +1,14 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  name: cluster-bootstrap-global
+  name: bootstrap-global
+  namespace: bootstrap
   annotations:
     description: "Bootstrap pipeline run for global cluster configuration"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   pipelineRef:
-    name: cluster-bootstrap-pipeline
+    name: bootstrap-pipeline
   params:
     - name: cluster-name
       value: "global"
@@ -32,14 +33,14 @@ spec:
   workspaces:
     - name: shared-workspace
       persistentVolumeClaim:
-        claimName: cluster-bootstrap-workspace
+        claimName: bootstrap-workspace
   taskRunTemplate:
     serviceAccountName: pipeline
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: cluster-bootstrap-workspace
+  name: bootstrap-workspace
   annotations:
 spec:
   accessModes:
