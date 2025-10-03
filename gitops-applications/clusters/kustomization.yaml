@@ -8,3 +8,5 @@ kind: Kustomization
 resources:
 - clusters-applicationset.yaml
 
+
+- ./ocp-01-01.yaml
