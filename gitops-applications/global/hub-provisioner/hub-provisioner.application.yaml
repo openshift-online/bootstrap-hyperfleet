@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: hub-provisioner
-  namespace: openshift-gitops
+  namespace: hub-provisioner
   annotations:
     argocd.argoproj.io/sync-wave: "6"
 spec:

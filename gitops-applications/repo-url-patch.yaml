@@ -1,0 +1,17 @@
+# Repository configuration for project-specific forks
+# 
+# Usage:
+# 1. Copy this file to your project fork
+# 2. Update the repoURL value below to point to your fork
+# 3. Example: https://github.com/openshift-online/YOUR_FORK/
+#
+# This ConfigMap provides the source repoURL for all ArgoCD Applications
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: repo-config
+  namespace: openshift-gitops
+data:
+  # UPDATE THIS TO YOUR FORK
+  repoURL: "https://github.com/openshift-online/YOUR_FORK"
