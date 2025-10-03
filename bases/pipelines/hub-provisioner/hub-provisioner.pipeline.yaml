@@ -2,6 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: hub-provisioner-pipeline
+  namespace: hub-provisioner
   annotations:
     description: "Pipeline for regional cluster provisioning using hub infrastructure"
 spec:
