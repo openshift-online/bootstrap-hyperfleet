@@ -14,4 +14,4 @@ metadata:
   namespace: openshift-gitops
 data:
   # UPDATE THIS TO YOUR FORK
-  repoURL: "https://github.com/openshift-online/bootstrap"
+  repoURL: "https://github.com/openshift-online/bootstrap-clm"

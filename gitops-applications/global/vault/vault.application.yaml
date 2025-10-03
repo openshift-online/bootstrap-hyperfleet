@@ -23,6 +23,14 @@ spec:
           value: "true"
         - name: server.dev.enabled
           value: "true"
+        - name: server.image.repository
+          value: "docker.io/hashicorp/vault"
+        - name: injector.image.repository
+          value: "docker.io/hashicorp/vault-k8s"
+        - name: injector.affinity
+          value: ""
+        - name: server.affinity
+          value: ""
   sources: []
   syncPolicy:
     automated:
