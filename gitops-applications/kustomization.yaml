@@ -8,3 +8,25 @@ resources:
 - ./global/
 
 - ../clusters/ # cluster-specific ApplicationSets
+
+# Repository configuration for project forks
+- repo-url-patch.yaml
+
+# Override repoURL for project-specific forks
+# Update BOOTSTRAP_REPO_URL below to point to your project fork
+replacements:
+- source:
+    kind: ConfigMap
+    name: repo-config
+    fieldPath: data.repoURL
+  targets:
+  - select:
+      kind: Application
+    fieldPaths:
+    - spec.source.repoURL
+    reject:
+    - annotationSelector: external-repo=true  # Skip external repos like Helm charts
+  - select:
+      kind: ApplicationSet
+    fieldPaths: 
+    - spec.template.spec.source.repoURL

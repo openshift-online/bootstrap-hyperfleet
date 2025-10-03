@@ -6,11 +6,8 @@ namespace: openshift-gitops
 resources:
   - openshift-gitops/
   - advanced-cluster-management/
-  - openshift-pipelines-operator/
-  - cluster-provisioning-metrics/ # monitors cluster provisioning
+  - openshift-pipelines/
   - vault/
   - eso/
-  - gitea/
-  - bootstrap/
   - hub-provisioner/
 

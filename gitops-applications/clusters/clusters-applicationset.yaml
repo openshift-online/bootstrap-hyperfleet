@@ -18,10 +18,9 @@ spec:
     spec:
       project: default
       source:
-        # Self-referential: points to internal Gitea instead of external GitHub
-        repoURL: 'http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git'
+        repoURL: 'https://github.com/openshift-online/bootstrap'
         targetRevision: main
-        path: 'clusters/{{name}}'
+        path: 'clusters/'
       destination:
         server: '{{server}}'
       syncPolicy:

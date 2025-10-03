@@ -5,6 +5,7 @@ metadata:
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    external-repo: "true"  # Skip repoURL replacement for external Helm chart
 
 spec:
   destination:

@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: hub-provisioner-sa
-  namespace: openshift-pipelines
+  namespace: hub-provisioner
   annotations:
     description: "Service account for hub provisioner pipeline with cluster-wide permissions"
 ---
@@ -63,7 +63,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: hub-provisioner-sa
-  namespace: openshift-pipelines
+  namespace: hub-provisioner
 roleRef:
   kind: ClusterRole
   name: hub-provisioner-role
