@@ -1145,6 +1145,28 @@ EOF
     # ApplicationSet destinations are handled inline above
 }
 
+update_clusters_kustomization() {
+    local kustomization_file="clusters/kustomization.yaml"
+    
+    # Check if the cluster is already in the kustomization
+    if ! grep -q "\\- $FULL_CLUSTER_NAME/" "$kustomization_file"; then
+        echo "Adding $FULL_CLUSTER_NAME to clusters/kustomization.yaml"
+        
+        # Check if resources is empty array
+        if grep -q "^resources: \[\]" "$kustomization_file"; then
+            # Replace empty array with list containing new cluster
+            sed -i "s/^resources: \[\]/resources:\n  - $FULL_CLUSTER_NAME\//" "$kustomization_file"
+        else
+            # Append to existing resources list
+            cat >> "$kustomization_file" << EOF
+  - $FULL_CLUSTER_NAME/
+EOF
+        fi
+    else
+        echo "$FULL_CLUSTER_NAME already exists in clusters/kustomization.yaml"
+    fi
+}
+
 update_gitops_kustomization() {
     local kustomization_file="$GITOPS_OUTPUT_DIR/kustomization.yaml"
     
@@ -1297,6 +1319,7 @@ generate_regional_pipelines
 generate_operators
 generate_regional_deployments
 generate_gitops_applications
+update_clusters_kustomization
 update_gitops_kustomization
 
 # Push to Gitea if requested
