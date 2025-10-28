@@ -1,11 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: vault
+  name: vault-helm
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "2"
-    external-repo: "true"  # Skip repoURL replacement for external Helm chart
+    external-repo: "true"
 
 spec:
   destination:
@@ -31,6 +31,31 @@ spec:
           value: ""
         - name: server.affinity
           value: ""
+  sources: []
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-init
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+
+spec:
+  destination:
+    name: in-cluster
+    namespace: vault
+  project: default
+  source:
+    repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+    path: operators/vault/global
+    targetRevision: HEAD
   sources: []
   syncPolicy:
     automated:

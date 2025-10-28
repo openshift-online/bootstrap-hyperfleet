@@ -1,10 +1,6 @@
-# Go module cache
-acme/pkg/mod/
 .claude/
 .idea/
 .openshift/
 .secrets/
 .tmp/
 secrets/
-STATUS.md
-clusters_backup/

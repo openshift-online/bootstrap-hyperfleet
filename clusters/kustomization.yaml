@@ -4,5 +4,4 @@ kind: Kustomization
 # This directory will contain auto-generated cluster configurations
 # Generated from regions/ by the cluster-create tool
 
-resources:
-  - ocp-01-01/
+resources: []
