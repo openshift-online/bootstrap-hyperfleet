@@ -1,7 +1,7 @@
 apiVersion: v1
 metadata:
   name: 'ocp-01-hyp'
-baseDomain: hyperfleet.bootstrap.red-chesterfield.com
+baseDomain: bootstrap.red-chesterfield.com
 controlPlane:
   architecture: amd64
   hyperthreading: Enabled

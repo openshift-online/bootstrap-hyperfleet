@@ -6,7 +6,7 @@ metadata:
 spec:
   type: ocp
   region: us-west-2
-  domain: hyperfleet.bootstrap.red-chesterfield.com
+  domain: bootstrap.red-chesterfield.com
   
   # Minimal compute config
   compute:
