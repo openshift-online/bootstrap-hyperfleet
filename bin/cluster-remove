@@ -219,6 +219,20 @@ remove_repository_files() {
         echo "[DRY-RUN] Updating gitops-applications/clusters/kustomization.yaml: remove $name.yaml reference"
     fi
     
+    # Update clusters/kustomization.yaml to remove cluster reference
+    if [ "$DRY_RUN" = false ] && [ -f "clusters/kustomization.yaml" ]; then
+        if grep -q "$name/" "clusters/kustomization.yaml"; then
+            echo "Updating clusters/kustomization.yaml..."
+            sed -i "/$name\//d" "clusters/kustomization.yaml"
+            # If resources list is now empty (only has whitespace), replace with resources: []
+            if grep -A1 "^resources:" "clusters/kustomization.yaml" | tail -1 | grep -qE '^\s*$'; then
+                sed -i '/^resources:/,/^\s*$/{/^resources:/!d; s/.*/resources: []/}' "clusters/kustomization.yaml"
+            fi
+        fi
+    elif [ "$DRY_RUN" = true ]; then
+        echo "[DRY-RUN] Updating clusters/kustomization.yaml: remove - $name/ reference"
+    fi
+    
     # 3. Cluster manifests
     remove_path "clusters/$name" "Removing cluster manifests"
     

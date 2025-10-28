@@ -7,7 +7,7 @@ resources:
 # Global applications (base cluster infrastructure)
 - ./global/
 
-- ../clusters/ # cluster-specific ApplicationSets
+- ./clusters/ # cluster-specific ApplicationSets
 
 # Repository configuration for project forks
 - repo-url-patch.yaml
