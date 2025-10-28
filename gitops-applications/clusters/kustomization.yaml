@@ -10,3 +10,5 @@ resources:
 
 
 
+
+- ./ocp-01-hyperfleet.yaml
