@@ -4,5 +4,4 @@ kind: Kustomization
 namespace: hub-provisioner
 
 resources:
-  - namespace.yaml
   - ../../../bases/pipelines/hub-provisioner
