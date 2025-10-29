@@ -10,4 +10,3 @@ commonAnnotations:
 
 resources:
   - ../global/overlays/pipelines-operator-only
-  - namespace.yaml
