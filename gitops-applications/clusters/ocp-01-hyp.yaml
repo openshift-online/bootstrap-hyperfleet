@@ -13,19 +13,19 @@ spec:
         syncWave: "1"
       - component: operators
         path: operators/openshift-pipelines/ocp-01-hyp
-        destination: ocp-01-hyp
+        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "2"
       - component: pipelines-hello-world
         path: pipelines/hello-world/ocp-01-hyp
-        destination: ocp-01-hyp
+        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/ocp-01-hyp
-        destination: ocp-01-hyp
+        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "3"
       - component: deployments-ocm
         path: deployments/ocm/ocp-01-hyp
-        destination: ocp-01-hyp
+        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "4"
   template:
     metadata:
@@ -36,9 +36,9 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://github.com/openshift-online/bootstrap
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
         path: '{{path}}'
-        targetRevision: main
+        targetRevision: HEAD
       destination:
         server: '{{destination}}'
       syncPolicy:
