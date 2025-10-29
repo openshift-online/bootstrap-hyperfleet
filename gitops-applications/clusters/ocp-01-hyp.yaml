@@ -15,18 +15,14 @@ spec:
         path: operators/openshift-pipelines/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "2"
-      - component: pipelines-hello-world
-        path: pipelines/hello-world/ocp-01-hyp
-        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "3"
+        syncWave: "4"
       - component: deployments-ocm
         path: deployments/ocm/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "4"
+        syncWave: "5"
   template:
     metadata:
       name: ocp-01-hyp-{{component}}
