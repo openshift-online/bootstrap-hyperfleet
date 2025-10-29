@@ -240,7 +240,6 @@ remove_repository_files() {
     remove_path "operators/openshift-pipelines/$name" "Removing operator configs"
     
     # 5. Pipeline configurations
-    remove_path "pipelines/hello-world/$name" "Removing hello-world pipeline configs"
     remove_path "pipelines/cloud-infrastructure-provisioning/$name" "Removing cloud-infra pipeline configs"
     
     # 6. Service deployments
@@ -275,7 +274,6 @@ show_removal_plan() {
         echo "  - Cluster manifests: clusters/$name/"
         echo "  - Operator configs: operators/openshift-pipelines/$name/"
         echo "  - Pipeline configs:"
-        echo "    - pipelines/hello-world/$name/"
         echo "    - pipelines/cloud-infrastructure-provisioning/$name/"
         echo "  - Service configs: deployments/ocm/$name/"
         echo "  - Update: gitops-applications/clusters/kustomization.yaml"

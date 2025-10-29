@@ -65,7 +65,6 @@ FULL_CLUSTER_NAME="$CLUSTER_NAME"
 # Generate known output paths
 CLUSTER_OUTPUT_DIR="clusters/$FULL_CLUSTER_NAME"
 # Pipeline directories organized by pipeline type
-PIPELINES_HELLO_WORLD_DIR="pipelines/hello-world/$FULL_CLUSTER_NAME"
 PIPELINES_CLOUD_INFRA_DIR="pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME"
 DEPLOYMENTS_OUTPUT_DIR="deployments/ocm/$FULL_CLUSTER_NAME"
 GITOPS_OUTPUT_DIR="gitops-applications/clusters"
@@ -944,25 +943,6 @@ EOF
 }
 
 generate_regional_pipelines() {
-    # Generate hello-world pipeline overlay
-    cat > "$PIPELINES_HELLO_WORLD_DIR/kustomization.yaml" << EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-namespace: ocm-$FULL_CLUSTER_NAME
-
-commonAnnotations:
-  cluster: $FULL_CLUSTER_NAME
-  cluster-type: $CLUSTER_TYPE
-  version: "v0.0.1"
-
-resources:
-  - hello-world.pipelinerun.yaml
-
-components:
-  - ../../../bases/pipelines/hello-world
-EOF
-
     # Generate cloud-infrastructure-provisioning pipeline overlay
     cat > "$PIPELINES_CLOUD_INFRA_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -980,23 +960,6 @@ resources:
 
 components:
   - ../../../bases/pipelines/cloud-infrastructure-provisioning
-EOF
-
-    # Generate hello-world pipelinerun
-    cat > "$PIPELINES_HELLO_WORLD_DIR/hello-world.pipelinerun.yaml" << EOF
-apiVersion: tekton.dev/v1
-kind: PipelineRun
-metadata:
-  name: hello-world-run
-  namespace: ocm-$FULL_CLUSTER_NAME
-spec:
-  pipelineRef:
-    name: hello-world-pipeline
-  params:
-    - name: cluster-name
-      value: $FULL_CLUSTER_NAME
-    - name: region
-      value: $REGION
 EOF
 
     # Generate cloud-infrastructure-provisioning pipelinerun
@@ -1109,10 +1072,6 @@ spec:
         path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
         destination: $FULL_CLUSTER_NAME
         syncWave: "2"
-      - component: pipelines-hello-world
-        path: pipelines/hello-world/$FULL_CLUSTER_NAME
-        destination: $FULL_CLUSTER_NAME
-        syncWave: "3"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
         destination: $FULL_CLUSTER_NAME
@@ -1256,7 +1215,6 @@ spec:
           echo "Creating cluster configuration directories..."
           mkdir -p clusters/$FULL_CLUSTER_NAME
           mkdir -p operators/openshift-pipelines/$FULL_CLUSTER_NAME
-          mkdir -p pipelines/hello-world/$FULL_CLUSTER_NAME
           mkdir -p pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
           mkdir -p deployments/ocm/$FULL_CLUSTER_NAME
           mkdir -p gitops-applications

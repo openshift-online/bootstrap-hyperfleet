@@ -342,11 +342,6 @@ else
 fi
 echo ""
 echo "Pipeline files:"
-if [ -d "pipelines/hello-world/$CLUSTER_NAME" ]; then
-    echo "Hello World pipeline:"
-    ls -la "pipelines/hello-world/$CLUSTER_NAME/"
-    echo ""
-fi
 if [ -d "pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME" ]; then
     echo "Cloud Infrastructure pipeline:"
     ls -la "pipelines/cloud-infrastructure-provisioning/$CLUSTER_NAME/"
