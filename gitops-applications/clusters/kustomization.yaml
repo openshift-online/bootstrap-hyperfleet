@@ -14,3 +14,5 @@ resources:
 
 
 - ./ocp-01-hyp.yaml
+
+- ./ocp-03.yaml

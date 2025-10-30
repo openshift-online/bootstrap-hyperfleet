@@ -162,27 +162,18 @@ while true; do
     fi
 done
 
-# Get optional name suffix
-prompt_with_default "Name Suffix (optional, e.g., -mytest)" "" "NAME_SUFFIX"
-
-# Generate cluster name automatically
+# Get cluster name
 echo ""
-echo "Generating cluster name..."
-BASE_CLUSTER_NAME=$(generate_cluster_name "$CLUSTER_TYPE")
-if [ -n "$NAME_SUFFIX" ]; then
-    CLUSTER_NAME="${BASE_CLUSTER_NAME}${NAME_SUFFIX}"
-    echo "Generated cluster name: $CLUSTER_NAME (${BASE_CLUSTER_NAME} + ${NAME_SUFFIX})"
-else
-    CLUSTER_NAME="$BASE_CLUSTER_NAME"
-    echo "Next available cluster name: $CLUSTER_NAME"
-fi
-echo ""
-
-# Validate generated name
-if ! validate_cluster_name "$CLUSTER_NAME"; then
-    echo "Error: Generated cluster name '$CLUSTER_NAME' conflicts with existing resources" >&2
-    exit 1
-fi
+SUGGESTED_NAME=$(generate_cluster_name "$CLUSTER_TYPE")
+echo "Suggested cluster name: $SUGGESTED_NAME"
+while true; do
+    prompt_with_default "Cluster Name" "$SUGGESTED_NAME" "CLUSTER_NAME"
+    if validate_cluster_name "$CLUSTER_NAME"; then
+        break
+    else
+        echo "Please choose a different name."
+    fi
+done
 
 # Get other cluster configuration
 prompt_with_default "Region" "us-west-2" "REGION"
@@ -194,7 +185,7 @@ prompt_with_default "Number of Replicas" "2" "REPLICAS"
 echo ""
 echo "Configuration Summary:"
 echo "====================="
-echo "Cluster Name: $CLUSTER_NAME (auto-generated)"
+echo "Cluster Name: $CLUSTER_NAME"
 echo "Type: $CLUSTER_TYPE"
 echo "Region: $REGION"
 echo "Domain: $DOMAIN"

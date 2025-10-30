@@ -91,13 +91,11 @@ fi
 
 # Create output directories
 mkdir -p "$CLUSTER_OUTPUT_DIR"
-mkdir -p "$PIPELINES_HELLO_WORLD_DIR"
 mkdir -p "$PIPELINES_CLOUD_INFRA_DIR"
 mkdir -p "$DEPLOYMENTS_OUTPUT_DIR"
 
 echo "Generating $CLUSTER_TYPE cluster overlay for $FULL_CLUSTER_NAME"
 echo "  Cluster overlay: $CLUSTER_OUTPUT_DIR"
-echo "  Hello World pipelines: $PIPELINES_HELLO_WORLD_DIR"
 echo "  Cloud Infrastructure pipelines: $PIPELINES_CLOUD_INFRA_DIR"
 echo "  Deployments overlay: $DEPLOYMENTS_OUTPUT_DIR"
 echo "  GitOps applications: $GITOPS_OUTPUT_DIR"
@@ -1292,9 +1290,6 @@ ls -la "$CLUSTER_OUTPUT_DIR/"
 echo ""
 echo "Operators files:"
 ls -la "operators/openshift-pipelines/$FULL_CLUSTER_NAME/"
-echo ""
-echo "Hello World pipeline files:"
-ls -la "$PIPELINES_HELLO_WORLD_DIR/"
 echo ""
 echo "Cloud Infrastructure pipeline files:"
 ls -la "$PIPELINES_CLOUD_INFRA_DIR/"
