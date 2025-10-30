@@ -11,6 +11,10 @@ spec:
         path: clusters/ocp-01-hyp
         destination: https://kubernetes.default.svc
         syncWave: "10"
+      - component: eso
+        path: gitops-applications/eso/ocp-01-hyp
+        destination: https://kubernetes.default.svc
+        syncWave: "12"
       - component: operators-eso
         path: operators/external-secrets/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443

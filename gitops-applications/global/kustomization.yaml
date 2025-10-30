@@ -8,6 +8,6 @@ resources:
   - advanced-cluster-management/
   - openshift-pipelines/
   - vault/
-  - eso/
+  - ../eso/global/
   - hub-provisioner/
 
