@@ -10,19 +10,23 @@ spec:
       - component: cluster
         path: clusters/ocp-01-hyp
         destination: https://kubernetes.default.svc
-        syncWave: "1"
-      - component: operators
+        syncWave: "10"
+      - component: operators-pipelines
         path: operators/openshift-pipelines/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "2"
+        syncWave: "20"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "4"
+        syncWave: "30"
+      - component: operators-acm
+        path: operators/advanced-cluster-management/ocp-01-hyp
+        destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
+        syncWave: "40"
       - component: deployments-ocm
         path: deployments/ocm/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "5"
+        syncWave: "50"
   template:
     metadata:
       name: ocp-01-hyp-{{component}}

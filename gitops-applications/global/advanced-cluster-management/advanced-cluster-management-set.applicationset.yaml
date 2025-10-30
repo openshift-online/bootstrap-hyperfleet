@@ -8,14 +8,14 @@ spec:
   - list:
       elements:
       - component: acm-operator
-        path: operators/advanced-cluster-management/global/operator/overlays/release-2.13
-        syncWave: "2"
+        path: bases/operators/advanced-cluster-management/overlays/release-2.14
+        syncWave: "4"
       - component: acm-hub
-        path: operators/advanced-cluster-management/global/instance/base
-        syncWave: "3"
+        path: operators/advanced-cluster-management/global/base
+        syncWave: "5"
       - component: acm-policies
         path: operators/gitops-integration/global
-        syncWave: "4"
+        syncWave: "6"
   template:
     metadata:
       name: acm-{{component}}
