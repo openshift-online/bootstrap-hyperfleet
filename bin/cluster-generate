@@ -1065,19 +1065,19 @@ spec:
       - component: cluster
         path: clusters/$FULL_CLUSTER_NAME
         destination: https://kubernetes.default.svc
-        syncWave: "1"
+        syncWave: "10"
       - component: operators
         path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
-        destination: $FULL_CLUSTER_NAME
-        syncWave: "2"
+        destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+        syncWave: "20"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
-        destination: $FULL_CLUSTER_NAME
-        syncWave: "4"
+        destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+        syncWave: "30"
       - component: deployments-ocm
         path: deployments/ocm/$FULL_CLUSTER_NAME
-        destination: $FULL_CLUSTER_NAME
-        syncWave: "5"
+        destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+        syncWave: "40"
   template:
     metadata:
       name: $FULL_CLUSTER_NAME-{{component}}

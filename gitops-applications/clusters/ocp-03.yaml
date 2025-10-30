@@ -10,19 +10,19 @@ spec:
       - component: cluster
         path: clusters/ocp-03
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
-        syncWave: "1"
+        syncWave: "10"
       - component: operators
         path: operators/openshift-pipelines/ocp-03
-        destination: ocp-03
-        syncWave: "2"
+        destination: https://api.ocp-03.bootstrap.red-chesterfield.com:6443
+        syncWave: "20"
       - component: pipelines-cloud-infrastructure-provisioning
         path: pipelines/cloud-infrastructure-provisioning/ocp-03
-        destination: ocp-03
-        syncWave: "4"
+        destination: https://api.ocp-03.bootstrap.red-chesterfield.com:6443
+        syncWave: "30"
       - component: deployments-ocm
         path: deployments/ocm/ocp-03
-        destination: ocp-03
-        syncWave: "5"
+        destination: https://api.ocp-03.bootstrap.red-chesterfield.com:6443
+        syncWave: "40"
   template:
     metadata:
       name: ocp-03-{{component}}
