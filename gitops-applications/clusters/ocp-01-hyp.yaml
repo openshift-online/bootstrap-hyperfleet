@@ -12,6 +12,7 @@ spec:
         destination: https://kubernetes.default.svc
         syncWave: "10"
       - component: operators-pipelines
+      - component: operators-pipelines
         path: operators/openshift-pipelines/ocp-01-hyp
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "20"
