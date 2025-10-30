@@ -11,6 +11,10 @@ spec:
         path: clusters/ocp-03
         destination: https://api.ocp-01-hyp.bootstrap.red-chesterfield.com:6443
         syncWave: "10"
+      - component: operators-eso
+        path: operators/external-secrets/ocp-03
+        destination: https://api.ocp-03.bootstrap.red-chesterfield.com:6443
+        syncWave: "15"
       - component: operators
         path: operators/openshift-pipelines/ocp-03
         destination: https://api.ocp-03.bootstrap.red-chesterfield.com:6443
