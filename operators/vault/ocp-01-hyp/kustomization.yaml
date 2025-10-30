@@ -4,5 +4,10 @@ kind: Kustomization
 resources:
   - ../global
 
+configMapGenerator:
+  - name: vault-policies
+    files:
+      - ../global/cluster-secrets-policy.hcl
+
 commonAnnotations:
   cluster: ocp-01-hyp
