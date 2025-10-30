@@ -1,29 +1,25 @@
-# Advanced Cluster Management for Kubernetes
+# Advanced Cluster Management instances
 
-Install Advanced Cluster Management for Kubernetes.
+Supports `MultiClusterHub` CR and the `MultiClusterObservability`.
 
-Do not use the `base` directory directly, as you will need to patch the `channel` based on the version of OpenShift you are using, or the version of the operator you want to use.
+## Base
 
-The current *overlays* available are for the following channels:
+Installs the `MultiClusterHub`.
 
-* [release-2.12](operator/overlays/release-2.12)
-* [release-2.11](operator/overlays/release-2.11)
-* [release-2.10](operator/overlays/release-2.10)
-* [release-2.9](operator/overlays/release-2.9)
-* [release-2.8](operator/overlays/release-2.8)
+There is no customization to do at this point. Simply, apply the `base`.
 
-## Usage
+### Usage
 
-If you have cloned the `gitops-catalog` repository, you can install Advanced Cluster Management for Kubernetes based on the overlay of your choice by running from the root (`gitops-catalog`) directory.
+If you have cloned the `gitops-catalog` repository, you can install the MultiClusterHub from the root `gitops-catalog` directory
 
 ```
-oc apply -k advanced-cluster-management/operator/overlays/<channel>
+oc apply -k advanced-cluster-management/instance/base
 ```
 
 Or, without cloning:
 
 ```
-oc apply -k https://github.com/redhat-cop/gitops-catalog/advanced-cluster-management/operator/overlays/<channel>
+oc apply -k https://github.com/redhat-cop/gitops-catalog/advanced-cluster-management/instance/base
 ```
 
 As part of a different overlay in your own GitOps repo:
@@ -32,5 +28,35 @@ As part of a different overlay in your own GitOps repo:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - https://github.com/redhat-cop/gitops-catalog/advanced-cluster-management/operator/overlays/<channel>?ref=main
+  - github.com/redhat-cop/gitops-catalog/advanced-cluster-management/instance/base?ref=main
+```
+
+
+## Observability
+
+Installs the `MultiClusterObservability`. It requires the kind `ObjectBucketClaim` to be available in the cluster. It can comes from ODF.
+
+There is no customization to do at this point. Simply, apply the `observability`.
+
+### Usage
+
+If you have cloned the `gitops-catalog` repository, you can install the MultiClusterHub from the root `gitops-catalog` directory
+
+```
+oc apply -k advanced-cluster-management/instance/observability
+```
+
+Or, without cloning:
+
+```
+oc apply -k https://github.com/redhat-cop/gitops-catalog/advanced-cluster-management/instance/observability
+```
+
+As part of a different overlay in your own GitOps repo:
+
+```
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - github.com/redhat-cop/gitops-catalog/advanced-cluster-management/instance/observability?ref=main
 ```

@@ -4,4 +4,7 @@ kind: Kustomization
 resources:
   - ../../../bases/operators/advanced-cluster-management/overlays/release-2.14
   - base
-  - ../../gitops-integration/global
+
+commonAnnotations:
+  cluster: ocp-01-hyp
+  cluster-type: ocp
