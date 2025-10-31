@@ -54,45 +54,7 @@ spec:
       type: string
       description: "Perform dry run without making changes"
       default: "false"
-  workspaces:
-    - name: shared-data
-      description: "Shared workspace for repository and pipeline artifacts"
   tasks:
-    - name: clone-source-repository
-      taskSpec:
-        workspaces:
-          - name: output
-            description: "Workspace for cloned repository"
-        steps:
-          - name: clone-repo
-            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
-            script: |
-              #!/bin/bash
-              set -e
-              echo "📦 Cloning source repository from internal gitea..."
-              
-              # Create repo directory with proper permissions
-              mkdir -p /workspace/output/repo
-              cd /workspace/output/repo
-              
-              # Clone the repository from internal gitea
-              git clone http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git .
-              
-              echo "✅ Repository cloned successfully"
-              echo "📁 Repository contents:"
-              ls -la
-              
-              # Verify bin/cluster-generate exists
-              if [ -f "./bin/cluster-generate" ]; then
-                echo "✅ bin/cluster-generate found"
-              else
-                echo "❌ bin/cluster-generate not found"
-                exit 1
-              fi
-      workspaces:
-        - name: output
-          workspace: shared-data
-
     - name: validate-provisioning-parameters
       taskSpec:
         params:
@@ -191,7 +153,6 @@ spec:
         steps:
           - name: create-regional-spec
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -295,7 +256,6 @@ spec:
         - name: output
           workspace: shared-data
       runAfter:
-        - clone-source-repository
         - validate-provisioning-parameters
 
     - name: generate-cluster-configuration
@@ -311,7 +271,6 @@ spec:
         steps:
           - name: run-cluster-generate
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -388,7 +347,6 @@ spec:
         steps:
           - name: validate-kustomize-configs
             image: registry.redhat.io/openshift4/ose-cli
-            workingDir: $(workspaces.output.path)/repo
             script: |
               #!/usr/bin/env bash
               set -e
@@ -494,78 +452,59 @@ spec:
           value: "Hub Provisioner Pipeline"
         - name: GIT_USER_EMAIL
           value: "hub-provisioner@bootstrap.red-chesterfield.com"
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: cluster-type
-          value: "$(params.cluster-type)"
-        - name: region
-          value: "$(params.region)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-        - name: dry-run
-          value: "$(params.dry-run)"
+        - name: BASE64_ENCODED_GIT_CREDENTIALS
+          valueFrom:
+            secretKeyRef:
+              name: github-repo-credentials
+              key: .git-credentials
         - name: GIT_SCRIPT
           value: |
+            set -e
             echo "📝 Committing and pushing generated cluster configuration..."
             
-            # Debug workspace issue
-            echo "📁 Contents of /workspace/:"
-            ls -la /workspace/
-            echo "📁 Contents of /workspace/source/:"
-            ls -la /workspace/source/ || echo "No /workspace/source"
-            echo "📁 Contents of /workspace/output/:"
-            ls -la /workspace/output/ || echo "No /workspace/output"
-            
-            # Check if the repo exists in output workspace
-            if [ -d "/workspace/output/repo" ]; then
-              echo "✅ Found repo in /workspace/output/, copying to source workspace"
-              mkdir -p /workspace/source
-              cp -r /workspace/output/repo /workspace/source/repo
-              cd /workspace/source/repo
-            else
-              echo "❌ No repo directory found in any workspace"
-              exit 1
-            fi
-            echo "📍 Current directory:"
-            pwd
-            echo "📋 Current directory contents:"
-            ls -la
+            # Configure Git credentials from secret
+            echo "$(params.BASE64_ENCODED_GIT_CREDENTIALS)" | base64 -d > "${HOME}/.git-credentials"
+            git config --global credential.helper store
             
             # Check if this is a git repository
-            if [ -d .git ]; then
-              echo "✅ Found .git directory"
-              
-              # Mark directory as safe
-              git config --global --add safe.directory /workspace/source/repo
-              
-              git status
-              git remote -v
-              
-              # Add all generated files
-              echo "📦 Adding generated files..."
-              git add .
-              
-              # Check if there are changes to commit
-              if git diff --cached --quiet; then
-                echo "ℹ️ No changes to commit"
-                exit 0
-              fi
-              
-              # Show what will be committed
-              echo "📋 Files to be committed:"
-              git diff --cached --name-only
-              
-              # Commit changes with simple message
-              git commit -m "Add new cluster configuration - Generated by hub-provisioner pipeline"
-              
-              # Push directly to Gitea URL (no need to add remote)
-              git push http://myadmin:mysecurepassword@gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git main --force
-              
-              echo "✅ Successfully pushed cluster configuration to Gitea"
-            else
-              echo "❌ No .git directory found, not a git repository"
-              exit 1
+            if [ ! -d .git ]; then
+              echo "📦 Initializing git repository..."
+              git init
+              git remote add origin https://github.com/openshift-online/bootstrap-hyperfleet.git
             fi
+            
+            # Mark directory as safe
+            git config --global --add safe.directory $(pwd)
+            
+            git status
+            
+            # Add all generated files
+            echo "📦 Adding generated files..."
+            git add .
+            
+            # Check if there are changes to commit
+            if git diff --cached --quiet; then
+              echo "ℹ️ No changes to commit"
+              exit 0
+            fi
+            
+            # Show what will be committed
+            echo "📋 Files to be committed:"
+            git diff --cached --name-only
+            
+            # Commit changes
+            git commit -m "Add cluster $(params.cluster-name)$(params.name-suffix) in $(params.region)
+            
+            Generated by hub-provisioner pipeline
+            
+            🤖 Generated with [Claude Code](https://claude.ai/code)
+            
+            Co-Authored-By: Claude <noreply@anthropic.com>"
+            
+            # Push to GitHub
+            git push origin main
+            
+            echo "✅ Successfully pushed cluster configuration to GitHub"
       workspaces:
         - name: source
           workspace: shared-data
