@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - base
   - policies
+  - github-repo-credentials.yaml
