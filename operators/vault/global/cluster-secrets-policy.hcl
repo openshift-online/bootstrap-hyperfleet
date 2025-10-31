@@ -4,3 +4,6 @@ path "secret/data/aws-credentials" {
 path "secret/data/pull-secret" {
   capabilities = ["read"]
 }
+path "secret/data/github-credentials" {
+  capabilities = ["read"]
+}
