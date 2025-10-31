@@ -84,11 +84,8 @@ spec:
                 echo "⚠️ Warning: GIT_CREDENTIALS not set, using unauthenticated clone"
               fi
               
-              # Create repo directory with proper permissions
-              mkdir -p /workspace/output/repo
-              cd /workspace/output/repo
-              
-              # Clone the repository from GitHub
+              # Clone the repository from GitHub directly to workspace
+              cd /workspace/output
               git clone https://github.com/openshift-online/bootstrap-hyperfleet.git .
               
               echo "✅ Repository cloned successfully"
@@ -213,7 +210,7 @@ spec:
               echo "🏗️ Generating regional cluster specification..."
               
               # Change to cloned repo directory
-              cd /workspace/output/repo
+              cd /workspace/output
               
               # Determine final cluster name
               FINAL_CLUSTER_NAME="$(params.cluster-name)"
@@ -334,7 +331,7 @@ spec:
               echo "⚙️ Generating full cluster configuration..."
               
               # Change to cloned repo directory
-              cd /workspace/output/repo
+              cd /workspace/output
               
               # Determine final cluster name
               FINAL_CLUSTER_NAME="$(params.cluster-name)"
@@ -413,7 +410,7 @@ spec:
               echo "🧪 Validating generated cluster configuration..."
               
               # Change to cloned repo directory
-              cd /workspace/output/repo
+              cd /workspace/output
               
               # Debug: Check current directory and contents
               echo "📍 Current working directory:"
@@ -521,7 +518,7 @@ spec:
               echo "📝 Committing and pushing generated cluster configuration..."
               
               # Change to cloned repo directory
-              cd /workspace/shared-data/repo
+              cd /workspace/shared-data
               
               # Configure Git credentials from environment variable
               if [ -n "$GIT_CREDENTIALS" ]; then
@@ -709,3 +706,29 @@ spec:
           value: "$(params.replicas)"
         - name: name-suffix
           value: "$(params.name-suffix)"
+
+    - name: cleanup-workspace-pvc
+      when:
+        - input: "$(tasks.status)"
+          operator: in
+          values: ["Succeeded"]
+      taskSpec:
+        steps:
+          - name: delete-pvc
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              
+              echo "🧹 Cleaning up workspace PVC..."
+              
+              # Get the PVC name created by this PipelineRun
+              PVC_NAME=$(oc get pvc -n hub-provisioner -l tekton.dev/pipelineRun=$(context.pipelineRun.name) -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+              
+              if [ -n "$PVC_NAME" ]; then
+                echo "Found PVC: $PVC_NAME"
+                oc delete pvc "$PVC_NAME" -n hub-provisioner --ignore-not-found=true
+                echo "✅ PVC deleted successfully"
+              else
+                echo "ℹ️ No PVC found for this PipelineRun"
+              fi
