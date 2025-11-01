@@ -15,3 +15,5 @@ resources:
 
 
 
+
+- ./ocp-01.yaml
