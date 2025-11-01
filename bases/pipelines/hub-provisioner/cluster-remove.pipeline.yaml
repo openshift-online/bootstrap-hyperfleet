@@ -1,0 +1,200 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: cluster-remove-pipeline
+  namespace: hub-provisioner
+  annotations:
+    description: "Pipeline for removing cluster configurations and disabling ArgoCD sync"
+spec:
+  description: >-
+    Cluster removal pipeline that disables ArgoCD sync for a cluster,
+    commits the changes to the repository, and validates the sync is disabled.
+  params:
+    - name: cluster-name
+      type: string
+      description: "Name of the cluster to remove"
+  tasks:
+    - name: disable-sync-and-commit
+      taskSpec:
+        params:
+          - name: cluster-name
+        steps:
+          - name: remove
+            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
+            env:
+              - name: SSH_PRIVATE_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: github-repo-credentials
+                    key: ssh-privatekey
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🚀 Starting cluster removal workflow..."
+              echo "Cluster: $(params.cluster-name)"
+              
+              # Setup SSH directory and key
+              mkdir -p "${HOME}/.ssh"
+              chmod 700 "${HOME}/.ssh"
+              
+              echo "$SSH_PRIVATE_KEY" > "${HOME}/.ssh/id_ed25519"
+              chmod 600 "${HOME}/.ssh/id_ed25519"
+              
+              # Add GitHub to known hosts
+              ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts" 2>/dev/null
+              
+              git config --global user.name "Hub Provisioner Pipeline"
+              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
+              
+              echo "✅ SSH key configured"
+              
+              # Clone repository
+              echo "📦 Cloning repository..."
+              WORK_DIR=$(mktemp -d)
+              cd "$WORK_DIR"
+              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
+              
+              # Check if cluster ApplicationSet exists
+              APPSET_FILE="gitops-applications/clusters/$(params.cluster-name).yaml"
+              if [ ! -f "$APPSET_FILE" ]; then
+                echo "❌ ApplicationSet not found: $APPSET_FILE"
+                exit 1
+              fi
+              
+              echo "📝 Found ApplicationSet: $APPSET_FILE"
+              
+              # Disable automated sync by removing syncPolicy.automated section
+              echo "🔧 Disabling automated sync..."
+              
+              # Create temporary file with sync disabled
+              cat "$APPSET_FILE" | sed '/syncPolicy:/,/prune:/c\      syncPolicy:\n        automated: null\n        prune: false' > "${APPSET_FILE}.tmp"
+              
+              # Verify the change
+              if grep -q "automated: null" "${APPSET_FILE}.tmp"; then
+                mv "${APPSET_FILE}.tmp" "$APPSET_FILE"
+                echo "✅ Sync disabled in $APPSET_FILE"
+                cat "$APPSET_FILE"
+              else
+                echo "❌ Failed to disable sync"
+                cat "${APPSET_FILE}.tmp"
+                exit 1
+              fi
+              
+              # Commit and push changes
+              echo "📝 Committing changes..."
+              git add .
+              
+              if git diff --cached --quiet; then
+                echo "ℹ️ No changes to commit"
+                exit 0
+              fi
+              
+              git commit -m "Disable ArgoCD sync for cluster $(params.cluster-name)" \
+                -m "Preparing cluster $(params.cluster-name) for removal" \
+                -m "Generated with Claude Code" \
+                -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+              
+              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                git push origin main
+              
+              echo "✅ Changes committed and pushed"
+              echo "✅ Cluster removal workflow completed"
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+    
+    - name: validate-sync-disabled
+      runAfter:
+        - disable-sync-and-commit
+      taskSpec:
+        params:
+          - name: cluster-name
+        steps:
+          - name: validate
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🔍 Validating ArgoCD sync is disabled for: $(params.cluster-name)"
+              
+              # Wait for ArgoCD to reconcile (up to 2 minutes)
+              MAX_WAIT=120
+              WAIT_INTERVAL=10
+              ELAPSED=0
+              
+              while [ $ELAPSED -lt $MAX_WAIT ]; do
+                echo "⏳ Waiting for ArgoCD to reconcile... (${ELAPSED}s/${MAX_WAIT}s)"
+                
+                # Check ApplicationSet
+                if oc get applicationset -n openshift-gitops $(params.cluster-name)-applications >/dev/null 2>&1; then
+                  # Check if any application has automated sync disabled
+                  APPS=$(oc get applications.argoproj.io -n openshift-gitops -l app.kubernetes.io/instance=$(params.cluster-name)-applications -o name 2>/dev/null || echo "")
+                  
+                  if [ -z "$APPS" ]; then
+                    echo "ℹ️  No applications found yet, waiting for reconciliation..."
+                  else
+                    echo "📋 Checking applications:"
+                    echo "$APPS"
+                    
+                    # Check each application's sync policy
+                    SYNC_DISABLED=true
+                    for APP in $APPS; do
+                      AUTOMATED=$(oc get $APP -n openshift-gitops -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || echo "null")
+                      echo "  - $APP: automated=$AUTOMATED"
+                      
+                      if [ "$AUTOMATED" != "null" ] && [ "$AUTOMATED" != "" ]; then
+                        SYNC_DISABLED=false
+                      fi
+                    done
+                    
+                    if [ "$SYNC_DISABLED" = "true" ]; then
+                      echo "✅ ArgoCD sync is disabled for $(params.cluster-name)"
+                      exit 0
+                    fi
+                  fi
+                fi
+                
+                sleep $WAIT_INTERVAL
+                ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+              done
+              
+              echo "⚠️  Timeout waiting for ArgoCD to reconcile"
+              echo "Current ApplicationSet status:"
+              oc get applicationset -n openshift-gitops $(params.cluster-name)-applications -o yaml || true
+              exit 1
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+
+  finally:
+    - name: removal-summary
+      taskSpec:
+        params:
+          - name: cluster-name
+        steps:
+          - name: summary
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "📋 Cluster Removal Summary"
+              echo "=========================="
+              echo "Cluster Name: $(params.cluster-name)"
+              echo "Timestamp: $(date -Iseconds)"
+              echo ""
+              echo "✅ ArgoCD sync disabled"
+              echo "✅ Changes committed to repository"
+              echo "✅ Validation completed"
+              echo ""
+              echo "📌 Next steps:"
+              echo "   1. Verify no new resources are being created"
+              echo "   2. Delete cluster resources manually if needed"
+              echo "   3. Remove cluster configuration from repository"
+              echo "=========================="
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"

@@ -6,6 +6,7 @@ namespace: hub-provisioner
 resources:
   - namespace.yaml
   - hub-provisioner.pipeline.yaml
+  - cluster-remove.pipeline.yaml
   - rbac.yaml
   - github-credentials.yaml
 

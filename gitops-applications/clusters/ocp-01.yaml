@@ -32,7 +32,7 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://github.com/openshift-online/bootstrap
+        repoURL: git@github.com:openshift-online/bootstrap-hyperfleet
         path: '{{path}}'
         targetRevision: main
       destination:

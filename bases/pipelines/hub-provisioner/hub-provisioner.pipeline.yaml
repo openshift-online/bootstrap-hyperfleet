@@ -34,10 +34,6 @@ spec:
       type: string
       description: "Number of worker node replicas"
       default: "2"
-    - name: name-suffix
-      type: string
-      description: "Optional name suffix for cluster"
-      default: ""
     - name: openshift-version
       type: string
       description: "OpenShift version for OCP clusters"
@@ -54,56 +50,75 @@ spec:
       type: string
       description: "Perform dry run without making changes"
       default: "false"
-  workspaces:
-    - name: shared-data
-      description: "Workspace for sharing data between tasks"
   tasks:
-    - name: clone-repo
+    - name: test-github-auth
       taskSpec:
-        workspaces:
-          - name: output
         steps:
-          - name: clone-repo
+          - name: test-auth
             image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
             env:
-              - name: GIT_CREDENTIALS
+              - name: SSH_PRIVATE_KEY
                 valueFrom:
                   secretKeyRef:
                     name: github-repo-credentials
-                    key: .git-credentials
+                    key: ssh-privatekey
             script: |
               #!/bin/bash
               set -e
-              echo "📦 Cloning source repository from GitHub..."
               
-              # Configure Git credentials from environment variable
-              if [ -n "$GIT_CREDENTIALS" ]; then
-                echo "$GIT_CREDENTIALS" | base64 -d > "${HOME}/.git-credentials"
-                git config --global credential.helper store
+              echo "🔐 Testing GitHub SSH authentication and write access..."
+              
+              # Setup SSH directory and key
+              mkdir -p "${HOME}/.ssh"
+              chmod 700 "${HOME}/.ssh"
+              
+              echo "$SSH_PRIVATE_KEY" > "${HOME}/.ssh/id_ed25519"
+              chmod 600 "${HOME}/.ssh/id_ed25519"
+              
+              # Add GitHub to known hosts
+              ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts" 2>/dev/null
+              
+              echo "✅ SSH key configured"
+              
+              git config --global user.name "Hub Provisioner Pipeline"
+              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
+              
+              # Clone to test read access
+              echo "📦 Testing read access..."
+              WORK_DIR=$(mktemp -d)
+              cd "$WORK_DIR"
+              
+              if GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .; then
+                echo "✅ Read access confirmed"
               else
-                echo "⚠️ Warning: GIT_CREDENTIALS not set, using unauthenticated clone"
-              fi
-              
-              # Clone the repository from GitHub directly to workspace
-              cd /workspace/output
-              git clone https://github.com/openshift-online/bootstrap-hyperfleet.git .
-              
-              echo "✅ Repository cloned successfully"
-              echo "📁 Repository contents:"
-              ls -la
-              
-              # Verify bin/cluster-generate exists
-              if [ -f "./bin/cluster-generate" ]; then
-                echo "✅ bin/cluster-generate found"
-              else
-                echo "❌ bin/cluster-generate not found"
+                echo "❌ Failed to clone repository"
                 exit 1
               fi
-      workspaces:
-        - name: output
-          workspace: shared-data
+              
+              # Create a test branch to verify write access
+              echo "🔍 Testing write access..."
+              git checkout -b "test-auth-$(date +%s)"
+              
+              # Create a test file in the repo
+              echo "test" > test-file.txt
+              git add test-file.txt
+              
+              # Test if we can push to a test branch
+              # We use --dry-run to not actually create the branch
+              if GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                 git push --dry-run origin HEAD 2>&1 | tee /tmp/push-test.log; then
+                echo "✅ Write access confirmed (dry-run successful)"
+              else
+                echo "❌ Write access denied"
+                echo "Push dry-run output:"
+                cat /tmp/push-test.log
+                exit 1
+              fi
+              
+              echo "✅ GitHub SSH authentication test completed successfully"
 
-    - name: validate-provisioning-parameters
+    - name: provision-cluster
       taskSpec:
         params:
           - name: cluster-name
@@ -112,126 +127,74 @@ spec:
           - name: domain
           - name: instance-type
           - name: replicas
-          - name: name-suffix
+          - name: openshift-version
+          - name: openshift-channel
+          - name: kubernetes-version
+          - name: dry-run
         steps:
-          - name: validate-input-parameters
-            image: registry.redhat.io/openshift4/ose-cli
+          - name: provision
+            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
+            env:
+              - name: SSH_PRIVATE_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: github-repo-credentials
+                    key: ssh-privatekey
             script: |
-              #!/usr/bin/env bash
+              #!/bin/bash
               set -e
               
-              echo "🔍 Validating hub provisioner parameters..."
-              echo "Cluster Name: $(params.cluster-name)"
-              echo "Cluster Type: $(params.cluster-type)"
+              echo "🚀 Starting cluster provisioning workflow..."
+              echo "Cluster: $(params.cluster-name)"
+              echo "Type: $(params.cluster-type)"
               echo "Region: $(params.region)"
-              echo "Domain: $(params.domain)"
-              echo "Instance Type: $(params.instance-type)"
-              echo "Replicas: $(params.replicas)"
-              echo "Name Suffix: $(params.name-suffix)"
               
-              # Validate cluster type
+              # Setup SSH directory and key
+              mkdir -p "${HOME}/.ssh"
+              chmod 700 "${HOME}/.ssh"
+              
+              echo "$SSH_PRIVATE_KEY" > "${HOME}/.ssh/id_ed25519"
+              chmod 600 "${HOME}/.ssh/id_ed25519"
+              
+              # Add GitHub to known hosts
+              ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts" 2>/dev/null
+              
+              git config --global user.name "Hub Provisioner Pipeline"
+              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
+              
+              echo "✅ SSH key configured"
+              
+              # Clone repository
+              echo "📦 Cloning repository..."
+              WORK_DIR=$(mktemp -d)
+              cd "$WORK_DIR"
+              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
+              
+              # Validate cluster parameters
+              echo "🔍 Validating parameters..."
               case "$(params.cluster-type)" in
                 ocp|eks|hcp)
                   echo "✅ Valid cluster type: $(params.cluster-type)"
                   ;;
                 *)
                   echo "❌ Invalid cluster type: $(params.cluster-type)"
-                  echo "Valid types: ocp, eks, hcp"
                   exit 1
                   ;;
               esac
               
-              # Validate region format
-              if [[ ! "$(params.region)" =~ ^[a-z0-9-]+$ ]]; then
-                echo "❌ Invalid region format: $(params.region)"
-                exit 1
-              fi
-              
-              # Validate domain format
-              if [[ ! "$(params.domain)" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-                echo "❌ Invalid domain format: $(params.domain)"
-                exit 1
-              fi
-              
-              # Validate instance type format
-              if [[ ! "$(params.instance-type)" =~ ^[a-z0-9]+\.[a-z0-9]+$ ]]; then
-                echo "❌ Invalid instance type format: $(params.instance-type)"
-                exit 1
-              fi
-              
-              # Validate replicas is a number
-              if [[ ! "$(params.replicas)" =~ ^[0-9]+$ ]]; then
-                echo "❌ Invalid replicas value: $(params.replicas)"
-                exit 1
-              fi
-              
-              echo "✅ All parameters validated successfully"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: cluster-type
-          value: "$(params.cluster-type)"
-        - name: region
-          value: "$(params.region)"
-        - name: domain
-          value: "$(params.domain)"
-        - name: instance-type
-          value: "$(params.instance-type)"
-        - name: replicas
-          value: "$(params.replicas)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-      runAfter:
-        - clone-repo
-
-    - name: generate-regional-specification
-      taskSpec:
-        params:
-          - name: cluster-name
-          - name: cluster-type
-          - name: region
-          - name: domain
-          - name: instance-type
-          - name: replicas
-          - name: name-suffix
-          - name: openshift-version
-          - name: openshift-channel
-          - name: kubernetes-version
-          - name: dry-run
-        workspaces:
-          - name: output
-        steps:
-          - name: create-regional-spec
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/usr/bin/env bash
-              set -e
-              
-              echo "🏗️ Generating regional cluster specification..."
-              
-              # Change to cloned repo directory
-              cd /workspace/output
-              
-              # Determine final cluster name
               FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
-              
-              echo "Final Cluster Name: $FINAL_CLUSTER_NAME"
-              echo "Type: $(params.cluster-type)"
-              echo "Region: $(params.region)"
+              SPEC_DIR="regions/$(params.region)/$FINAL_CLUSTER_NAME"
               
               if [ "$(params.dry-run)" = "true" ]; then
-                echo "🔍 DRY RUN MODE - No actual files will be created"
+                echo "🔍 DRY RUN MODE - Would provision: $FINAL_CLUSTER_NAME"
                 exit 0
               fi
               
-              # Create regional specification directory
-              SPEC_DIR="regions/$(params.region)/$FINAL_CLUSTER_NAME"
+              # Create regional specification
+              echo "🏗️ Generating regional specification..."
               mkdir -p "$SPEC_DIR"
               
-              # Generate base regional specification
               cat > "$SPEC_DIR/region.yaml" << EOF
               apiVersion: regional.openshift.io/v1
               kind: RegionalCluster
@@ -243,7 +206,6 @@ spec:
                 region: $(params.region)
                 domain: $(params.domain)
                 
-                # Compute configuration
                 compute:
                   instanceType: $(params.instance-type)
                   replicas: $(params.replicas)
@@ -253,8 +215,7 @@ spec:
               case "$(params.cluster-type)" in
                 ocp)
                   cat >> "$SPEC_DIR/region.yaml" << EOF
-                  
-                # OpenShift specific configuration
+                
                 openshift:
                   version: "$(params.openshift-version)"
                   channel: $(params.openshift-channel)
@@ -262,16 +223,14 @@ spec:
                   ;;
                 eks)
                   cat >> "$SPEC_DIR/region.yaml" << EOF
-                  
-                # EKS specific configuration
+                
                 kubernetes:
                   version: "$(params.kubernetes-version)"
               EOF
                   ;;
                 hcp)
                   cat >> "$SPEC_DIR/region.yaml" << EOF
-                  
-                # HyperShift specific configuration
+                
                 hypershift:
                   release: "quay.io/openshift-release-dev/ocp-release@sha256:45a396b169974dcbd8aae481c647bf55bcf9f0f8f6222483d407d7cec450928d"
                   infrastructureAvailabilityPolicy: SingleReplica
@@ -280,8 +239,62 @@ spec:
                   ;;
               esac
               
-              echo "✅ Regional specification created at: $SPEC_DIR/region.yaml"
-              echo "✅ Regional specification generation completed"
+              echo "✅ Regional specification created"
+              
+              # Run cluster-generate
+              echo "⚙️ Running cluster-generate..."
+              if [ ! -f "./bin/cluster-generate" ]; then
+                echo "❌ bin/cluster-generate not found"
+                exit 1
+              fi
+              
+              chmod +x ./bin/cluster-generate
+              if ! ./bin/cluster-generate "$SPEC_DIR"; then
+                echo "❌ Failed to generate cluster configuration"
+                rm -rf "$SPEC_DIR"
+                exit 1
+              fi
+              
+              echo "✅ Cluster configuration generated"
+              
+              # Basic validation - check files exist
+              echo "🧪 Validating configuration..."
+              
+              if [ -d "clusters/$FINAL_CLUSTER_NAME/" ]; then
+                echo "✅ Cluster directory created"
+              else
+                echo "❌ Cluster directory not found"
+                exit 1
+              fi
+              
+              if [ -f "clusters/$FINAL_CLUSTER_NAME/kustomization.yaml" ]; then
+                echo "✅ Cluster kustomization.yaml exists"
+              else
+                echo "❌ Cluster kustomization.yaml not found"
+                exit 1
+              fi
+              
+              # Commit and push changes
+              echo "📝 Committing changes..."
+              git add .
+              
+              if git diff --cached --quiet; then
+                echo "ℹ️ No changes to commit"
+                exit 0
+              fi
+              
+              git commit -m "Add cluster $(params.cluster-name) in $(params.region)
+              
+              Generated by hub-provisioner pipeline
+              
+              🤖 Generated with [Claude Code](https://claude.ai/code)
+              
+              Co-Authored-By: Claude <noreply@anthropic.com>"
+              
+              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+                git push origin main
+              
+              echo "✅ Cluster provisioning completed successfully"
       params:
         - name: cluster-name
           value: "$(params.cluster-name)"
@@ -295,8 +308,6 @@ spec:
           value: "$(params.instance-type)"
         - name: replicas
           value: "$(params.replicas)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
         - name: openshift-version
           value: "$(params.openshift-version)"
         - name: openshift-channel
@@ -305,347 +316,8 @@ spec:
           value: "$(params.kubernetes-version)"
         - name: dry-run
           value: "$(params.dry-run)"
-      workspaces:
-        - name: output
-          workspace: shared-data
       runAfter:
-        - validate-provisioning-parameters
-
-    - name: generate-cluster-configuration
-      taskSpec:
-        params:
-          - name: cluster-name
-          - name: cluster-type
-          - name: region
-          - name: name-suffix
-          - name: dry-run
-        workspaces:
-          - name: output
-        steps:
-          - name: run-cluster-generate
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/usr/bin/env bash
-              set -e
-              
-              echo "⚙️ Generating full cluster configuration..."
-              
-              # Change to cloned repo directory
-              cd /workspace/output
-              
-              # Determine final cluster name
-              FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
-              
-              SPEC_DIR="regions/$(params.region)/$FINAL_CLUSTER_NAME"
-              
-              if [ "$(params.dry-run)" = "true" ]; then
-                echo "🔍 DRY RUN MODE - Would run cluster-generate on: $SPEC_DIR"
-                exit 0
-              fi
-              
-              echo "Running cluster-generate for: $SPEC_DIR"
-              
-              # Debug: Check current directory and contents
-              echo "📍 Current working directory:"
-              pwd
-              echo "📋 Directory contents:"
-              ls -la
-              echo "📁 Bin directory contents:"
-              ls -la bin/ || echo "No bin directory found"
-              
-              # Verify bin/cluster-generate exists
-              if [ ! -f "./bin/cluster-generate" ]; then
-                echo "❌ bin/cluster-generate not found in $(pwd)"
-                echo "Looking for cluster-generate in other locations..."
-                find . -name "cluster-generate" -type f 2>/dev/null || echo "cluster-generate not found anywhere"
-                exit 1
-              fi
-              
-              # Make bin/cluster-generate executable and run it
-              chmod +x ./bin/cluster-generate
-              if ! ./bin/cluster-generate "$SPEC_DIR"; then
-                echo "❌ Failed to generate cluster configuration"
-                echo "Cleaning up regional specification..."
-                rm -rf "$SPEC_DIR"
-                exit 1
-              fi
-              
-              echo "✅ Cluster configuration generated successfully"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: cluster-type
-          value: "$(params.cluster-type)"
-        - name: region
-          value: "$(params.region)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-        - name: dry-run
-          value: "$(params.dry-run)"
-      workspaces:
-        - name: output
-          workspace: shared-data
-      runAfter:
-        - generate-regional-specification
-
-    - name: validate-generated-configuration
-      taskSpec:
-        params:
-          - name: cluster-name
-          - name: region
-          - name: name-suffix
-          - name: dry-run
-        workspaces:
-          - name: output
-        steps:
-          - name: validate-kustomize-configs
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/usr/bin/env bash
-              set -e
-              
-              echo "🧪 Validating generated cluster configuration..."
-              
-              # Change to cloned repo directory
-              cd /workspace/output
-              
-              # Debug: Check current directory and contents
-              echo "📍 Current working directory:"
-              pwd
-              echo "📋 Directory contents:"
-              ls -la
-              
-              # Determine final cluster name
-              FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
-              
-              if [ "$(params.dry-run)" = "true" ]; then
-                echo "🔍 DRY RUN MODE - Would validate: $FINAL_CLUSTER_NAME"
-                exit 0
-              fi
-              
-              validation_failed=false
-              
-              # Validate cluster configuration
-              echo "Validating cluster configuration..."
-              if oc kustomize "clusters/$FINAL_CLUSTER_NAME/" > /dev/null 2>&1; then
-                echo "✅ Cluster configuration is valid"
-              else
-                echo "❌ Cluster configuration validation failed"
-                validation_failed=true
-              fi
-              
-              # Validate deployments configuration
-              echo "Validating deployments configuration..."
-              if oc kustomize "deployments/ocm/$FINAL_CLUSTER_NAME/" > /dev/null 2>&1; then
-                echo "✅ Deployments configuration is valid"
-              else
-                echo "❌ Deployments configuration validation failed"
-                validation_failed=true
-              fi
-              
-              # Validate GitOps applications
-              echo "Validating GitOps applications..."
-              
-              # Ensure clusters/kustomization.yaml exists
-              if [ ! -f "clusters/kustomization.yaml" ]; then
-                echo "📝 Creating missing clusters/kustomization.yaml..."
-                mkdir -p clusters
-                echo "apiVersion: kustomize.config.k8s.io/v1beta1" > clusters/kustomization.yaml
-                echo "kind: Kustomization" >> clusters/kustomization.yaml
-                echo "" >> clusters/kustomization.yaml
-                echo "# This directory will contain auto-generated cluster configurations" >> clusters/kustomization.yaml
-                echo "# Generated from regions/ by the cluster-create tool" >> clusters/kustomization.yaml
-                echo "" >> clusters/kustomization.yaml
-                echo "resources: []" >> clusters/kustomization.yaml
-              fi
-              
-              if oc kustomize "gitops-applications/" > /dev/null 2>&1; then
-                echo "✅ GitOps applications configuration is valid"
-              else
-                echo "❌ GitOps applications validation failed"
-                echo ""
-                oc kustomize "gitops-applications/"
-                echo ""
-                validation_failed=true
-              fi
-              
-              if [ "$validation_failed" = true ]; then
-                echo "❌ Configuration validation failed"
-                exit 1
-              fi
-              
-              echo "✅ All configuration validation checks passed"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: region
-          value: "$(params.region)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-        - name: dry-run
-          value: "$(params.dry-run)"
-      workspaces:
-        - name: output
-          workspace: shared-data
-      runAfter:
-        - generate-cluster-configuration
-
-    - name: commit-and-push-changes
-      taskSpec:
-        params:
-          - name: cluster-name
-          - name: region
-          - name: name-suffix
-        workspaces:
-          - name: shared-data
-        steps:
-          - name: git-commit-push
-            image: registry.redhat.io/openshift4/ose-cli
-            env:
-              - name: GIT_CREDENTIALS
-                valueFrom:
-                  secretKeyRef:
-                    name: github-repo-credentials
-                    key: .git-credentials
-            script: |
-              set -e
-              echo "📝 Committing and pushing generated cluster configuration..."
-              
-              # Change to cloned repo directory
-              cd /workspace/shared-data
-              
-              # Configure Git credentials from environment variable
-              if [ -n "$GIT_CREDENTIALS" ]; then
-                echo "$GIT_CREDENTIALS" | base64 -d > "${HOME}/.git-credentials"
-                git config --global credential.helper store
-              else
-                echo "⚠️ Warning: GIT_CREDENTIALS not set, authentication may fail"
-              fi
-              
-              # Configure Git user
-              git config --global user.name "Hub Provisioner Pipeline"
-              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
-              
-              # Mark directory as safe
-              git config --global --add safe.directory $(pwd)
-              
-              git status
-              
-              # Add all generated files
-              echo "📦 Adding generated files..."
-              git add .
-              
-              # Check if there are changes to commit
-              if git diff --cached --quiet; then
-                echo "ℹ️ No changes to commit"
-                exit 0
-              fi
-              
-              # Show what will be committed
-              echo "📋 Files to be committed:"
-              git diff --cached --name-only
-              
-              # Commit changes
-              git commit -m "Add cluster $(params.cluster-name)$(params.name-suffix) in $(params.region)
-              
-              Generated by hub-provisioner pipeline
-              
-              🤖 Generated with [Claude Code](https://claude.ai/code)
-              
-              Co-Authored-By: Claude <noreply@anthropic.com>"
-              
-              # Push to GitHub
-              git push origin main
-              
-              echo "✅ Successfully pushed cluster configuration to GitHub"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: region
-          value: "$(params.region)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-      workspaces:
-        - name: shared-data
-          workspace: shared-data
-      runAfter:
-        - validate-generated-configuration
-
-    - name: initiate-cluster-provisioning
-      taskSpec:
-        params:
-          - name: cluster-name
-          - name: cluster-type
-          - name: region
-          - name: domain
-          - name: name-suffix
-          - name: dry-run
-        steps:
-          - name: trigger-provisioning-workflow
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/usr/bin/env bash
-              set -e
-              
-              echo "🚀 Initiating cluster provisioning workflow..."
-              
-              # Determine final cluster name
-              FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
-              
-              echo "Cluster: $FINAL_CLUSTER_NAME"
-              echo "Type: $(params.cluster-type)"
-              echo "Region: $(params.region)"
-              echo "Domain: $(params.domain)"
-              
-              if [ "$(params.dry-run)" = "true" ]; then
-                echo "🔍 DRY RUN MODE - Would initiate provisioning for $(params.cluster-type) cluster"
-                exit 0
-              fi
-              
-              case "$(params.cluster-type)" in
-                ocp)
-                  echo "✅ Triggering Hive ClusterDeployment for OpenShift cluster"
-                  echo "✅ Setting up OpenShift provisioning workflow"
-                  echo "✅ Configuring Hive cluster deployment resources"
-                  ;;
-                eks)
-                  echo "✅ Triggering CAPI EKS provider for EKS cluster"
-                  echo "✅ Setting up EKS provisioning workflow"
-                  echo "✅ Configuring CAPI cluster deployment resources"
-                  ;;
-                hcp)
-                  echo "✅ Triggering HyperShift HostedCluster for HCP cluster"
-                  echo "✅ Setting up HyperShift provisioning workflow" 
-                  echo "✅ Configuring hosted control plane resources"
-                  ;;
-              esac
-              
-              echo "✅ Cluster provisioning workflow initiated"
-              echo "📌 Monitor cluster status with: oc get clusters"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-        - name: cluster-type
-          value: "$(params.cluster-type)"
-        - name: region
-          value: "$(params.region)"
-        - name: domain
-          value: "$(params.domain)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-        - name: dry-run
-          value: "$(params.dry-run)"
-      runAfter:
-        - commit-and-push-changes
+        - test-github-auth
 
   finally:
     - name: provisioning-summary
@@ -657,7 +329,7 @@ spec:
           - name: domain
           - name: instance-type
           - name: replicas
-          - name: name-suffix
+          
         steps:
           - name: generate-summary
             image: registry.redhat.io/openshift4/ose-cli
@@ -667,15 +339,13 @@ spec:
               
               # Determine final cluster name
               FINAL_CLUSTER_NAME="$(params.cluster-name)"
-              if [ -n "$(params.name-suffix)" ]; then
-                FINAL_CLUSTER_NAME="${FINAL_CLUSTER_NAME}$(params.name-suffix)"
-              fi
+
               
               echo "📋 Hub Provisioner Summary"
               echo "=========================="
               echo "Cluster Name: $FINAL_CLUSTER_NAME"
               echo "Base Name: $(params.cluster-name)"
-              echo "Name Suffix: $(params.name-suffix)"
+              
               echo "Cluster Type: $(params.cluster-type)"
               echo "Region: $(params.region)"
               echo "Domain: $(params.domain)"
@@ -704,31 +374,3 @@ spec:
           value: "$(params.instance-type)"
         - name: replicas
           value: "$(params.replicas)"
-        - name: name-suffix
-          value: "$(params.name-suffix)"
-
-    - name: cleanup-workspace-pvc
-      when:
-        - input: "$(tasks.status)"
-          operator: in
-          values: ["Succeeded"]
-      taskSpec:
-        steps:
-          - name: delete-pvc
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/usr/bin/env bash
-              set -e
-              
-              echo "🧹 Cleaning up workspace PVC..."
-              
-              # Get the PVC name created by this PipelineRun
-              PVC_NAME=$(oc get pvc -n hub-provisioner -l tekton.dev/pipelineRun=$(context.pipelineRun.name) -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-              
-              if [ -n "$PVC_NAME" ]; then
-                echo "Found PVC: $PVC_NAME"
-                oc delete pvc "$PVC_NAME" -n hub-provisioner --ignore-not-found=true
-                echo "✅ PVC deleted successfully"
-              else
-                echo "ℹ️ No PVC found for this PipelineRun"
-              fi
