@@ -34,7 +34,7 @@ spec:
   sources: []
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
@@ -59,7 +59,7 @@ spec:
   sources: []
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
