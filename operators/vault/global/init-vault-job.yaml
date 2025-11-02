@@ -183,6 +183,7 @@ spec:
           cat <<'POLICY' | oc exec vault-helm-0 -n vault -i -- vault policy write cluster-secrets -
           path "secret/data/aws-credentials" { capabilities = ["read"] }
           path "secret/data/pull-secret" { capabilities = ["read"] }
+          path "secret/data/github-credentials" { capabilities = ["read"] }
           POLICY
           
           # Create Kubernetes role
@@ -203,7 +204,7 @@ spec:
           spec:
             provider:
               vault:
-                server: "http://vault.vault.svc.cluster.local:8200"
+                server: "http://vault-helm.vault.svc.cluster.local:8200"
                 path: "secret"
                 version: "v2"
                 auth:
@@ -244,9 +245,26 @@ spec:
             echo "⚠️ pull-secret not found in openshift-config namespace"
           fi
           
+          # Check for GitHub credentials secret
+          if oc get secret github-repo-credentials -n openshift-gitops >/dev/null 2>&1; then
+            echo "📦 Found github-repo-credentials, storing in Vault..."
+            GITHUB_URL=$(oc get secret github-repo-credentials -n openshift-gitops -o jsonpath='{.data.url}' | base64 -d)
+            GITHUB_USERNAME=$(oc get secret github-repo-credentials -n openshift-gitops -o jsonpath='{.data.username}' | base64 -d)
+            GITHUB_PASSWORD=$(oc get secret github-repo-credentials -n openshift-gitops -o jsonpath='{.data.password}' | base64 -d)
+            
+            oc exec vault-helm-0 -n vault -- vault kv put secret/github-credentials \
+              url="$GITHUB_URL" \
+              username="$GITHUB_USERNAME" \
+              password="$GITHUB_PASSWORD"
+            echo "✅ GitHub credentials stored in Vault"
+          else
+            echo "⚠️ github-repo-credentials secret not found in openshift-gitops namespace"
+          fi
+          
           echo "ℹ️ Secret migration complete. You can manually add more secrets with:"
           echo "   oc exec vault-helm-0 -n vault -- vault kv put secret/aws-credentials aws_access_key_id=\"KEY\" aws_secret_access_key=\"SECRET\""
           echo "   oc exec vault-helm-0 -n vault -- vault kv put secret/pull-secret .dockerconfigjson=\"CONTENT\""
+          echo "   oc exec vault-helm-0 -n vault -- vault kv put secret/github-credentials url=\"URL\" username=\"USER\" password=\"TOKEN\""
           
           # Verify ClusterSecretStore status
           echo "🧪 Verifying ClusterSecretStore..."
