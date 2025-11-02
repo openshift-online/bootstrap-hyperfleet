@@ -96,7 +96,7 @@ spec:
             echo "🔓 Found unseal key: $UNSEAL_KEY"
             
             # Unseal if needed
-            if oc exec vault-0 -n vault -- vault status | grep -q "Sealed.*true"; then
+            if oc exec vault-helm-0 -n vault -- vault status | grep -q "Sealed.*true"; then
               echo "🔓 Unsealing Vault..."
               oc exec vault-helm-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
             else
@@ -109,7 +109,7 @@ spec:
             # Get unseal key from logs
             echo "🔍 Getting unseal key from pod logs..."
             sleep 5  # Wait for logs to be written
-            UNSEAL_KEY=$(oc logs vault-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | tail -1)
+            UNSEAL_KEY=$(oc logs vault-helm-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | tail -1)
             
             if [ -z "$UNSEAL_KEY" ]; then
               echo "❌ Could not find unseal key in logs"
@@ -117,7 +117,7 @@ spec:
             fi
             
             echo "🔓 Unsealing Vault with key: $UNSEAL_KEY"
-            oc exec vault-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
+            oc exec vault-helm-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
           fi
           
           # Authenticate with root token
@@ -172,7 +172,7 @@ spec:
           # Get CA cert from the pod's mounted service account token
           K8S_CA_CERT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt)
           
-          oc exec vault-0 -n vault -- vault write auth/kubernetes/config \
+          oc exec vault-helm-0 -n vault -- vault write auth/kubernetes/config \
             kubernetes_host="$K8S_HOST" \
             kubernetes_ca_cert="$K8S_CA_CERT" \
             disable_iss_validation=true \
@@ -180,14 +180,14 @@ spec:
           
           # Create cluster secrets policy
           echo "📝 Creating cluster secrets policy..."
-          cat <<'POLICY' | oc exec vault-0 -n vault -i -- vault policy write cluster-secrets -
+          cat <<'POLICY' | oc exec vault-helm-0 -n vault -i -- vault policy write cluster-secrets -
           path "secret/data/aws-credentials" { capabilities = ["read"] }
           path "secret/data/pull-secret" { capabilities = ["read"] }
           POLICY
           
           # Create Kubernetes role
           echo "🎭 Creating Kubernetes role..."
-          oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
+          oc exec vault-helm-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
             bound_service_account_names=vault-auth \
             bound_service_account_namespaces=vault \
             policies=cluster-secrets \
@@ -224,7 +224,7 @@ spec:
             AWS_ACCESS_KEY=$(oc get secret aws-creds -n kube-system -o jsonpath='{.data.aws_access_key_id}' | base64 -d)
             AWS_SECRET_KEY=$(oc get secret aws-creds -n kube-system -o jsonpath='{.data.aws_secret_access_key}' | base64 -d)
             
-            oc exec vault-0 -n vault -- vault kv put secret/aws-credentials \
+            oc exec vault-helm-0 -n vault -- vault kv put secret/aws-credentials \
               aws_access_key_id="$AWS_ACCESS_KEY" \
               aws_secret_access_key="$AWS_SECRET_KEY"
             echo "✅ AWS credentials stored in Vault"
@@ -237,7 +237,7 @@ spec:
             echo "📦 Found pull-secret, storing in Vault..."
             PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d)
             
-            oc exec vault-0 -n vault -- vault kv put secret/pull-secret \
+            oc exec vault-helm-0 -n vault -- vault kv put secret/pull-secret \
               .dockerconfigjson="$PULL_SECRET"
             echo "✅ Pull secret stored in Vault"
           else
@@ -245,8 +245,8 @@ spec:
           fi
           
           echo "ℹ️ Secret migration complete. You can manually add more secrets with:"
-          echo "   oc exec vault-0 -n vault -- vault kv put secret/aws-credentials aws_access_key_id=\"KEY\" aws_secret_access_key=\"SECRET\""
-          echo "   oc exec vault-0 -n vault -- vault kv put secret/pull-secret .dockerconfigjson=\"CONTENT\""
+          echo "   oc exec vault-helm-0 -n vault -- vault kv put secret/aws-credentials aws_access_key_id=\"KEY\" aws_secret_access_key=\"SECRET\""
+          echo "   oc exec vault-helm-0 -n vault -- vault kv put secret/pull-secret .dockerconfigjson=\"CONTENT\""
           
           # Verify ClusterSecretStore status
           echo "🧪 Verifying ClusterSecretStore..."
