@@ -65,28 +65,28 @@ spec:
           
           # Wait for Vault pod to be ready
           echo "⏳ Waiting for Vault pod to be ready..."
-          until oc get pod vault-0 -n vault >/dev/null 2>&1; do
-            echo "Waiting for vault-0 pod..."
+          until oc get pod vault-helm-0 -n vault >/dev/null 2>&1; do
+            echo "Waiting for vault-helm-0 pod..."
             sleep 10
           done
           
-          oc wait --for=condition=Ready pod vault-0 -n vault --timeout=300s
+          oc wait --for=condition=Ready pod vault-helm-0 -n vault --timeout=300s
           echo "✅ Vault pod is ready"
           
           # Wait for Vault service to be accessible
           echo "⏳ Waiting for Vault service..."
-          until oc exec vault-0 -n vault -- vault status >/dev/null 2>&1; do
+          until oc exec vault-helm-0 -n vault -- vault status >/dev/null 2>&1; do
             echo "Waiting for Vault service..."
             sleep 10
           done
           
           # Check if Vault is already initialized
-          if oc exec vault-0 -n vault -- vault status | grep -q "Initialized.*true"; then
+          if oc exec vault-helm-0 -n vault -- vault status | grep -q "Initialized.*true"; then
             echo "✅ Vault is already initialized"
             
             # Get unseal key from logs
             echo "🔍 Getting unseal key from pod logs..."
-            UNSEAL_KEY=$(oc logs vault-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | head -1)
+            UNSEAL_KEY=$(oc logs vault-helm-0 -n vault | grep "Unseal Key:" | awk '{print $3}' | head -1)
             
             if [ -z "$UNSEAL_KEY" ]; then
               echo "❌ Could not find unseal key in logs"
@@ -98,13 +98,13 @@ spec:
             # Unseal if needed
             if oc exec vault-0 -n vault -- vault status | grep -q "Sealed.*true"; then
               echo "🔓 Unsealing Vault..."
-              oc exec vault-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
+              oc exec vault-helm-0 -n vault -- vault operator unseal "$UNSEAL_KEY"
             else
               echo "✅ Vault is already unsealed"
             fi
           else
             echo "🚀 Initializing Vault..."
-            oc exec vault-0 -n vault -- vault operator init -key-shares=1 -key-threshold=1
+            oc exec vault-helm-0 -n vault -- vault operator init -key-shares=1 -key-threshold=1
             
             # Get unseal key from logs
             echo "🔍 Getting unseal key from pod logs..."
@@ -122,7 +122,7 @@ spec:
           
           # Authenticate with root token
           echo "🔑 Authenticating with root token..."
-          oc exec vault-0 -n vault -- vault login -method=token root
+          oc exec vault-helm-0 -n vault -- vault login -method=token root
           
           # Create ServiceAccount and RBAC for authentication
           echo "👤 Creating Vault authentication ServiceAccount..."
@@ -158,8 +158,8 @@ spec:
           
           # Enable Kubernetes authentication
           echo "🔐 Setting up Kubernetes authentication..."
-          if ! oc exec vault-0 -n vault -- vault auth list | grep -q kubernetes; then
-            oc exec vault-0 -n vault -- vault auth enable kubernetes
+          if ! oc exec vault-helm-0 -n vault -- vault auth list | grep -q kubernetes; then
+            oc exec vault-helm-0 -n vault -- vault auth enable kubernetes
           else
             echo "✅ Kubernetes auth already enabled"
           fi

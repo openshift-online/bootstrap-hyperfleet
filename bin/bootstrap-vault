@@ -62,7 +62,7 @@ echo ""
 echo -e "${YELLOW}🔐 Setting up Vault-based cluster secrets...${NC}"
 
 # Verify Vault is running
-if ! oc get pod vault-0 -n vault >/dev/null 2>&1; then
+if ! oc get pod vault-helm-0 -n vault >/dev/null 2>&1; then
   echo -e "${RED}❌ Vault pod not found. Please ensure Vault is deployed first.${NC}"
   exit 1
 fi
@@ -77,13 +77,13 @@ fi
 
 # Check if secrets are stored in Vault
 echo "Verifying secrets are stored in Vault..."
-if ! oc exec vault-0 -n vault -- vault kv get secret/aws-credentials >/dev/null 2>&1; then
+if ! oc exec vault-helm-0 -n vault -- vault kv get secret/aws-credentials >/dev/null 2>&1; then
   echo -e "${RED}❌ AWS credentials not found in Vault at secret/aws-credentials${NC}"
   echo "Please store secrets in Vault first. See documentation for instructions."
   exit 1
 fi
 
-if ! oc exec vault-0 -n vault -- vault kv get secret/pull-secret >/dev/null 2>&1; then
+if ! oc exec vault-helm-0 -n vault -- vault kv get secret/pull-secret >/dev/null 2>&1; then
   echo -e "${RED}❌ Pull secret not found in Vault at secret/pull-secret${NC}"
   echo "Please store secrets in Vault first. See documentation for instructions."
   exit 1
