@@ -38,7 +38,5 @@ spec:
       destination:
         server: '{{destination}}'
       syncPolicy:
-        automated:
-          selfHeal: true
-          allowEmpty: false
+        automated: null
         prune: false
