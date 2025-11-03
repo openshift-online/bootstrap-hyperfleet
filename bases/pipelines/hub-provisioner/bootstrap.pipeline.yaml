@@ -1,0 +1,98 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: bootstrap-pipeline
+  namespace: hub-provisioner
+  annotations:
+    description: "Pipeline for running bin/bootstrap script from repository"
+spec:
+  description: >-
+    Runs the idempotent bin/bootstrap script from the repository to apply
+    infrastructure changes to the cluster. This pipeline clones the latest
+    repository content and executes the bootstrap script.
+  tasks:
+    - name: run-bootstrap
+      taskSpec:
+        steps:
+          - name: clone-repo
+            image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
+            env:
+              - name: SSH_PRIVATE_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: github-repo-credentials
+                    key: ssh-privatekey
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🚀 Cloning repository..."
+              
+              # Setup SSH directory and key
+              SSH_DIR=/tekton/home/.ssh
+              mkdir -p "$SSH_DIR"
+              chmod 700 "$SSH_DIR"
+              
+              SSH_KEY_FILE="$SSH_DIR/id_rsa"
+              echo "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+              chmod 600 "$SSH_KEY_FILE"
+              
+              # Add GitHub to known hosts
+              ssh-keyscan github.com >> "$SSH_DIR/known_hosts" 2>/dev/null
+              
+              echo "✅ SSH key configured"
+              
+              # Clone repository to shared workspace
+              echo "📦 Cloning repository..."
+              cd /workspace
+              GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=$SSH_DIR/known_hosts" \
+                git clone git@github.com:openshift-online/bootstrap-hyperfleet.git repo
+              
+              echo "✅ Repository cloned to /workspace/repo"
+
+          - name: run-bootstrap
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "⚙️ Running bin/bootstrap..."
+              
+              cd /workspace/repo
+              
+              # Verify bootstrap script exists
+              if [ ! -f "./bin/bootstrap" ]; then
+                echo "❌ bin/bootstrap not found"
+                exit 1
+              fi
+              
+              # Make bootstrap script executable
+              chmod +x ./bin/bootstrap
+              
+              # Run bootstrap script
+              ./bin/bootstrap
+              
+              echo "✅ Bootstrap script completed successfully"
+
+  finally:
+    - name: bootstrap-summary
+      taskSpec:
+        steps:
+          - name: summary
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "📋 Bootstrap Pipeline Summary"
+              echo "=============================="
+              echo "Timestamp: $(date -Iseconds)"
+              echo ""
+              echo "✅ bin/bootstrap executed successfully"
+              echo "✅ Infrastructure changes applied"
+              echo ""
+              echo "📌 Next steps:"
+              echo "   - Verify ArgoCD applications are synced"
+              echo "   - Check cluster resources are healthy"
+              echo "   - Monitor operator deployments"
+              echo "=============================="

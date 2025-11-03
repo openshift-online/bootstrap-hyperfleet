@@ -68,3 +68,33 @@ roleRef:
   kind: ClusterRole
   name: hub-provisioner-role
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hub-provisioner-cluster-admin
+  annotations:
+    description: "Cluster admin binding for hub provisioner bootstrap pipeline"
+subjects:
+- kind: ServiceAccount
+  name: hub-provisioner-sa
+  namespace: hub-provisioner
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hub-provisioner-pipeline-cluster-admin
+  annotations:
+    description: "Cluster admin binding for default pipeline service account"
+subjects:
+- kind: ServiceAccount
+  name: pipeline
+  namespace: hub-provisioner
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
