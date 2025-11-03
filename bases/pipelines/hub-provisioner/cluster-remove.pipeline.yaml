@@ -9,7 +9,6 @@ spec:
   description: >-
     Cluster removal pipeline that disables ArgoCD sync for a cluster,
     commits the changes to the repository, and validates the sync is disabled.
-  serviceAccountName: hub-provisioner-sa
   params:
     - name: cluster-name
       type: string
