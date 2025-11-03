@@ -1,0 +1,17 @@
+apiVersion: regional.openshift.io/v1
+kind: RegionalCluster
+metadata:
+  name: ocp-4321
+  namespace: us-west-2
+spec:
+  type: ocp
+  region: us-west-2
+  domain: bootstrap.red-chesterfield.com
+  
+  compute:
+    instanceType: m5.2xlarge
+    replicas: 2
+  
+  openshift:
+    version: "4.15"
+    channel: stable
