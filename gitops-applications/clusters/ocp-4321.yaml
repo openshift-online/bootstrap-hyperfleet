@@ -1,7 +1,8 @@
+---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ocp-4321-applications
+  name: ocp-4321-provisioning
   namespace: openshift-gitops
 spec:
   generators:
@@ -9,20 +10,46 @@ spec:
       elements:
       - component: cluster
         path: clusters/ocp-4321
-        destination: https://kubernetes.default.svc
-        syncWave: "10"
+  template:
+    metadata:
+      name: ocp-4321-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: "10"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-4321-managed
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  generators:
+  - list:
+      elements:
       - component: operators
         path: operators/openshift-pipelines/ocp-4321
-        destination: https://api.ocp-4321.bootstrap.red-chesterfield.com:6443
-        syncWave: "20"
-      - component: pipelines-cloud-infrastructure-provisioning
+        syncWave: "10"
+      - component: pipelines
         path: pipelines/cloud-infrastructure-provisioning/ocp-4321
-        destination: https://api.ocp-4321.bootstrap.red-chesterfield.com:6443
-        syncWave: "30"
-      - component: deployments-ocm
+        syncWave: "20"
+      - component: deployments
         path: deployments/ocm/ocp-4321
-        destination: https://api.ocp-4321.bootstrap.red-chesterfield.com:6443
-        syncWave: "40"
+        syncWave: "30"
   template:
     metadata:
       name: ocp-4321-{{component}}
@@ -32,13 +59,19 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://github.com/openshift-online/bootstrap
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
         path: '{{path}}'
         targetRevision: main
       destination:
-        server: '{{destination}}'
+        server: https://api.ocp-4321.bootstrap.red-chesterfield.com:6443
       syncPolicy:
         automated:
           selfHeal: true
           allowEmpty: false
         prune: false
+        retry:
+          limit: -1
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 10m
