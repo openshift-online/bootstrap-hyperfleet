@@ -5,3 +5,4 @@ namespace: hub-provisioner
 
 resources:
   - ../../../bases/pipelines/hub-provisioner
+  - test-github-auth.pipelinerun.yaml

@@ -69,50 +69,31 @@ spec:
               echo "🔐 Testing GitHub SSH authentication and write access..."
               
               # Setup SSH directory and key
-              mkdir -p "${HOME}/.ssh"
-              chmod 700 "${HOME}/.ssh"
+              SSH_DIR=/tekton/home/.ssh
+              mkdir -p "$SSH_DIR"
+              chmod 700 "$SSH_DIR"
               
-              echo "$SSH_PRIVATE_KEY" > "${HOME}/.ssh/id_ed25519"
-              chmod 600 "${HOME}/.ssh/id_ed25519"
+              SSH_KEY_FILE="$SSH_DIR/id_rsa"
+              echo "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+              chmod 600 "$SSH_KEY_FILE"
+              
+              echo "🔍 Debug: Key file first line:"
+              head -1 "$SSH_KEY_FILE"
+              echo "🔍 Debug: Key file permissions:"
+              ls -la "$SSH_KEY_FILE"
               
               # Add GitHub to known hosts
-              ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts" 2>/dev/null
+              ssh-keyscan github.com >> "$SSH_DIR/known_hosts" 2>/dev/null
               
               echo "✅ SSH key configured"
               
-              git config --global user.name "Hub Provisioner Pipeline"
-              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
-              
-              # Clone to test read access
-              echo "📦 Testing read access..."
-              WORK_DIR=$(mktemp -d)
-              cd "$WORK_DIR"
-              
-              if GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .; then
-                echo "✅ Read access confirmed"
+              # Test SSH connection to GitHub
+              echo "🔍 Testing SSH connection to GitHub..."
+              if ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile="$SSH_DIR/known_hosts" -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+                echo "✅ SSH authentication successful"
               else
-                echo "❌ Failed to clone repository"
-                exit 1
-              fi
-              
-              # Create a test branch to verify write access
-              echo "🔍 Testing write access..."
-              git checkout -b "test-auth-$(date +%s)"
-              
-              # Create a test file in the repo
-              echo "test" > test-file.txt
-              git add test-file.txt
-              
-              # Test if we can push to a test branch
-              # We use --dry-run to not actually create the branch
-              if GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-                 git push --dry-run origin HEAD 2>&1 | tee /tmp/push-test.log; then
-                echo "✅ Write access confirmed (dry-run successful)"
-              else
-                echo "❌ Write access denied"
-                echo "Push dry-run output:"
-                cat /tmp/push-test.log
+                echo "❌ SSH authentication failed"
+                ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile="$SSH_DIR/known_hosts" -T git@github.com 2>&1
                 exit 1
               fi
               
@@ -150,17 +131,22 @@ spec:
               echo "Region: $(params.region)"
               
               # Setup SSH directory and key
-              mkdir -p "${HOME}/.ssh"
-              chmod 700 "${HOME}/.ssh"
+              SSH_DIR=/tekton/home/.ssh
+              mkdir -p "$SSH_DIR"
+              chmod 700 "$SSH_DIR"
               
-              echo "$SSH_PRIVATE_KEY" > "${HOME}/.ssh/id_ed25519"
-              chmod 600 "${HOME}/.ssh/id_ed25519"
+              SSH_KEY_FILE="$SSH_DIR/id_rsa"
+              echo "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+              chmod 600 "$SSH_KEY_FILE"
               
               # Add GitHub to known hosts
-              ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts" 2>/dev/null
+              ssh-keyscan github.com >> "$SSH_DIR/known_hosts" 2>/dev/null
               
-              git config --global user.name "Hub Provisioner Pipeline"
-              git config --global user.email "hub-provisioner@bootstrap.red-chesterfield.com"
+              # Configure git identity via environment variables
+              export GIT_AUTHOR_NAME="Hub Provisioner Pipeline"
+              export GIT_AUTHOR_EMAIL="hub-provisioner@bootstrap.red-chesterfield.com"
+              export GIT_COMMITTER_NAME="Hub Provisioner Pipeline"
+              export GIT_COMMITTER_EMAIL="hub-provisioner@bootstrap.red-chesterfield.com"
               
               echo "✅ SSH key configured"
               
@@ -168,7 +154,7 @@ spec:
               echo "📦 Cloning repository..."
               WORK_DIR=$(mktemp -d)
               cd "$WORK_DIR"
-              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+              GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no" \
                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
               
               # Validate cluster parameters
@@ -291,7 +277,7 @@ spec:
               
               Co-Authored-By: Claude <noreply@anthropic.com>"
               
-              GIT_SSH_COMMAND="ssh -i ${HOME}/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+              GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no" \
                 git push origin main
               
               echo "✅ Cluster provisioning completed successfully"
