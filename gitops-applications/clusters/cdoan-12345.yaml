@@ -1,0 +1,88 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cdoan-12345-provisioning
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/cdoan-12345
+        destination: https://kubernetes.default.svc
+        syncWave: "10"
+  
+  template:
+    metadata:
+      name: cdoan-12345-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: cdoan-12345
+        phase: provisioning
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cdoan-12345-managed
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: operators
+        path: operators/openshift-pipelines/cdoan-12345
+        destination: https://api.cdoan-12345.bootstrap.red-chesterfield.com:6443
+        syncWave: "10"
+      - component: pipelines
+        path: pipelines/cloud-infrastructure-provisioning/cdoan-12345
+        destination: https://api.cdoan-12345.bootstrap.red-chesterfield.com:6443
+        syncWave: "20"
+      - component: deployments
+        path: deployments/ocm/cdoan-12345
+        destination: https://api.cdoan-12345.bootstrap.red-chesterfield.com:6443
+        syncWave: "30"
+  
+  template:
+    metadata:
+      name: cdoan-12345-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: cdoan-12345
+        phase: managed
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          allowEmpty: false
+        prune: false
+        syncOptions:
+        - CreateNamespace=true

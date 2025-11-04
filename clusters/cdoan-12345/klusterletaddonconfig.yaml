@@ -1,0 +1,23 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: cdoan-12345
+  namespace: cdoan-12345
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: Amazon
+    name: cdoan-12345
+    vendor: OpenShift
+    region: us-west-2
+  clusterName: cdoan-12345
+  clusterNamespace: cdoan-12345
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true

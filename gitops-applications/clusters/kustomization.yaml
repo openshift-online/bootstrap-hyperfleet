@@ -9,3 +9,5 @@ resources:
   - clusters-applicationset.yaml
 
 - ./ocp-555.yaml
+
+- ./cdoan-12345.yaml

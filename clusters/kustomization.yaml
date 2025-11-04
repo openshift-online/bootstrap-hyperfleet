@@ -6,3 +6,4 @@ kind: Kustomization
 
 resources:
   - ocp-555/
+  - cdoan-12345/
