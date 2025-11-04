@@ -6,19 +6,5 @@ kind: Kustomization
 # via its own internal Git service populated by the bootstrap process
 
 resources:
-- clusters-applicationset.yaml
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-- ./ocp-test.yaml
+  - clusters-applicationset.yaml
+  - ./ocp-test.yaml
