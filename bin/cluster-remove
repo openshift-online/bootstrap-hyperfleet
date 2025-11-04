@@ -65,21 +65,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Function to validate semantic cluster naming
-validate_cluster_name() {
-    local name="$1"
-    
-    # Check if name matches semantic format: {type}-{number} or {type}-{number}-{suffix}
-    if [[ ! "$name" =~ ^(ocp|eks|hcp)-[0-9]+ ]]; then
-        echo "Error: Cluster name must follow format {type}-{number} or {type}-{number}-{suffix}" >&2
-        echo "       Valid types: ocp, eks, hcp" >&2
-        echo "       Examples: ocp-01, eks-02-test, hcp-01-dev" >&2
-        return 1
-    fi
-    
-    return 0
-}
-
 # Function to find cluster in regions
 find_cluster_region() {
     local name="$1"
@@ -291,11 +276,6 @@ if [ -z "$CLUSTER_NAME" ]; then
         echo "Error: Cluster name is required" >&2
         exit 1
     fi
-fi
-
-# Validate cluster name format
-if ! validate_cluster_name "$CLUSTER_NAME"; then
-    exit 1
 fi
 
 # Validate cluster exists
