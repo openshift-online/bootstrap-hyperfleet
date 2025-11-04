@@ -4,4 +4,4 @@ kind: Kustomization
 # This directory will contain auto-generated cluster configurations
 # Generated from regions/ by the cluster-create tool
 
-resources:
+resources: []
