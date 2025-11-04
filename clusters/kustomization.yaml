@@ -5,3 +5,4 @@ kind: Kustomization
 # Generated from regions/ by the cluster-create tool
 
 resources:
+  - ocp-555/

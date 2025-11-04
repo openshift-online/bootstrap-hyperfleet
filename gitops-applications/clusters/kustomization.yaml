@@ -7,3 +7,5 @@ kind: Kustomization
 
 resources:
   - clusters-applicationset.yaml
+
+- ./ocp-555.yaml
