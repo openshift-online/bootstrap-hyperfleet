@@ -20,3 +20,5 @@ resources:
 
 
 
+
+- ./ocp-test.yaml
