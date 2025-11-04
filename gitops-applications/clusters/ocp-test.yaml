@@ -13,8 +13,6 @@ spec:
         syncWave: "20"
   
   template:
-    apiVersion: argoproj.io/v1alpha1
-    kind: ApplicationSet
     metadata:
       name: ocp-test-{{childAppSet}}
       namespace: openshift-gitops
@@ -24,7 +22,26 @@ spec:
         argocd.argoproj.io/parent-applicationset: ocp-test-parent
         cluster: ocp-test
     spec:
-      generators:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        targetRevision: main
+        path: .
+      destination:
+        server: https://kubernetes.default.svc
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: ApplicationSet
+        metadata:
+          name: ocp-test-{{childAppSet}}
+          namespace: openshift-gitops
+          annotations:
+            argocd.argoproj.io/sync-wave: '{{syncWave}}'
+          labels:
+            argocd.argoproj.io/parent-applicationset: ocp-test-parent
+            cluster: ocp-test
+        spec:
+          generators:
       - merge:
           mergeKeys:
           - component
@@ -54,25 +71,25 @@ spec:
           - selector:
               matchLabels:
                 childType: '{{childAppSet}}'
-      
-      template:
-        metadata:
-          name: ocp-test-{{component}}
-          namespace: openshift-gitops
-          annotations:
-            argocd.argoproj.io/sync-wave: '{{syncWave}}'
-          labels:
-            cluster: ocp-test
-        spec:
-          project: default
-          source:
-            repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
-            path: '{{path}}'
-            targetRevision: main
-          destination:
-            server: '{{destination}}'
-          syncPolicy:
-            automated:
-              selfHeal: true
-              allowEmpty: false
-            prune: false
+        
+        template:
+          metadata:
+            name: ocp-test-{{component}}
+            namespace: openshift-gitops
+            annotations:
+              argocd.argoproj.io/sync-wave: '{{syncWave}}'
+            labels:
+              cluster: ocp-test
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+              path: '{{path}}'
+              targetRevision: main
+            destination:
+              server: '{{destination}}'
+            syncPolicy:
+              automated:
+                selfHeal: true
+                allowEmpty: false
+              prune: false

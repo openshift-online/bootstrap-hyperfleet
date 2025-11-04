@@ -1068,8 +1068,6 @@ spec:
         syncWave: "20"
   
   template:
-    apiVersion: argoproj.io/v1alpha1
-    kind: ApplicationSet
     metadata:
       name: $FULL_CLUSTER_NAME-{{childAppSet}}
       namespace: openshift-gitops
@@ -1079,58 +1077,77 @@ spec:
         argocd.argoproj.io/parent-applicationset: $FULL_CLUSTER_NAME-parent
         cluster: $FULL_CLUSTER_NAME
     spec:
-      generators:
-      - merge:
-          mergeKeys:
-          - component
-          generators:
-          - list:
-              elements:
-              - component: cluster
-                path: clusters/$FULL_CLUSTER_NAME
-                destination: https://kubernetes.default.svc
-                syncWave: "10"
-                childType: provisioning
-              - component: operators
-                path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
-                destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
-                syncWave: "10"
-                childType: managed
-              - component: pipelines
-                path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
-                destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
-                syncWave: "20"
-                childType: managed
-              - component: deployments
-                path: deployments/ocm/$FULL_CLUSTER_NAME
-                destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
-                syncWave: "30"
-                childType: managed
-          - selector:
-              matchLabels:
-                childType: '{{childAppSet}}'
-      
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        targetRevision: main
+        path: .
+      destination:
+        server: https://kubernetes.default.svc
       template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: ApplicationSet
         metadata:
-          name: $FULL_CLUSTER_NAME-{{component}}
+          name: $FULL_CLUSTER_NAME-{{childAppSet}}
           namespace: openshift-gitops
           annotations:
             argocd.argoproj.io/sync-wave: '{{syncWave}}'
           labels:
+            argocd.argoproj.io/parent-applicationset: $FULL_CLUSTER_NAME-parent
             cluster: $FULL_CLUSTER_NAME
         spec:
-          project: default
-          source:
-            repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
-            path: '{{path}}'
-            targetRevision: main
-          destination:
-            server: '{{destination}}'
-          syncPolicy:
-            automated:
-              selfHeal: true
-              allowEmpty: false
-            prune: false
+          generators:
+          - merge:
+              mergeKeys:
+              - component
+              generators:
+              - list:
+                  elements:
+                  - component: cluster
+                    path: clusters/$FULL_CLUSTER_NAME
+                    destination: https://kubernetes.default.svc
+                    syncWave: "10"
+                    childType: provisioning
+                  - component: operators
+                    path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
+                    destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+                    syncWave: "10"
+                    childType: managed
+                  - component: pipelines
+                    path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
+                    destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+                    syncWave: "20"
+                    childType: managed
+                  - component: deployments
+                    path: deployments/ocm/$FULL_CLUSTER_NAME
+                    destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
+                    syncWave: "30"
+                    childType: managed
+              - selector:
+                  matchLabels:
+                    childType: '{{childAppSet}}'
+        
+        template:
+          metadata:
+            name: $FULL_CLUSTER_NAME-{{component}}
+            namespace: openshift-gitops
+            annotations:
+              argocd.argoproj.io/sync-wave: '{{syncWave}}'
+            labels:
+              cluster: $FULL_CLUSTER_NAME
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+              path: '{{path}}'
+              targetRevision: main
+            destination:
+              server: '{{destination}}'
+            syncPolicy:
+              automated:
+                selfHeal: true
+                allowEmpty: false
+              prune: false
 EOF
 
     # ApplicationSet destinations are handled inline above
