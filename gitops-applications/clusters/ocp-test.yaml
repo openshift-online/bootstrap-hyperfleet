@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-test-parent
+  namespace: openshift-gitops
+spec:
+  generators:
+  - list:
+      elements:
+      - childAppSet: provisioning
+        syncWave: "10"
+      - childAppSet: managed
+        syncWave: "20"
+  
+  template:
+    apiVersion: argoproj.io/v1alpha1
+    kind: ApplicationSet
+    metadata:
+      name: ocp-test-{{childAppSet}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        argocd.argoproj.io/parent-applicationset: ocp-test-parent
+        cluster: ocp-test
+    spec:
+      generators:
+      - merge:
+          mergeKeys:
+          - component
+          generators:
+          - list:
+              elements:
+              - component: cluster
+                path: clusters/ocp-test
+                destination: https://kubernetes.default.svc
+                syncWave: "10"
+                childType: provisioning
+              - component: operators
+                path: operators/openshift-pipelines/ocp-test
+                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                syncWave: "10"
+                childType: managed
+              - component: pipelines
+                path: pipelines/cloud-infrastructure-provisioning/ocp-test
+                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                syncWave: "20"
+                childType: managed
+              - component: deployments
+                path: deployments/ocm/ocp-test
+                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                syncWave: "30"
+                childType: managed
+          - selector:
+              matchLabels:
+                childType: '{{childAppSet}}'
+      
+      template:
+        metadata:
+          name: ocp-test-{{component}}
+          namespace: openshift-gitops
+          annotations:
+            argocd.argoproj.io/sync-wave: '{{syncWave}}'
+          labels:
+            cluster: ocp-test
+        spec:
+          project: default
+          source:
+            repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+            path: '{{path}}'
+            targetRevision: main
+          destination:
+            server: '{{destination}}'
+          syncPolicy:
+            automated:
+              selfHeal: true
+              allowEmpty: false
+            prune: false
