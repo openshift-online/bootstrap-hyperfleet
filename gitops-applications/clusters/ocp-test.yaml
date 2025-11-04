@@ -42,35 +42,35 @@ spec:
             cluster: ocp-test
         spec:
           generators:
-      - merge:
-          mergeKeys:
-          - component
-          generators:
-          - list:
-              elements:
-              - component: cluster
-                path: clusters/ocp-test
-                destination: https://kubernetes.default.svc
-                syncWave: "10"
-                childType: provisioning
-              - component: operators
-                path: operators/openshift-pipelines/ocp-test
-                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
-                syncWave: "10"
-                childType: managed
-              - component: pipelines
-                path: pipelines/cloud-infrastructure-provisioning/ocp-test
-                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
-                syncWave: "20"
-                childType: managed
-              - component: deployments
-                path: deployments/ocm/ocp-test
-                destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
-                syncWave: "30"
-                childType: managed
-          - selector:
-              matchLabels:
-                childType: '{{childAppSet}}'
+          - merge:
+              mergeKeys:
+              - component
+              generators:
+              - list:
+                  elements:
+                  - component: cluster
+                    path: clusters/ocp-test
+                    destination: https://kubernetes.default.svc
+                    syncWave: "10"
+                    childType: provisioning
+                  - component: operators
+                    path: operators/openshift-pipelines/ocp-test
+                    destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                    syncWave: "10"
+                    childType: managed
+                  - component: pipelines
+                    path: pipelines/cloud-infrastructure-provisioning/ocp-test
+                    destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                    syncWave: "20"
+                    childType: managed
+                  - component: deployments
+                    path: deployments/ocm/ocp-test
+                    destination: https://api.ocp-test.bootstrap.red-chesterfield.com:6443
+                    syncWave: "30"
+                    childType: managed
+              - selector:
+                  matchLabels:
+                    childType: '{{childAppSet}}'
         
         template:
           metadata:
