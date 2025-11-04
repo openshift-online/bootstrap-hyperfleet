@@ -305,6 +305,34 @@ spec:
       runAfter:
         - test-github-auth
 
+    - name: trigger-bootstrap
+      taskSpec:
+        steps:
+          - name: create-bootstrap-pipelinerun
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🚀 Triggering bootstrap pipeline to apply changes..."
+              
+              # Create PipelineRun for bootstrap-pipeline
+              cat <<EOF | oc apply -f -
+              apiVersion: tekton.dev/v1
+              kind: PipelineRun
+              metadata:
+                generateName: bootstrap-run-
+                namespace: hub-provisioner
+              spec:
+                pipelineRef:
+                  name: bootstrap-pipeline
+              EOF
+              
+              echo "✅ Bootstrap pipeline triggered"
+              echo "📌 Bootstrap will apply ArgoCD changes and sync Vault secrets"
+      runAfter:
+        - provision-cluster
+
   finally:
     - name: provisioning-summary
       taskSpec:
