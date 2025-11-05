@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: cdoan-12345
-  labels:
-    name: cdoan-12345

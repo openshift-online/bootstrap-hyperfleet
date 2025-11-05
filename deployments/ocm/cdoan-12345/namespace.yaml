@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-cdoan-12345
-  labels:
-    name: ocm-cdoan-12345

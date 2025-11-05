@@ -317,7 +317,7 @@ spec:
               echo "🚀 Triggering bootstrap pipeline to apply changes..."
               
               # Create PipelineRun for bootstrap-pipeline
-              cat <<EOF | oc apply -f -
+              cat <<EOF | oc create -f -
               apiVersion: tekton.dev/v1
               kind: PipelineRun
               metadata:
