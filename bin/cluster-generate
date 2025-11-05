@@ -62,12 +62,13 @@ KUBERNETES_VERSION=$(grep -A 1 "kubernetes:" "$SPEC_FILE" | grep "version:" | aw
 # Use the cluster name directly from region.yaml
 FULL_CLUSTER_NAME="$CLUSTER_NAME"
 
-# Generate known output paths
-CLUSTER_OUTPUT_DIR="clusters/$FULL_CLUSTER_NAME"
-# Pipeline directories organized by pipeline type
-PIPELINES_CLOUD_INFRA_DIR="pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME"
-DEPLOYMENTS_OUTPUT_DIR="deployments/ocm/$FULL_CLUSTER_NAME"
-GITOPS_OUTPUT_DIR="gitops-applications/clusters"
+# New consolidated directory structure
+CLUSTER_ROOT_DIR="clusters/$FULL_CLUSTER_NAME"
+CLUSTER_OUTPUT_DIR="$CLUSTER_ROOT_DIR/cluster"
+OPERATORS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/operators"
+PIPELINES_OUTPUT_DIR="$CLUSTER_ROOT_DIR/pipelines/cloud-infrastructure"
+DEPLOYMENTS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/deployments/ocm"
+GITOPS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/gitops"
 
 # Defaults
 CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
@@ -91,14 +92,18 @@ fi
 
 # Create output directories
 mkdir -p "$CLUSTER_OUTPUT_DIR"
-mkdir -p "$PIPELINES_CLOUD_INFRA_DIR"
+mkdir -p "$OPERATORS_OUTPUT_DIR"
+mkdir -p "$PIPELINES_OUTPUT_DIR"
 mkdir -p "$DEPLOYMENTS_OUTPUT_DIR"
+mkdir -p "$GITOPS_OUTPUT_DIR"
 
 echo "Generating $CLUSTER_TYPE cluster overlay for $FULL_CLUSTER_NAME"
-echo "  Cluster overlay: $CLUSTER_OUTPUT_DIR"
-echo "  Cloud Infrastructure pipelines: $PIPELINES_CLOUD_INFRA_DIR"
-echo "  Deployments overlay: $DEPLOYMENTS_OUTPUT_DIR"
-echo "  GitOps applications: $GITOPS_OUTPUT_DIR"
+echo "  Cluster root: $CLUSTER_ROOT_DIR"
+echo "  Cluster provisioning: $CLUSTER_OUTPUT_DIR"
+echo "  Operators: $OPERATORS_OUTPUT_DIR"
+echo "  Pipelines: $PIPELINES_OUTPUT_DIR"
+echo "  Deployments: $DEPLOYMENTS_OUTPUT_DIR"
+echo "  GitOps ApplicationSets: $GITOPS_OUTPUT_DIR"
 
 # Generate namespace.yaml
 cat > "$CLUSTER_OUTPUT_DIR/namespace.yaml" << EOF
@@ -940,9 +945,38 @@ patches:
 EOF
 }
 
-generate_regional_pipelines() {
-    # Generate cloud-infrastructure-provisioning pipeline overlay
-    cat > "$PIPELINES_CLOUD_INFRA_DIR/kustomization.yaml" << EOF
+generate_operators() {
+    # Generate operators kustomization.yaml
+    cat > "$OPERATORS_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-$FULL_CLUSTER_NAME
+
+commonAnnotations:
+  cluster: $FULL_CLUSTER_NAME
+  cluster-type: $CLUSTER_TYPE
+  version: "v0.0.1"
+
+resources:
+  - ../../bases/operators/openshift-pipelines/global/overlays/pipelines-operator-only
+  - namespace.yaml
+EOF
+
+    # Generate namespace.yaml for operators
+    cat > "$OPERATORS_OUTPUT_DIR/namespace.yaml" << EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ocm-$FULL_CLUSTER_NAME
+  labels:
+    name: ocm-$FULL_CLUSTER_NAME
+EOF
+}
+
+generate_pipelines() {
+    # Generate cloud-infrastructure pipeline kustomization
+    cat > "$PIPELINES_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -957,11 +991,11 @@ resources:
   - cloud-infrastructure-provisioning.pipelinerun.yaml
 
 components:
-  - ../../../bases/pipelines/cloud-infrastructure-provisioning
+  - ../../../../bases/pipelines/cloud-infrastructure-provisioning
 EOF
 
     # Generate cloud-infrastructure-provisioning pipelinerun
-    cat > "$PIPELINES_CLOUD_INFRA_DIR/cloud-infrastructure-provisioning.pipelinerun.yaml" << EOF
+    cat > "$PIPELINES_OUTPUT_DIR/cloud-infrastructure-provisioning.pipelinerun.yaml" << EOF
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -993,8 +1027,8 @@ spec:
 EOF
 }
 
-generate_regional_deployments() {
-    # Generate regional deployments overlay
+generate_deployments() {
+    # Generate deployments kustomization.yaml
     cat > "$DEPLOYMENTS_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -1002,11 +1036,11 @@ kind: Kustomization
 namespace: ocm-$FULL_CLUSTER_NAME
 
 resources:
-  - ../../../bases/ocm
+  - ../../../../bases/ocm
   - namespace.yaml
 EOF
 
-    # Generate namespace.yaml for regional deployments
+    # Generate namespace.yaml for deployments
     cat > "$DEPLOYMENTS_OUTPUT_DIR/namespace.yaml" << EOF
 apiVersion: v1
 kind: Namespace
@@ -1017,43 +1051,9 @@ metadata:
 EOF
 }
 
-generate_operators() {
-    # Create operators directory
-    OPERATORS_OUTPUT_DIR="operators/openshift-pipelines/$FULL_CLUSTER_NAME"
-    mkdir -p "$OPERATORS_OUTPUT_DIR"
-    
-    # Generate operators kustomization.yaml
-    cat > "$OPERATORS_OUTPUT_DIR/kustomization.yaml" << EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-namespace: ocm-$FULL_CLUSTER_NAME
-
-commonAnnotations:
-  cluster: $FULL_CLUSTER_NAME
-  cluster-type: $CLUSTER_TYPE
-  version: "v0.0.1"
-
-resources:
-  - ../global/overlays/pipelines-operator-only
-  - namespace.yaml
-EOF
-
-    # Generate namespace.yaml for operators
-    cat > "$OPERATORS_OUTPUT_DIR/namespace.yaml" << EOF
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-$FULL_CLUSTER_NAME
-  labels:
-    name: ocm-$FULL_CLUSTER_NAME
-EOF
-}
-
 generate_gitops_applications() {
-    # Generate two separate ApplicationSets: one for provisioning (hub cluster), one for managed cluster
-    cat > "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.yaml" << EOF
----
+    # Generate provisioning ApplicationSet (deploys to hub cluster)
+    cat > "$GITOPS_OUTPUT_DIR/provisioning.applicationset.yaml" << EOF
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -1066,7 +1066,7 @@ spec:
   - list:
       elements:
       - component: cluster
-        path: clusters/$FULL_CLUSTER_NAME
+        path: clusters/$FULL_CLUSTER_NAME/cluster
         destination: https://kubernetes.default.svc
         syncWave: "10"
   
@@ -1092,11 +1092,14 @@ spec:
           selfHeal: true
           allowEmpty: false
         prune: false
----
+EOF
+
+    # Generate content ApplicationSet (deploys to managed cluster)
+    cat > "$GITOPS_OUTPUT_DIR/content.applicationset.yaml" << EOF
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: $FULL_CLUSTER_NAME-managed
+  name: $FULL_CLUSTER_NAME-content
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "20"
@@ -1105,15 +1108,15 @@ spec:
   - list:
       elements:
       - component: operators
-        path: operators/openshift-pipelines/$FULL_CLUSTER_NAME
+        path: clusters/$FULL_CLUSTER_NAME/operators
         destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
         syncWave: "10"
       - component: pipelines
-        path: pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
+        path: clusters/$FULL_CLUSTER_NAME/pipelines
         destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
         syncWave: "20"
       - component: deployments
-        path: deployments/ocm/$FULL_CLUSTER_NAME
+        path: clusters/$FULL_CLUSTER_NAME/deployments
         destination: https://api.$FULL_CLUSTER_NAME.$DOMAIN:6443
         syncWave: "30"
   
@@ -1125,7 +1128,7 @@ spec:
         argocd.argoproj.io/sync-wave: '{{syncWave}}'
       labels:
         cluster: $FULL_CLUSTER_NAME
-        phase: managed
+        phase: content
     spec:
       project: default
       source:
@@ -1141,6 +1144,31 @@ spec:
         prune: false
         syncOptions:
         - CreateNamespace=true
+EOF
+
+    # Generate gitops kustomization
+    cat > "$GITOPS_OUTPUT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - provisioning.applicationset.yaml
+  - content.applicationset.yaml
+EOF
+}
+
+generate_cluster_root_kustomization() {
+    # Generate root kustomization for entire cluster
+    cat > "$CLUSTER_ROOT_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cluster/
+  - operators/
+  - pipelines/
+  - deployments/
+  - gitops/
 EOF
 }
 
@@ -1166,43 +1194,9 @@ EOF
     fi
 }
 
-update_gitops_kustomization() {
-    local kustomization_file="$GITOPS_OUTPUT_DIR/kustomization.yaml"
-    
-    # Check if the cluster ApplicationSet is already in the kustomization
-    if ! grep -q "\\- \\./$FULL_CLUSTER_NAME\\.yaml" "$kustomization_file"; then
-        echo "Adding $FULL_CLUSTER_NAME ApplicationSet to gitops-applications/clusters/kustomization.yaml"
-        
-        # Find the line number where cluster applications start (after global/eso.application.yaml)
-        local insert_line
-#        insert_line=$(grep -n "global/eso.application.yaml" "$kustomization_file" | cut -d: -f1)
-        insert_line=$(grep -n "# ADD CLUSTERS HERE" "$kustomization_file" | cut -d: -f1)
-
-        if [ -z "$insert_line" ]; then
-            echo "Warning: Could not find global/eso.application.yaml in kustomization.yaml, appending to end"
-            cat >> "$kustomization_file" << EOF
-
-- ./$FULL_CLUSTER_NAME.yaml
-EOF
-        else
-            # Insert after the global/eso.application.yaml line
-            local temp_file=$(mktemp)
-            {
-                head -n "$insert_line" "$kustomization_file"
-                echo ""
-                echo "- ./$FULL_CLUSTER_NAME.yaml"
-                tail -n +$((insert_line + 1)) "$kustomization_file"
-            } > "$temp_file"
-            mv "$temp_file" "$kustomization_file"
-        fi
-    else
-        echo "$FULL_CLUSTER_NAME ApplicationSet already exists in gitops-applications/kustomization.yaml"
-    fi
-}
-
 push_to_gitea() {
     echo ""
-    echo "🚀 Pushing generated configurations to internal Gitea server..."
+    echo "Pushing generated configurations to internal Gitea server..."
     
     # Gitea configuration
     local GITEA_URL="http://gitea.gitea-system.svc.cluster.local:3000"
@@ -1253,11 +1247,7 @@ spec:
           git checkout main 2>/dev/null || git checkout -b main
           
           echo "Creating cluster configuration directories..."
-          mkdir -p clusters/$FULL_CLUSTER_NAME
-          mkdir -p operators/openshift-pipelines/$FULL_CLUSTER_NAME
-          mkdir -p pipelines/cloud-infrastructure-provisioning/$FULL_CLUSTER_NAME
-          mkdir -p deployments/ocm/$FULL_CLUSTER_NAME
-          mkdir -p gitops-applications
+          mkdir -p clusters/$FULL_CLUSTER_NAME/{cluster,operators,pipelines,deployments,gitops}
           
           echo "Generated cluster files will be added by separate process..."
           echo "Cluster: $FULL_CLUSTER_NAME" > clusters/$FULL_CLUSTER_NAME/README.md
@@ -1271,7 +1261,7 @@ spec:
           echo "Pushing to Gitea repository..."
           git push -u origin main
           
-          echo "✅ Successfully pushed cluster structure to Gitea"
+          echo "Successfully pushed cluster structure to Gitea"
         env:
         - name: GITEA_REPO_URL
           value: "$GITEA_REPO_URL"
@@ -1285,7 +1275,7 @@ EOF
     
     echo "Waiting for push job to complete..."
     if oc wait --for=condition=complete job/gitea-push-$FULL_CLUSTER_NAME -n gitea-system --timeout=120s; then
-        echo "✅ Successfully pushed cluster configuration to Gitea"
+        echo "Successfully pushed cluster configuration to Gitea"
         echo "Repository URL: $GITEA_URL/bootstrap/bootstrap"
         echo "Branch: main"
         echo "Cluster path: clusters/$FULL_CLUSTER_NAME"
@@ -1293,7 +1283,7 @@ EOF
         # Clean up the job
         oc delete job gitea-push-$FULL_CLUSTER_NAME -n gitea-system
     else
-        echo "❌ Failed to push to Gitea. Check job logs:"
+        echo "Failed to push to Gitea. Check job logs:"
         oc logs job/gitea-push-$FULL_CLUSTER_NAME -n gitea-system
         oc delete job gitea-push-$FULL_CLUSTER_NAME -n gitea-system
         exit 1
@@ -1312,13 +1302,13 @@ else
     exit 1
 fi
 
-# Generate regional pipelines, operators, and deployments
-generate_regional_pipelines
+# Generate supporting components
 generate_operators
-generate_regional_deployments
+generate_pipelines
+generate_deployments
 generate_gitops_applications
+generate_cluster_root_kustomization
 update_clusters_kustomization
-update_gitops_kustomization
 
 # Push to Gitea if requested
 if [ "$PUSH_TO_GITEA" = true ]; then
@@ -1326,20 +1316,14 @@ if [ "$PUSH_TO_GITEA" = true ]; then
 fi
 
 echo "Generated $CLUSTER_TYPE cluster overlay successfully!"
-echo "Files created:"
-echo "Cluster files:"
-ls -la "$CLUSTER_OUTPUT_DIR/"
+echo "Cluster structure created at: $CLUSTER_ROOT_DIR"
 echo ""
-echo "Operators files:"
-ls -la "operators/openshift-pipelines/$FULL_CLUSTER_NAME/"
+echo "Directory structure:"
+echo "  Cluster provisioning: $CLUSTER_OUTPUT_DIR"
+echo "  Operators: $OPERATORS_OUTPUT_DIR"
+echo "  Pipelines: $PIPELINES_OUTPUT_DIR"
+echo "  Deployments: $DEPLOYMENTS_OUTPUT_DIR"
+echo "  GitOps ApplicationSets: $GITOPS_OUTPUT_DIR"
+echo "  Root kustomization: $CLUSTER_ROOT_DIR/kustomization.yaml"
 echo ""
-echo "Cloud Infrastructure pipeline files:"
-ls -la "$PIPELINES_CLOUD_INFRA_DIR/"
-echo ""
-echo "Deployments files:"
-ls -la "$DEPLOYMENTS_OUTPUT_DIR/"
-echo ""
-echo "GitOps ApplicationSet:"
-ls -la "$GITOPS_OUTPUT_DIR/$FULL_CLUSTER_NAME.yaml"
-echo ""
-echo "Updated gitops-applications/kustomization.yaml"
+echo "Updated clusters/kustomization.yaml"
