@@ -10,7 +10,7 @@ spec:
     name: in-cluster
   project: default
   source:
-    path: operators/openshift-gitops/global
+    path: clusters/global/operators/openshift-gitops
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:

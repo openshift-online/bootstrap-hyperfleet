@@ -54,7 +54,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
-    path: operators/vault/global
+    path: clusters/global/operators/vault
     targetRevision: HEAD
   sources: []
   syncPolicy:

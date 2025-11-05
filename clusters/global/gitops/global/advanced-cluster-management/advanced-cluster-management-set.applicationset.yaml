@@ -11,10 +11,10 @@ spec:
         path: bases/operators/advanced-cluster-management/overlays/release-2.14
         syncWave: "4"
       - component: acm-hub
-        path: operators/advanced-cluster-management/global/base
+        path: clusters/global/operators/advanced-cluster-management/base
         syncWave: "5"
       - component: acm-policies
-        path: operators/gitops-integration/global
+        path: clusters/global/operators/gitops-integration
         syncWave: "6"
   template:
     metadata:

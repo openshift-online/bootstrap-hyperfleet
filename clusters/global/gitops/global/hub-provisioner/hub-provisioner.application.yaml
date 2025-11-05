@@ -11,7 +11,7 @@ spec:
     namespace: bootstrap
   project: default
   source:
-    path: pipelines/hub-provisioner/global
+    path: clusters/global/pipelines/hub-provisioner
     repoURL: 'https://github.com/openshift-online/bootstrap'
     targetRevision: main
   syncPolicy:
