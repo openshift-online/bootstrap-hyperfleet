@@ -11,15 +11,10 @@ oc cluster-info
 oc whoami
 ```
 
-### 2. Install OpenShift GitOps Operator
+### 2. Deploy Hub Cluster Resources
 ```bash
-oc apply -k operators/openshift-gitops/global
+oc apply -k clusters/global/
 ./bin/monitor-status applications.argoproj.io
-```
-
-### 3. Deploy All GitOps Applications
-```bash
-oc apply -k gitops-applications/
 ```
 
 This single command creates all ArgoCD applications with proper ordering:

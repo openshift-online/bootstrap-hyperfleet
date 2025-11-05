@@ -70,8 +70,8 @@ The tool prompts for 5 required inputs with validation:
 - **Replicas** (int, default: "2")
   - Number of worker nodes
 
-### 2. Regional Specification Generation
-Creates `regions/[Region]/[Cluster Name]/region.yaml` with the following template:
+### 2. Cluster Specification Generation
+Creates `clusters/[Cluster Name]/[Cluster Name].yaml` with the following template:
 
 ```yaml
 name: [Auto-Generated Name]  # e.g., "ocp-01", "eks-01", "hcp-01"
@@ -85,29 +85,28 @@ replicas: [Replicas]
 ### 3. Complete Cluster Configuration
 Automatically calls `bin/cluster-generate` to create:
 
-- **Cluster manifests**: `clusters/[Semantic Name]/`
+- **Cluster manifests**: `clusters/[Semantic Name]/cluster/`
   - **OCP**: Namespace, Hive ClusterDeployment, MachinePool, install-config
   - **EKS**: Namespace, CAPI Cluster, AWSManagedControlPlane, AWSManagedMachinePool
   - **HCP**: Namespace, HostedCluster, SSH key secret
   - All types: ManagedCluster and KlusterletAddonConfig for ACM integration
-- **Operators**: `operators/openshift-pipelines/[Semantic Name]/`
+- **Operators**: `clusters/[Semantic Name]/operators/`
   - OpenShift Pipelines operator deployment
 - **Pipelines**: Multiple pipeline overlays
-  - `pipelines/hello-world/[Semantic Name]/`
-  - `pipelines/cloud-infrastructure-provisioning/[Semantic Name]/`
-- **Deployments**: `deployments/ocm/[Semantic Name]/`
+  - `clusters/[Semantic Name]/pipelines/hello-world/`
+  - `clusters/[Semantic Name]/pipelines/cloud-infrastructure-provisioning/`
+- **Deployments**: `clusters/[Semantic Name]/deployments/`
   - OCM service deployments
-- **GitOps**: `gitops-applications/[Semantic Name].yaml`
+- **GitOps**: `clusters/[Semantic Name]/gitops/`
   - ArgoCD ApplicationSet for cluster management
-  - Automatic update to `gitops-applications/kustomization.yaml`
 
 ### 4. Automatic Validation and Feedback
 - Shows configuration summary before proceeding
 - Requires user confirmation
 - **Automatically runs validation checks** after generation:
-  - `oc kustomize clusters/[cluster-name]/` - validates cluster configuration
-  - `oc kustomize deployments/ocm/[cluster-name]/` - validates deployments configuration
-  - `oc kustomize gitops-applications/` - validates GitOps applications
+  - `oc kustomize clusters/[cluster-name]/cluster/` - validates cluster configuration
+  - `oc kustomize clusters/[cluster-name]/deployments/` - validates deployments configuration
+  - `oc kustomize clusters/global/gitops/` - validates GitOps applications
 - **Clear status reporting** with ✅/❌ indicators for each validation check
 - **Error handling** with debug commands if validation fails
 - Lists all generated files and provides next steps

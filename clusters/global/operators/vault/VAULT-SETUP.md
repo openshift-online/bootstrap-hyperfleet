@@ -7,7 +7,7 @@
 
 ### 1. Deploy Vault and ESO
 ```bash
-oc apply -k  gitops-applications/global/vault/ && oc apply -k  gitops-applications/global/eso/ && oc wait --for=condition=Ready pod -l app.kubernetes.io/instance=vault -n vault
+oc apply -k clusters/global/operators/vault/ && oc wait --for=condition=Ready pod -l app.kubernetes.io/instance=vault -n vault
 ```
 
 ### 2. Initialize Vault
@@ -25,7 +25,7 @@ oc exec vault-0 -n vault -- vault auth -method=token root
 ### 3. Setup Authentication
 ```bash
 # Create ServiceAccount and RBAC
-oc apply -f operators/vault/global/vault-auth-serviceaccount.yaml
+oc apply -f clusters/global/operators/vault/vault-auth-serviceaccount.yaml
 
 # Enable Kubernetes auth
 oc exec vault-0 -n vault -- vault auth enable kubernetes
@@ -51,7 +51,7 @@ oc exec vault-0 -n vault -- vault write auth/kubernetes/role/cluster-role \
 
 ### 5. Deploy ClusterSecretStore
 ```bash
-oc apply -f operators/vault/global/cluster-secret-store.yaml
+oc apply -f clusters/global/operators/vault/cluster-secret-store.yaml
 oc get clustersecretstore vault-cluster-store  # Should show STATUS=Valid
 ```
 
@@ -72,11 +72,11 @@ oc exec vault-0 -n vault -- vault kv put secret/pull-secret \
 ### Deploy Secrets to Clusters
 ```bash
 # Per cluster
-sed 's/CLUSTER_NAMESPACE/ocp-02/g' bases/ocm/external-secrets-template.yaml | oc apply -f -
+sed 's/CLUSTER_NAMESPACE/ocp-02/g' bases/deployments/ocm/external-secrets-template.yaml | oc apply -f -
 
 # Multiple clusters
 for cluster in ocp-02 ocp-03 eks-02; do
-    sed "s/CLUSTER_NAMESPACE/$cluster/g" bases/ocm/external-secrets-template.yaml | oc apply -f -
+    sed "s/CLUSTER_NAMESPACE/$cluster/g" bases/deployments/ocm/external-secrets-template.yaml | oc apply -f -
 done
 ```
 

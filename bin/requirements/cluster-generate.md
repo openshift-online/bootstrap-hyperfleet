@@ -7,20 +7,20 @@ The `generate-cluster` tool converts simplified Regional Cluster specifications 
 ## Functional Requirements
 
 ### Input/Output Requirements
-- **Input**: Regional specification directory (`regions/region/cluster/`)
-- **Output**: Complete Kustomize overlay directory
+- **Input**: Cluster specification file (`clusters/{cluster-name}/{cluster-name}.yaml`)
+- **Output**: Complete cluster directory structure
 
 ### Usage Patterns
 ```bash
-# Generate cluster overlay from regional spec
-./bin/cluster-generate regions/us-east-1/ocp-01/
+# Generate cluster from specification
+./bin/cluster-generate clusters/ocp-01/ocp-01.yaml
 
 # Generate and validate
-./bin/cluster-generate regions/ap-southeast-1/eks-01/
-kubectl kustomize clusters/eks-01/
+./bin/cluster-generate clusters/eks-01/eks-01.yaml
+kubectl kustomize clusters/eks-01/cluster/
 
 # Generate HCP cluster
-./bin/cluster-generate regions/us-east-1/hcp-01/
+./bin/cluster-generate clusters/hcp-01/hcp-01.yaml
 ```
 
 ## Generation Logic Requirements
@@ -47,27 +47,39 @@ kubectl kustomize clusters/eks-01/
 ### OCP Cluster Output
 ```
 clusters/ocp-XX/
-├── namespace.yaml                    # 4 lines
-├── clusterdeployment.yaml           # 25 lines - direct config
-├── managedcluster.yaml              # 12 lines - direct config  
-├── machinepool.yaml                 # 20 lines - direct config
-├── install-config.yaml              # 46 lines - OpenShift config
-├── klusterletaddonconfig.yaml       # 21 lines - ACM config
-└── kustomization.yaml               # 8 lines - simple resource list
+├── ocp-XX.yaml                      # Cluster specification
+├── cluster/
+│   ├── namespace.yaml                    # 4 lines
+│   ├── clusterdeployment.yaml           # 25 lines - direct config
+│   ├── managedcluster.yaml              # 12 lines - direct config  
+│   ├── machinepool.yaml                 # 20 lines - direct config
+│   ├── install-config.yaml              # 46 lines - OpenShift config
+│   ├── klusterletaddonconfig.yaml       # 21 lines - ACM config
+│   └── kustomization.yaml               # 8 lines - simple resource list
+├── operators/
+├── pipelines/
+├── deployments/
+└── gitops/
 ```
 
 ### EKS Cluster Output
 ```
 clusters/eks-XX/
-├── namespace.yaml                    # 4 lines
-├── cluster.yaml                     # 18 lines - CAPI binding
-├── awsmanagedcontrolplane.yaml      # 18 lines - EKS control plane
-├── awsmanagedmachinepool.yaml       # 20 lines - EKS workers
-├── managedcluster.yaml              # 14 lines - ACM registration
-├── klusterletaddonconfig.yaml       # 21 lines - ACM config
-├── external-secrets.yaml            # External secrets config
-├── acm-integration-pipeline.yaml    # Pipeline integration
-└── kustomization.yaml               # 15 lines - resource list
+├── eks-XX.yaml                      # Cluster specification
+├── cluster/
+│   ├── namespace.yaml                    # 4 lines
+│   ├── cluster.yaml                     # 18 lines - CAPI binding
+│   ├── awsmanagedcontrolplane.yaml      # 18 lines - EKS control plane
+│   ├── awsmanagedmachinepool.yaml       # 20 lines - EKS workers
+│   ├── managedcluster.yaml              # 14 lines - ACM registration
+│   ├── klusterletaddonconfig.yaml       # 21 lines - ACM config
+│   ├── external-secrets.yaml            # External secrets config
+│   ├── acm-integration-pipeline.yaml    # Pipeline integration
+│   └── kustomization.yaml               # 15 lines - resource list
+├── operators/
+├── pipelines/
+├── deployments/
+└── gitops/
 
 # Note: klusterlet-crd.yaml NOT generated - CRD managed by ACM hub
 ```
@@ -75,11 +87,17 @@ clusters/eks-XX/
 ### HCP Cluster Output
 ```
 clusters/hcp-XX/
-├── namespace.yaml                    # 4 lines
-├── hostedcluster.yaml               # 45 lines - HyperShift config
-├── ssh-key-secret.yaml              # 8 lines - SSH key secret
-├── klusterletaddonconfig.yaml       # 21 lines - ACM config
-└── kustomization.yaml               # 25 lines - resource list with patches
+├── hcp-XX.yaml                      # Cluster specification
+├── cluster/
+│   ├── namespace.yaml                    # 4 lines
+│   ├── hostedcluster.yaml               # 45 lines - HyperShift config
+│   ├── ssh-key-secret.yaml              # 8 lines - SSH key secret
+│   ├── klusterletaddonconfig.yaml       # 21 lines - ACM config
+│   └── kustomization.yaml               # 25 lines - resource list with patches
+├── operators/
+├── pipelines/
+├── deployments/
+└── gitops/
 ```
 
 ## Default Values Requirements
@@ -128,15 +146,14 @@ defaults:
 
 ## Input Format Requirements
 
-### Required Regional Specification
+### Required Cluster Specification
 
 ```yaml
-# regions/us-east-1/ocp-01/region.yaml
-apiVersion: regional.openshift.io/v1
-kind: RegionalCluster
+# clusters/ocp-01/ocp-01.yaml
+apiVersion: cluster.openshift.io/v1
+kind: ClusterSpec
 metadata:
   name: ocp-01
-  namespace: us-east-1
 spec:
   type: ocp                           # or 'eks', 'hcp'
   region: us-east-1
@@ -159,8 +176,8 @@ spec:
 ### Optional Worker Pool Configuration
 
 ```yaml
-# regions/us-east-1/ocp-01/workers.yaml (optional)
-apiVersion: regional.openshift.io/v1  
+# clusters/ocp-01/workers.yaml (optional)
+apiVersion: cluster.openshift.io/v1  
 kind: WorkerPool
 metadata:
   name: compute
@@ -183,15 +200,15 @@ spec:
 
 ### Integration Tests
 ```bash
-# Convert existing cluster to regional spec
-./bin/convert-cluster clusters/ocp-01 > /tmp/region.yaml
+# Convert existing cluster to new spec format
+./bin/convert-cluster clusters/ocp-01 > /tmp/cluster.yaml
 
-# Generate back to overlay format
-./bin/cluster-generate /tmp/region.yaml /tmp/test-cluster/
+# Generate back to directory structure
+./bin/cluster-generate /tmp/cluster.yaml /tmp/test-cluster/
 
 # Compare outputs
-kubectl kustomize clusters/ocp-01/ > /tmp/original.yaml
-kubectl kustomize /tmp/test-cluster/ > /tmp/generated.yaml
+kubectl kustomize clusters/ocp-01/cluster/ > /tmp/original.yaml
+kubectl kustomize /tmp/test-cluster/cluster/ > /tmp/generated.yaml
 diff /tmp/original.yaml /tmp/generated.yaml
 ```
 
@@ -211,19 +228,19 @@ argocd app create test-cluster \
 ### Phase 1: Validation
 ```bash
 # Convert existing cluster to new format
-./bin/convert-cluster clusters/ocp-02 > regions/us-east-1/ocp-01/region.yaml
+./bin/convert-cluster clusters/ocp-02 > clusters/ocp-01/ocp-01.yaml
 
-# Generate back to semantic naming
-./bin/cluster-generate regions/us-east-1/ocp-01/
+# Generate cluster directory structure
+./bin/cluster-generate clusters/ocp-01/ocp-01.yaml
 
 # Compare outputs
 diff -r clusters/ocp-02/ clusters/ocp-01/
 ```
 
 ### Phase 2: Parallel Operation
-- Keep existing `clusters/cluster-XX/` structure temporarily
-- Add new `regions/` structure with semantic naming 
-- Use generator to create semantic cluster directories
+- Keep existing `clusters/{cluster-name}/` flat structure temporarily
+- Add new consolidated structure with subdirectories
+- Use generator to create new cluster directory structure
 - Validate both produce identical results
 
 ### Phase 3: Migration

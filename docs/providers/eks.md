@@ -89,7 +89,7 @@ Critical quotas that commonly cause failures:
 
 ### Regional Cluster Specification
 
-**File**: `regions/{region}/{cluster-name}/region.yaml`
+**File**: `clusters/{cluster-name}/{cluster-name}.yaml`
 
 ```yaml
 apiVersion: regional.openshift.io/v1

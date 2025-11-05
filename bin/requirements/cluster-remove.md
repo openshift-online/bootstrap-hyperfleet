@@ -11,7 +11,7 @@
 
 ### Cluster Name Validation Logic
 1. **Input**: User provides cluster name to remove
-2. **Validate**: Verify cluster exists in regions/ directory structure
+2. **Validate**: Verify cluster exists in clusters/ directory structure
 3. **Confirm**: Prompt user for confirmation before removal
 4. **Remove**: Delete all references systematically
 5. **Verify**: Confirm complete removal
@@ -29,7 +29,7 @@ The tool prompts for required input with validation:
 
 - **Cluster Name** (string, required)
   - Validates cluster name format matches semantic naming
-  - Checks cluster exists in `regions/` directory
+  - Checks cluster exists in `clusters/` directory
   - Confirms cluster has generated files to remove
   - Shows what will be removed before proceeding
 
@@ -46,22 +46,14 @@ Systematically removes all cluster references in order:
 #### Phase 2: Repository File Removal
 Remove all generated files in dependency order:
 
-1. **Regional Specification**: `regions/[region]/[cluster-name]/`
-   - Remove the source `region.yaml` file
-   - Remove parent directory if empty
-2. **GitOps Applications**: `gitops-applications/[cluster-name].yaml`
-   - Remove ArgoCD ApplicationSet configuration
-   - Update `gitops-applications/kustomization.yaml` to remove reference
-3. **Cluster Manifests**: `clusters/[cluster-name]/`
-   - Remove all cluster deployment manifests
-   - Includes install-config, namespace, deployment resources
-4. **Operator Deployments**: `operators/openshift-pipelines/[cluster-name]/`
-   - Remove cluster-specific operator configurations
-5. **Pipeline Configurations**: 
-   - `pipelines/hello-world/[cluster-name]/`
-   - `pipelines/cloud-infrastructure-provisioning/[cluster-name]/`
-6. **Service Deployments**: `deployments/ocm/[cluster-name]/`
-   - Remove cluster-specific service configurations
+1. **Cluster Directory**: `clusters/[cluster-name]/`
+   - Remove cluster specification `[cluster-name].yaml`
+   - Remove `cluster/` subdirectory with all deployment manifests
+   - Remove `operators/` subdirectory with operator configurations
+   - Remove `pipelines/` subdirectory with all pipeline configurations
+   - Remove `deployments/` subdirectory with service deployments
+   - Remove `gitops/` subdirectory with ArgoCD ApplicationSet
+   - Remove entire cluster directory
 
 ### 3. Safety Features and Validation
 - **Pre-removal validation**: Verify all expected files exist
@@ -97,7 +89,7 @@ Remove all generated files in dependency order:
 ### Validation Errors
 - Cluster name format validation with helpful examples
 - Missing cluster detection with suggestions for similar names
-- Empty regions directory handling
+- Empty clusters directory handling
 
 ### Removal Errors
 - Hub cluster connection failures (continue with file removal)

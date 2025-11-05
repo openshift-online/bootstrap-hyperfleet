@@ -95,7 +95,7 @@ This document provides comprehensive technical documentation for Red Hat OpenShi
 
 ### Regional Cluster Specification
 
-**File**: `regions/{region}/{cluster-name}/region.yaml`
+**File**: `clusters/{cluster-name}/{cluster-name}.yaml`
 
 ```yaml
 apiVersion: regional.openshift.io/v1

@@ -6,7 +6,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                          EXTERNAL BOOTSTRAP (GitHub)                               │
-│                            oc apply -k gitops-applications/                        │
+│                            oc apply -k clusters/global/gitops/                     │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐                  │
@@ -185,47 +185,42 @@ Hub Cluster ApplicationSet
 ### Current Directory Organization
 ```
 bootstrap/
-├── regions/                        # ✅ Regional cluster specifications (input)
-│   ├── us-east-1/
-│   │   ├── my-cluster/             # Simple region.yaml format
-│   │   └── prod-api/               # Minimal cluster configuration
-│   ├── us-west-2/
-│   │   └── staging-cluster/
-│   └── ap-southeast-1/
-│       └── eks-cluster/
+├── clusters/
+│   ├── global/                     # Hub cluster configuration
+│   │   ├── operators/              # Hub cluster operators
+│   │   │   ├── openshift-gitops/   # Self-managing GitOps operator
+│   │   │   ├── advanced-cluster-management/  # ACM ApplicationSet
+│   │   │   ├── openshift-pipelines/# Pipelines hub deployment
+│   │   │   ├── vault/              # Vault secret management
+│   │   │   └── external-secrets/   # ESO for secret sync
+│   │   ├── pipelines/              # Hub cluster pipelines
+│   │   │   ├── cluster-bootstrap/  # Bootstrap pipelines
+│   │   │   └── hub-provisioner/    # Cluster provisioning pipelines
+│   │   └── gitops/                 # Hub cluster GitOps applications
+│   │       ├── openshift-gitops/   # Self-managing GitOps
+│   │       ├── advanced-cluster-management/  # ACM ApplicationSet
+│   │       ├── vault/              # Vault application
+│   │       ├── eso/                # ESO application
+│   │       ├── gitea/              # Internal Git service
+│   │       └── cluster-bootstrap/  # Bootstrap application
+│   │
+│   ├── my-cluster/                 # Managed cluster configuration
+│   │   ├── my-cluster.yaml         # Cluster specification
+│   │   ├── cluster/                # Cluster provisioning resources
+│   │   ├── operators/              # Cluster-specific operators
+│   │   ├── pipelines/              # Cluster-specific pipelines
+│   │   ├── deployments/            # Cluster-specific deployments
+│   │   └── gitops/                 # Cluster-specific GitOps applications
+│   │
+│   └── eks-cluster/                # Another managed cluster
+│       ├── eks-cluster.yaml        # Cluster specification
+│       ├── cluster/                # EKS: CAPI resources
+│       ├── operators/
+│       ├── pipelines/
+│       ├── deployments/
+│       └── gitops/
 │
-├── clusters/                       # ✅ Generated cluster configs (auto-generated)
-│   ├── my-cluster/                 # OCP: Hive resources
-│   ├── prod-api/                   # OCP: Hive resources  
-│   ├── staging-cluster/            # OCP: Hive resources
-│   └── eks-cluster/                # EKS: CAPI resources
-│
-├── operators/                      # ✅ Operator deployments by type and target
-│   ├── openshift-gitops/global/    # Self-managing GitOps operator
-│   ├── advanced-cluster-management/global/  # ACM ApplicationSet
-│   ├── openshift-pipelines/global/ # Pipelines hub deployment
-│   ├── vault/global/               # Vault secret management
-│   └── external-secrets/global/    # ESO for secret sync
-│
-├── pipelines/                      # ✅ Tekton pipelines per cluster
-│   ├── cluster-bootstrap/global/   # Bootstrap pipelines
-│   └── hub-provisioner/global/     # Cluster provisioning pipelines
-│
-├── deployments/                    # ✅ Service deployments per cluster
-│   └── ocm/                        # OCM services (currently minimal)
-│
-├── gitops-applications/            # ✅ ArgoCD ApplicationSets and Applications
-│   ├── global/                     # Hub cluster applications
-│   │   ├── openshift-gitops/       # Self-managing GitOps
-│   │   ├── advanced-cluster-management/  # ACM ApplicationSet
-│   │   ├── vault/                  # Vault application
-│   │   ├── eso/                    # ESO application
-│   │   ├── gitea/                  # Internal Git service
-│   │   └── cluster-bootstrap/      # Bootstrap application
-│   └── clusters/                   # Self-referential cluster ApplicationSets
-│       └── cluster-bootstrap-applicationset.yaml  # Internal Gitea reference
-│
-└── bases/                          # ✅ Reusable templates
+└── bases/                          # Reusable templates
     ├── clusters/                   # Cluster provisioning templates
     └── pipelines/                  # Pipeline templates
 ```

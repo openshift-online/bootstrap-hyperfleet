@@ -14,8 +14,7 @@ cd bootstrap
 oc login https://api.your-hub-cluster.example.com:6443
 
 # 3. Bootstrap the hub cluster
-oc apply -k operators/openshift-gitops/global
-oc apply -k gitops-applications/
+oc apply -k clusters/global/
 ```
 
 **What this does:**
@@ -41,13 +40,9 @@ The cluster automatically:
 
 ```
 bootstrap/
-├── regions/                     # Start here: Define new clusters
-│   └── us-east-1/
-│       └── my-cluster/
-│           └── region.yaml      # Cluster specification
-├── 
-├── gitops-applications/         # ArgoCD ApplicationSets
-├── operators/                   # Hub cluster operators
+├── clusters/
+│   ├── global/                  # Hub cluster resources
+│   └── {cluster-name}/          # Managed cluster resources
 ├── bases/                       # Reusable templates
 └── bin/                         # Management tools
 ```
@@ -134,10 +129,10 @@ echo "Gitea: https://$(oc get route gitea -n gitea-system -o jsonpath='{.spec.ho
 
 The repository supports customization through:
 
-- **Region specifications**: Define cluster requirements in `regions/`
+- **Cluster specifications**: Define cluster requirements in `clusters/{cluster-name}/{cluster-name}.yaml`
 - **Base templates**: Modify shared components in `bases/`
-- **Operator configurations**: Customize deployments in `operators/`
-- **Pipeline definitions**: Add custom workflows in `pipelines/`
+- **Hub operators**: Customize deployments in `clusters/global/operators/`
+- **Cluster resources**: Customize per-cluster resources in `clusters/{cluster-name}/`
 
 ## Support
 

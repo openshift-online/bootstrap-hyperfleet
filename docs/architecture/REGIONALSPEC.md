@@ -17,28 +17,51 @@ bases/
 │       ├── cluster.yaml       # CAPI Cluster template
 │       └── workers.yaml       # AWSManagedMachinePool template
 │
-regions/
-├── us-east-1/                 # Region-based organization
-│   ├── ocp-02/            # OCP cluster (maintains cluster-XX naming)
-│   │   └── region.yaml        # 7 lines - ALL cluster config
-│   └── ocp-03/            # Another OCP cluster
-│       └── region.yaml        # Simple key-value format
+clusters/
+├── global/                    # Hub cluster configuration
+│   ├── operators/
+│   ├── pipelines/
+│   └── gitops/
 │
-├── eu-west-1/                 # Different region
-│   └── ocp-05/            # EKS cluster
-│       └── region.yaml        # Same simple format for EKS
+├── ocp-02/                    # Managed cluster
+│   ├── ocp-02.yaml            # Cluster specification
+│   ├── cluster/               # OCP: Hive resources
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
 │
-└── ap-southeast-1/            # Asia Pacific region
-    └── eks-02/            # EKS cluster
-        └── region.yaml        # 6 lines - minimal config
+├── ocp-03/                    # Another managed cluster
+│   ├── ocp-03.yaml
+│   ├── cluster/
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
+│
+├── ocp-05/                    # EKS cluster
+│   ├── ocp-05.yaml
+│   ├── cluster/               # EKS: CAPI resources
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
+│
+└── eks-02/                    # Another EKS cluster
+    ├── eks-02.yaml
+    ├── cluster/
+    ├── operators/
+    ├── pipelines/
+    ├── deployments/
+    └── gitops/
 ```
 
 ## Minimal Regional Cluster Spec
 
-**Single file defines entire cluster** (region.yaml) - **Simplified Format**:
+**Single file defines entire cluster** ({cluster-name}.yaml) - **Simplified Format**:
 
 ```yaml
-# regions/us-east-1/ocp-02/region.yaml
+# clusters/ocp-02/ocp-02.yaml
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
@@ -56,7 +79,7 @@ spec:
 ```
 
 ```yaml
-# regions/us-east-2/eks-01-mturansk-test/region.yaml
+# clusters/eks-01-mturansk-test/eks-01-mturansk-test.yaml
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
@@ -80,7 +103,7 @@ spec:
 **Workers file only when different from defaults** (currently not implemented, but reserved):
 
 ```yaml  
-# regions/us-east-1/ocp-02/workers.yaml (optional)
+# clusters/ocp-02/workers.yaml (optional)
 instanceType: m5.2xlarge           # Different from default
 replicas: 5                        # Different from default
 minSize: 2
@@ -100,20 +123,20 @@ maxSize: 10
 
 **Phase 1**: Create converter tool ✅
 ```bash
-# Convert existing cluster to regional format
-./bin/convert-cluster clusters/ocp-02 > regions/us-east-1/ocp-02/region.yaml
+# Convert existing cluster to new format
+./bin/convert-cluster clusters/ocp-02 > clusters/ocp-02/ocp-02.yaml
 ```
 
 **Phase 2**: Generate traditional Kustomize resources ✅
 ```bash  
-# Generate cluster overlays from regional specs
-./bin/cluster-generate regions/us-east-1/ocp-02/ clusters/ocp-02/
+# Generate cluster overlays from cluster specs
+./bin/cluster-generate clusters/ocp-02/ocp-02.yaml clusters/ocp-02/cluster/
 ```
 
-**Phase 3**: Parallel operation ✅ ACTIVE
-- ✅ Regional specifications implemented in `regions/`
-- ✅ Traditional cluster overlays maintained in `clusters/`
-- ✅ Converter tools available for bidirectional conversion
+**Phase 3**: Consolidated structure ✅ ACTIVE
+- ✅ Cluster specifications in `clusters/{cluster-name}/{cluster-name}.yaml`
+- ✅ Cluster provisioning resources in `clusters/{cluster-name}/cluster/`
+- ✅ Converter tools available for generation
 - ✅ Templates maintained in `bases/clusters/`
 
 ## Default Assumptions
@@ -143,12 +166,12 @@ defaults:
 ## Before/After Comparison
 
 **Before** (ocp-02 traditional):
-- 4 files in clusters/ocp-02/: namespace.yaml, kustomization.yaml, install-config.yaml, klusterletaddonconfig.yaml
+- 4 files in clusters/ocp-02/cluster/: namespace.yaml, kustomization.yaml, install-config.yaml, klusterletaddonconfig.yaml
 - Complex install-config with nested OpenShift configuration
 - Need to read multiple files to understand cluster config
 
-**After** (ocp-02 regional):  
-- 1 file: regions/us-east-1/ocp-02/region.yaml
+**After** (ocp-02 consolidated):  
+- 1 file: clusters/ocp-02/ocp-02.yaml
 - 7 lines total with key-value pairs
 - All essential configuration visible at once
 - Zero patches, zero template hunting
@@ -168,7 +191,7 @@ compute:
   replicas: 1
 # ... 40+ more lines
 
-# After: region.yaml (19 lines)
+# After: ocp-02.yaml (19 lines)
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
@@ -195,7 +218,7 @@ The repository successfully implements **regional cluster specifications** along
 
 ```
 bases/
-├── clusters/                # Base templates (replaces regions/templates/)
+├── clusters/                # Base templates
 │   ├── clusterdeployment.yaml
 │   ├── managedcluster.yaml
 │   ├── machinepool.yaml
@@ -203,36 +226,51 @@ bases/
 │       ├── cluster.yaml
 │       └── workers.yaml
 │
-clusters/                    # Traditional cluster overlays
-├── ocp-02/              # OCP cluster (Hive-based)
-├── ocp-03/              # OCP cluster (Hive-based)
-├── ocp-04/              # OCP cluster (Hive-based)
-├── eks-02/              # EKS cluster (CAPI-based)
-└── ocp-05/              # EKS cluster (CAPI-based)
-
-regions/                     # ✅ IMPLEMENTED: Regional specifications
-├── us-east-1/
-│   ├── ocp-02/          # Simple regional spec
-│   └── ocp-03/
-├── us-west-2/
-│   └── ocp-04/
-├── ap-southeast-1/
-│   └── eks-02/
-└── eu-west-1/
-    └── ocp-05/
-
-deployments/ocm/             # Service deployments per cluster
-├── ocp-02/              # OCM services for ocp-02
-├── ocp-03/              # OCM services for ocp-03
-├── ocp-04/              # OCM services for ocp-04
-├── eks-02/              # OCM services for eks-02
-└── ocp-05/              # OCM services for ocp-05
-
-gitops-applications/
-├── ocp-02.yaml          # Cluster + services ApplicationSet
-├── ocp-03.yaml          # Cluster + services ApplicationSet
-├── ocp-04.yaml          # Cluster + services ApplicationSet
-└── ocp-05.yaml          # Cluster + services ApplicationSet
+clusters/
+├── global/                  # Hub cluster configuration
+│   ├── operators/
+│   ├── pipelines/
+│   └── gitops/
+│
+├── ocp-02/                  # Managed cluster
+│   ├── ocp-02.yaml          # Cluster specification
+│   ├── cluster/             # OCP: Hive-based provisioning resources
+│   ├── operators/           # Cluster-specific operators
+│   ├── pipelines/           # Cluster-specific pipelines
+│   ├── deployments/         # OCM services for ocp-02
+│   └── gitops/              # Cluster ApplicationSets
+│
+├── ocp-03/
+│   ├── ocp-03.yaml
+│   ├── cluster/
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
+│
+├── ocp-04/
+│   ├── ocp-04.yaml
+│   ├── cluster/
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
+│
+├── eks-02/                  # EKS cluster (CAPI-based)
+│   ├── eks-02.yaml
+│   ├── cluster/
+│   ├── operators/
+│   ├── pipelines/
+│   ├── deployments/
+│   └── gitops/
+│
+└── ocp-05/
+    ├── ocp-05.yaml
+    ├── cluster/
+    ├── operators/
+    ├── pipelines/
+    ├── deployments/
+    └── gitops/
 ```
 
 ### Required vs Optional Files Analysis
@@ -337,7 +375,7 @@ bases/clusters/              # ✅ Base templates implemented
 
 #### **For OCP Clusters** ✅ SIMPLIFIED:
 ```
-clusters/cluster-XX/
+clusters/cluster-XX/cluster/
 ├── namespace.yaml                    # 4 lines
 ├── install-config.yaml              # 46 lines - direct OpenShift config
 ├── klusterletaddonconfig.yaml       # 21 lines - ACM config
@@ -345,16 +383,16 @@ clusters/cluster-XX/
 ```
 **Total**: ~81 lines (simplified from complex base+patch pattern)
 
-**Regional Specification**:
+**Cluster Specification**:
 ```
-regions/region-name/cluster-XX/
-└── region.yaml                      # 19 lines - ALL config
+clusters/cluster-XX/
+└── cluster-XX.yaml                  # 19 lines - ALL config
 ```
 **Total**: ~19 lines (77% reduction in complexity)
 
 #### **For EKS Clusters** (Pattern is optimal):
 ```
-clusters/cluster-XX/
+clusters/cluster-XX/cluster/
 ├── namespace.yaml                    # 4 lines
 ├── cluster.yaml                     # 18 lines
 ├── awsmanagedcontrolplane.yaml      # 18 lines
@@ -365,33 +403,33 @@ clusters/cluster-XX/
 ```
 **Total**: ~110 lines (already streamlined)
 
-**Regional Specification**:
+**Cluster Specification**:
 ```
-regions/region-name/cluster-XX/
-└── region.yaml                      # 19 lines - ALL config
+clusters/cluster-XX/
+└── cluster-XX.yaml                  # 19 lines - ALL config
 ```
 **Total**: ~19 lines (83% reduction in complexity)
 
 ### Implementation Status ✅
 
 1. **✅ Eliminate Base+Patch Pattern**: OCP clusters simplified to direct configuration files
-2. **✅ Regional Specifications**: Implemented simple key-value format in `regions/`
+2. **✅ Cluster Specifications**: Implemented simple key-value format in `clusters/{cluster-name}/{cluster-name}.yaml`
 3. **✅ Template-based Generation**: Converter tools (`bin/convert-cluster`, `bin/cluster-generate`) implemented
-4. **✅ Minimal File Set**: Regional specs reduced to 1 file per cluster
+4. **✅ Minimal File Set**: Cluster specs reduced to 1 file per cluster
 5. **✅ Base Templates**: Consolidated in `bases/clusters/` following Kustomize conventions
 
 ### Current Benefits Achieved
 
-- **Cognitive Simplicity**: Regional specs readable in 10 seconds
+- **Cognitive Simplicity**: Cluster specs readable in 10 seconds
 - **Bidirectional Conversion**: Can convert between formats as needed
 - **Template Reuse**: Base templates in `bases/clusters/` eliminate duplication
-- **Regional Organization**: Physical location obvious from directory structure
+- **Consolidated Organization**: All cluster resources in one location
 - **Tool Integration**: Generation tools enable automation and validation
 
 ### Related Documentation
 
-- **[Convert Cluster Tool](./bin/convert-cluster.md)** - Convert overlays to regional specs
-- **[Generate Cluster Tool](./bin/cluster-generate.md)** - Generate overlays from regional specs
+- **[Convert Cluster Tool](./bin/convert-cluster.md)** - Convert overlays to cluster specs
+- **[Generate Cluster Tool](./bin/cluster-generate.md)** - Generate overlays from cluster specs
 - **[Cluster Creation Guide](./guides/cluster-creation.md)** - End-to-end deployment workflow
 
-The regional cluster specification design has been **successfully implemented** with practical adaptations that maintain the core principles while following established Kustomize conventions.
+The cluster specification design has been **successfully implemented** with practical adaptations that maintain the core principles while following established Kustomize conventions.

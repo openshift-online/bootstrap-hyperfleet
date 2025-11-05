@@ -9,8 +9,7 @@
 git clone https://github.com/openshift-online/bootstrap.git
 cd bootstrap
 oc login https://api.your-hub-cluster.example.com:6443
-oc apply -k operators/openshift-gitops/global
-oc apply -k gitops-applications/
+oc apply -k clusters/global/
 
 # 2. Add your first cluster
 ./bin/cluster-create
@@ -43,119 +42,48 @@ The repository uses **semantic directory organization** designed for intuitive n
 
 ### 🔍 Semantic Organization Patterns
 
-**Top-level directories represent "things":**
-- `clusters/` - Cluster provisioning configurations
-- `operators/` - Application/operator deployments  
-- `pipelines/` - Pipeline configurations
-- `deployments/` - Service deployments
-- `regions/` - Regional cluster specifications
+**Top-level directories:**
+- `clusters/` - All cluster resources (hub and managed)
 - `bases/` - Reusable template components
+- `bin/` - Management scripts
 
-**Nested patterns follow logical hierarchy:**
-- **operators/{operator-name}/{deployment-target}/** - Service-first, then location
-- **pipelines/{pipeline-name}/{cluster-name}/** - Pipeline type, then target cluster  
-- **deployments/{service-name}/{cluster-name}/** - Service type, then deployment location
-- **regions/{aws-region}/{cluster-name}/** - Geographic organization
-
-**Deployment targets are consistent:**
-- `global/` - Hub cluster deployments (shared infrastructure)
-- `{cluster-name}/` - Managed cluster-specific deployments (e.g., `ocp-02/`, `eks-01/`)
-
-The repository is designed for **intuitive navigation** with each directory level showing your next options:
-
-### 🔧 Generation Input (where you start)
+**Consolidated structure:**
 ```bash
-regions/                          # Available AWS regions
-├── us-east-1/                   # Region-specific clusters
-│   ├── ocp-02/              # Individual cluster specifications
-│   │   └── region.yaml          # ← START HERE: cluster configuration
-│   └── ocp-03/
-└── us-west-2/
-    └── eks-02/
-```
+clusters/
+├── global/                      # Hub cluster resources
+│   ├── operators/              # ACM, GitOps, Pipelines, Vault
+│   ├── pipelines/              # Hub provisioner pipelines
+│   └── gitops/                 # ArgoCD ApplicationSets
+└── {cluster-name}/             # Managed cluster (e.g., ocp-02, eks-01)
+    ├── {cluster-name}.yaml     # Cluster specification
+    ├── cluster/                # Provisioning resources (Hive/CAPI)
+    ├── operators/              # Cluster operators
+    ├── pipelines/              # Cluster pipelines
+    ├── deployments/            # Cluster deployments
+    └── gitops/                 # Cluster GitOps apps
 
-### 🏭 Base Templates (shared components)
-```bash
 bases/
-├── clusters/                    # Common cluster templates
-├── pipelines/                   # Reusable Tekton pipelines
-└── ocm/                        # OCM service templates
-```
-
-### 🎯 Generated Overlays (automated output)
-```bash
-clusters/                        # Cluster provisioning (auto-generated)
-├── ocp-02/                 # OCP cluster (Hive resources)
-├── ocp-03/                 # OCP cluster (Hive resources)  
-└── eks-02/                 # EKS cluster (CAPI resources)
-
-pipelines/                       # Pipeline deployments (auto-generated)
-├── hello-world/
-│   ├── ocp-02/             # Pipeline runs for ocp-02
-│   └── ocp-03/             # Pipeline runs for ocp-03
-└── cloud-infrastructure-provisioning/
-    ├── ocp-02/
-    └── ocp-03/
-
-deployments/                     # Service deployments (auto-generated)
-└── ocm/
-    ├── ocp-02/             # OCM services for ocp-02
-    └── ocp-03/             # OCM services for ocp-03
-
-operators/                       # Operator deployments ({operator-name}/{deployment-target})
-├── advanced-cluster-management/
-│   └── global/                 # ACM hub cluster deployment
-├── gitops-integration/
-│   └── global/                 # GitOps integration policies
-├── openshift-pipelines/
-│   ├── global/                 # Pipelines hub cluster deployment
-│   ├── ocp-02/             # Pipelines operator for ocp-02
-│   ├── ocp-03/             # Pipelines operator for ocp-03
-│   └── eks-02/             # Pipelines operator for eks-02
-└── vault/
-    └── global/                 # Vault secret management
-```
-
-### 🚀 GitOps Applications (orchestration)
-```bash
-gitops-applications/             # ArgoCD ApplicationSets
-├── ocp-02.yaml            # ApplicationSet for ocp-02 (all components)
-├── ocp-03.yaml            # ApplicationSet for ocp-03 (all components)
-└── kustomization.yaml          # Main GitOps entry point
+├── clusters/                   # Cluster provisioning templates
+├── operators/                  # Operator base configurations
+└── pipelines/                  # Reusable Tekton pipelines
 ```
 
 ## 🧭 Navigation Pattern
 
-**Each level shows your next options** - making discovery and management intuitive:
-
 ```bash
-# Start with regions to see what's available
-ls regions/                     # → us-east-1, us-west-2, eu-west-1
+# View all clusters
+ls clusters/                        # → global, ocp-02, ocp-03, eks-01
 
-# Drill down to see clusters in a region  
-ls regions/us-east-1/          # → ocp-02, ocp-03, ocp-04
+# View hub cluster resources
+ls clusters/global/                 # → operators, pipelines, gitops
+ls clusters/global/operators/       # → advanced-cluster-management, gitops-integration, openshift-gitops, openshift-pipelines, vault
 
-# See what's deployed for any cluster
-ls clusters/                   # → ocp-02, ocp-03, eks-02
-ls pipelines/hello-world/      # → ocp-02, ocp-03, eks-02  
-ls deployments/ocm/           # → ocp-02, ocp-03, eks-02
-ls operators/openshift-pipelines/ # → global, ocp-02, ocp-03, eks-02
+# View managed cluster resources
+ls clusters/ocp-02/                 # → ocp-02.yaml, cluster, operators, pipelines, deployments, gitops
 
-# Check GitOps applications
-ls gitops-applications/       # → ocp-02.yaml, ocp-03.yaml, global/
-
-# Explore operators by type
-ls operators/                 # → advanced-cluster-management, gitops-integration, openshift-pipelines, vault
-ls operators/vault/           # → global/
+# View reusable bases
+ls bases/                           # → clusters, operators, pipelines
 ```
-
-**🎯 Key Navigation Benefits:**
-- **Consistent pattern**: Every directory level follows the same structure
-- **Self-documenting**: Directory names clearly indicate their purpose  
-- **Easy discovery**: `ls` at any level shows your available options
-- **Logical grouping**: Related resources are co-located
-- **Semantic organization**: Resource type first, then deployment target
-- **Global vs Regional**: Clear separation between hub cluster (`global/`) and managed cluster (`cluster-XX/`) deployments
 
 ## 🚀 How Reuse Works
 
@@ -164,8 +92,7 @@ ls operators/vault/           # → global/
 **Phase 1: Bootstrap from GitHub**
 ```bash
 git clone https://github.com/openshift-online/bootstrap.git
-oc apply -k operators/openshift-gitops/global
-oc apply -k gitops-applications/
+oc apply -k clusters/global/
 ```
 
 **Phase 2: Self-Referential Management**
@@ -232,7 +159,7 @@ sequenceDiagram
    participant ACM
    participant Target as Managed Cluster
    
-   Admin->>Generator: ./bin/cluster-generate regions/us-west-2/ocp-05/
+   Admin->>Generator: ./bin/cluster-create
    Generator->>Git: Create overlays + ApplicationSet
    
    Admin->>Hub: ./bin/bootstrap.sh

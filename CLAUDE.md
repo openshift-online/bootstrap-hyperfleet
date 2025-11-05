@@ -18,28 +18,28 @@ The codebase is organized into several key components:
 
 ### Directory Structure
 
-The project uses semantic directory organization with consistent patterns:
+The project uses consolidated directory organization:
 
-**Top-level "things":**
-- `clusters/`: Cluster deployment configurations (auto-generated from regions/)
-- `operators/`: Operator/application deployments following {operator-name}/{deployment-target} pattern
-- `pipelines/`: Tekton pipeline configurations following {pipeline-name}/{cluster-name} pattern
-- `deployments/`: Service deployments following {service-name}/{cluster-name} pattern
-- `regions/`: Regional cluster specifications (input for generation)
+**Top-level directories:**
+- `clusters/`: All cluster resources (hub and managed)
+  - `global/`: Hub cluster resources (operators, pipelines, gitops)
+  - `{cluster-name}/`: Managed cluster resources ({cluster-name}.yaml, cluster/, operators/, pipelines/, deployments/, gitops/)
 - `bases/`: Reusable Kustomize base components
-- `gitops-applications/`: ArgoCD ApplicationSets for GitOps automation
+- `bin/`: Management scripts
 - `prereqs/`: Prerequisites for bootstrap process
 
-**Operator deployments organized semantically:**
-- `operators/advanced-cluster-management/global/`: ACM hub cluster deployment
-- `operators/gitops-integration/global/`: GitOps integration policies and configurations
-- `operators/openshift-pipelines/global/`: Pipelines hub cluster deployment  
-- `operators/openshift-pipelines/{cluster-name}/`: Tekton Pipelines operator per managed cluster
-- `operators/vault/global/`: Vault secret management system
+**Hub cluster structure:**
+- `clusters/global/operators/`: ACM, GitOps integration, OpenShift GitOps, OpenShift Pipelines, Vault
+- `clusters/global/pipelines/`: Hub provisioner pipelines
+- `clusters/global/gitops/`: ArgoCD ApplicationSets
 
-**Deployment targets:**
-- `global/`: Hub cluster deployments (shared infrastructure)
-- `{cluster-name}/`: Managed cluster-specific deployments (e.g., `ocp-02/`, `eks-01/`)
+**Managed cluster structure:**
+- `clusters/{cluster-name}/{cluster-name}.yaml`: Cluster specification
+- `clusters/{cluster-name}/cluster/`: Provisioning resources (Hive/CAPI)
+- `clusters/{cluster-name}/operators/`: Cluster-specific operators
+- `clusters/{cluster-name}/pipelines/`: Cluster-specific pipelines
+- `clusters/{cluster-name}/deployments/`: Cluster-specific deployments
+- `clusters/{cluster-name}/gitops/`: Cluster-specific GitOps applications
 
 ## Key Technologies
 
