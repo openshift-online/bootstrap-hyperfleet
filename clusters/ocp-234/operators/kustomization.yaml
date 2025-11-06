@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ocm-ocp-234
+
+commonAnnotations:
+  cluster: ocp-234
+  cluster-type: ocp
+  version: "v0.0.1"
+
+resources:
+  - ../../../bases/operators/openshift-pipelines/overlays/pipelines-operator-only
