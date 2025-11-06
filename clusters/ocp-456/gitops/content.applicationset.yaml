@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-456-content
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: operators
+        path: clusters/ocp-456/operators
+        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        syncWave: "10"
+      - component: pipelines
+        path: clusters/ocp-456/pipelines
+        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        syncWave: "20"
+      - component: deployments
+        path: clusters/ocp-456/deployments
+        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        syncWave: "30"
+  
+  template:
+    metadata:
+      name: ocp-456-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: ocp-456
+        phase: content
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+          allowEmpty: false
+        syncOptions:
+        - CreateNamespace=true
