@@ -1170,6 +1170,22 @@ EOF
     fi
 }
 
+update_gitops_kustomization() {
+    local gitops_kustomization="clusters/global/gitops/kustomization.yaml"
+    local cluster_gitops_ref="- ../../$FULL_CLUSTER_NAME/gitops/"
+    
+    # Check if the cluster gitops is already referenced
+    if ! grep -q "$FULL_CLUSTER_NAME/gitops/" "$gitops_kustomization"; then
+        echo "Adding $FULL_CLUSTER_NAME/gitops/ to clusters/global/gitops/kustomization.yaml"
+        
+        # Insert after the "# Cluster ApplicationSets" comment
+        sed -i "/# Cluster ApplicationSets/a\\
+$cluster_gitops_ref" "$gitops_kustomization"
+    else
+        echo "$FULL_CLUSTER_NAME/gitops/ already exists in clusters/global/gitops/kustomization.yaml"
+    fi
+}
+
 push_to_gitea() {
     echo ""
     echo "Pushing generated configurations to internal Gitea server..."
@@ -1285,6 +1301,7 @@ generate_deployments
 generate_gitops_applications
 generate_cluster_root_kustomization
 update_clusters_kustomization
+update_gitops_kustomization
 
 # Push to Gitea if requested
 if [ "$PUSH_TO_GITEA" = true ]; then
