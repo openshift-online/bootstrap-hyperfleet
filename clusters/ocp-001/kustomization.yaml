@@ -4,6 +4,6 @@ kind: Kustomization
 resources:
   - cluster/
   - operators/
-  - pipelines/
-  - deployments/
+  - pipelines/cloud-infrastructure/
+  - deployments/ocm/
   - gitops/

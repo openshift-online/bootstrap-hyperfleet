@@ -27,4 +27,11 @@ enable_console_plugin(){
   oc get consoles.operator.openshift.io cluster -o=jsonpath='{.spec.plugins}'
 }
 
+disable_tekton_results(){
+  echo "Disabling Tekton Results"
+  oc patch tektonconfig config --type=merge -p '{"spec":{"result":{"disabled":true}}}'
+  echo "Tekton Results disabled"
+}
+
 enable_console_plugin
+disable_tekton_results

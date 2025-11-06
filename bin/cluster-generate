@@ -840,7 +840,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - klusterletaddonconfig.yaml
-  - ../../bases/clusters
+  - ../../../bases/clusters
 
 # This will disable name hashing for all generators in this file
 generatorOptions:
@@ -959,18 +959,7 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../bases/operators/openshift-pipelines/global/overlays/pipelines-operator-only
-  - namespace.yaml
-EOF
-
-    # Generate namespace.yaml for operators
-    cat > "$OPERATORS_OUTPUT_DIR/namespace.yaml" << EOF
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-$FULL_CLUSTER_NAME
-  labels:
-    name: ocm-$FULL_CLUSTER_NAME
+  - ../../../bases/operators/openshift-pipelines/overlays/pipelines-operator-only
 EOF
 }
 
@@ -1033,21 +1022,8 @@ generate_deployments() {
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ocm-$FULL_CLUSTER_NAME
-
 resources:
-  - ../../../../bases/ocm
-  - namespace.yaml
-EOF
-
-    # Generate namespace.yaml for deployments
-    cat > "$DEPLOYMENTS_OUTPUT_DIR/namespace.yaml" << EOF
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocm-$FULL_CLUSTER_NAME
-  labels:
-    name: ocm-$FULL_CLUSTER_NAME
+  - ../../../../../bases/ocm
 EOF
 }
 

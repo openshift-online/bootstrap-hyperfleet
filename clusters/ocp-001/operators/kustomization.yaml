@@ -9,5 +9,4 @@ commonAnnotations:
   version: "v0.0.1"
 
 resources:
-  - ../../bases/operators/openshift-pipelines/global/overlays/pipelines-operator-only
-  - namespace.yaml
+  - ../../../bases/operators/openshift-pipelines/overlays/pipelines-operator-only
