@@ -7,14 +7,15 @@ metadata:
     description: "Pipeline for removing cluster configurations and disabling ArgoCD sync"
 spec:
   description: >-
-    Cluster removal pipeline that disables ArgoCD sync for a cluster,
-    commits the changes to the repository, and validates the sync is disabled.
+    Cluster removal pipeline that removes cluster from repository,
+    commits the changes to GitHub, deletes ArgoCD ApplicationSets,
+    and triggers bootstrap to reconcile changes.
   params:
     - name: cluster-name
       type: string
       description: "Name of the cluster to remove"
   tasks:
-    - name: disable-sync-and-commit
+    - name: remove-from-repo-and-commit
       taskSpec:
         params:
           - name: cluster-name
@@ -46,7 +47,7 @@ spec:
               # Add GitHub to known hosts
               ssh-keyscan github.com >> "$SSH_DIR/known_hosts" 2>/dev/null
               
-              # Configure git identity via environment variables
+              # Configure git identity
               export GIT_AUTHOR_NAME="Hub Provisioner Pipeline"
               export GIT_AUTHOR_EMAIL="hub-provisioner@bootstrap.red-chesterfield.com"
               export GIT_COMMITTER_NAME="Hub Provisioner Pipeline"
@@ -61,119 +62,102 @@ spec:
               GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no" \
                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
               
-              # Check if cluster ApplicationSet exists
-              APPSET_FILE="gitops-applications/clusters/$(params.cluster-name).yaml"
-              if [ ! -f "$APPSET_FILE" ]; then
-                echo "❌ ApplicationSet not found: $APPSET_FILE"
-                exit 1
-              fi
-              
-              echo "📝 Found ApplicationSet: $APPSET_FILE"
-              
-              # Disable automated sync by removing syncPolicy.automated section
-              echo "🔧 Disabling automated sync..."
-              
-              # Create temporary file with sync disabled
-              cat "$APPSET_FILE" | sed '/syncPolicy:/,/prune:/c\      syncPolicy:\n        automated: null\n        prune: false' > "${APPSET_FILE}.tmp"
-              
-              # Verify the change
-              if grep -q "automated: null" "${APPSET_FILE}.tmp"; then
-                mv "${APPSET_FILE}.tmp" "$APPSET_FILE"
-                echo "✅ Sync disabled in $APPSET_FILE"
-                cat "$APPSET_FILE"
-              else
-                echo "❌ Failed to disable sync"
-                cat "${APPSET_FILE}.tmp"
-                exit 1
-              fi
+              echo "🗑️ Running bin/cluster-remove..."
+              bash bin/cluster-remove "$(params.cluster-name)"
               
               # Commit and push changes
               echo "📝 Committing changes..."
-              git add .
+              git add -A
               
               if git diff --cached --quiet; then
                 echo "ℹ️ No changes to commit"
                 exit 0
               fi
               
-              git commit -m "Disable ArgoCD sync for cluster $(params.cluster-name)" \
-                -m "Preparing cluster $(params.cluster-name) for removal" \
-                -m "Generated with Claude Code" \
+              git commit -m "Remove cluster $(params.cluster-name)" \
+                -m "Automated cluster removal via pipeline" \
+                -m "🤖 Generated with Claude Code" \
+                -m "" \
                 -m "Co-Authored-By: Claude <noreply@anthropic.com>"
               
               GIT_SSH_COMMAND="ssh -i $SSH_KEY_FILE -o StrictHostKeyChecking=no" \
                 git push origin main
               
-              echo "✅ Changes committed and pushed"
-              echo "✅ Cluster removal workflow completed"
+              echo "✅ Changes committed and pushed to GitHub"
       params:
         - name: cluster-name
           value: "$(params.cluster-name)"
     
-    - name: validate-sync-disabled
+    - name: delete-applicationsets
       runAfter:
-        - disable-sync-and-commit
+        - remove-from-repo-and-commit
       taskSpec:
         params:
           - name: cluster-name
         steps:
-          - name: validate
+          - name: delete-appsets
             image: registry.redhat.io/openshift4/ose-cli
             script: |
               #!/bin/bash
               set -e
               
-              echo "🔍 Validating ArgoCD sync is disabled for: $(params.cluster-name)"
+              echo "🗑️ Deleting ArgoCD ApplicationSets for: $(params.cluster-name)"
               
-              # Wait for ArgoCD to reconcile (up to 2 minutes)
-              MAX_WAIT=120
-              WAIT_INTERVAL=10
-              ELAPSED=0
+              # Delete provisioning ApplicationSet
+              if oc get applicationset -n openshift-gitops "$(params.cluster-name)-provisioning" 2>/dev/null; then
+                echo "Deleting $(params.cluster-name)-provisioning ApplicationSet..."
+                oc delete applicationset -n openshift-gitops "$(params.cluster-name)-provisioning" --ignore-not-found=true
+                echo "✅ Deleted $(params.cluster-name)-provisioning"
+              else
+                echo "ℹ️ ApplicationSet $(params.cluster-name)-provisioning not found"
+              fi
               
-              while [ $ELAPSED -lt $MAX_WAIT ]; do
-                echo "⏳ Waiting for ArgoCD to reconcile... (${ELAPSED}s/${MAX_WAIT}s)"
-                
-                # Check ApplicationSet
-                if oc get applicationset -n openshift-gitops $(params.cluster-name)-applications >/dev/null 2>&1; then
-                  # Check if any application has automated sync disabled
-                  APPS=$(oc get applications.argoproj.io -n openshift-gitops -l app.kubernetes.io/instance=$(params.cluster-name)-applications -o name 2>/dev/null || echo "")
-                  
-                  if [ -z "$APPS" ]; then
-                    echo "ℹ️  No applications found yet, waiting for reconciliation..."
-                  else
-                    echo "📋 Checking applications:"
-                    echo "$APPS"
-                    
-                    # Check each application's sync policy
-                    SYNC_DISABLED=true
-                    for APP in $APPS; do
-                      AUTOMATED=$(oc get $APP -n openshift-gitops -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || echo "null")
-                      echo "  - $APP: automated=$AUTOMATED"
-                      
-                      if [ "$AUTOMATED" != "null" ] && [ "$AUTOMATED" != "" ]; then
-                        SYNC_DISABLED=false
-                      fi
-                    done
-                    
-                    if [ "$SYNC_DISABLED" = "true" ]; then
-                      echo "✅ ArgoCD sync is disabled for $(params.cluster-name)"
-                      exit 0
-                    fi
-                  fi
-                fi
-                
-                sleep $WAIT_INTERVAL
-                ELAPSED=$((ELAPSED + WAIT_INTERVAL))
-              done
+              # Delete content ApplicationSet
+              if oc get applicationset -n openshift-gitops "$(params.cluster-name)-content" 2>/dev/null; then
+                echo "Deleting $(params.cluster-name)-content ApplicationSet..."
+                oc delete applicationset -n openshift-gitops "$(params.cluster-name)-content" --ignore-not-found=true
+                echo "✅ Deleted $(params.cluster-name)-content"
+              else
+                echo "ℹ️ ApplicationSet $(params.cluster-name)-content not found"
+              fi
               
-              echo "⚠️  Timeout waiting for ArgoCD to reconcile"
-              echo "Current ApplicationSet status:"
-              oc get applicationset -n openshift-gitops $(params.cluster-name)-applications -o yaml || true
-              exit 1
+              echo "✅ ApplicationSet deletion complete"
+              echo "Note: Resources will be pruned automatically due to prune: true setting"
       params:
         - name: cluster-name
           value: "$(params.cluster-name)"
 
+    - name: trigger-bootstrap
+      runAfter:
+        - delete-applicationsets
+      taskSpec:
+        steps:
+          - name: trigger
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🚀 Triggering bootstrap pipeline to reconcile changes..."
+              
+              # Create PipelineRun for bootstrap
+              cat <<EOF | oc apply -f -
+              apiVersion: tekton.dev/v1
+              kind: PipelineRun
+              metadata:
+                generateName: bootstrap-post-removal-
+                namespace: hub-provisioner
+                labels:
+                  tekton.dev/pipeline: bootstrap-pipeline
+                  triggered-by: cluster-remove
+              spec:
+                pipelineRef:
+                  name: bootstrap-pipeline
+                timeout: 30m
+              EOF
+              
+              echo "✅ Bootstrap pipeline triggered"
+  
   finally:
     - name: removal-summary
       taskSpec:
@@ -184,21 +168,21 @@ spec:
             image: registry.redhat.io/openshift4/ose-cli
             script: |
               #!/bin/bash
-              set -e
               
               echo "📋 Cluster Removal Summary"
               echo "=========================="
               echo "Cluster Name: $(params.cluster-name)"
               echo "Timestamp: $(date -Iseconds)"
               echo ""
-              echo "✅ ArgoCD sync disabled"
-              echo "✅ Changes committed to repository"
-              echo "✅ Validation completed"
+              echo "✅ Cluster removed from repository"
+              echo "✅ Changes committed to GitHub"
+              echo "✅ ApplicationSets deleted (resources will be pruned)"
+              echo "✅ Bootstrap pipeline triggered"
               echo ""
-              echo "📌 Next steps:"
-              echo "   1. Verify no new resources are being created"
-              echo "   2. Delete cluster resources manually if needed"
-              echo "   3. Remove cluster configuration from repository"
+              echo "📌 Monitor:"
+              echo "   1. Bootstrap pipeline execution"
+              echo "   2. ManagedCluster and ClusterDeployment pruning"
+              echo "   3. Namespace cleanup"
               echo "=========================="
       params:
         - name: cluster-name
