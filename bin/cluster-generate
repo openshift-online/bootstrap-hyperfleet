@@ -840,7 +840,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - klusterletaddonconfig.yaml
-  - ../../../bases/clusters
+  - ../../../bases/clusters/ocp
 
 # This will disable name hashing for all generators in this file
 generatorOptions:
@@ -1133,6 +1133,67 @@ resources:
 EOF
 }
 
+generate_deprovisioning() {
+    local DEPROV_DIR="$CLUSTER_ROOT_DIR/deprovisioning"
+    mkdir -p "$DEPROV_DIR/resources" "$DEPROV_DIR/pipeline"
+    
+    # Generate deprovisioning ApplicationSets
+    sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
+        bases/deprovisioning/deprovision.applicationset.yaml \
+        > "$DEPROV_DIR/deprovision.applicationset.yaml"
+    
+    sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
+        bases/deprovisioning/cleanup.applicationset.yaml \
+        > "$DEPROV_DIR/cleanup.applicationset.yaml"
+    
+    # Generate ClusterDeprovision resource (needs infra ID from metadata)
+    cat > "$DEPROV_DIR/resources/cluster-deprovision.yaml" << EOF
+apiVersion: hive.openshift.io/v1
+kind: ClusterDeprovision
+metadata:
+  name: $FULL_CLUSTER_NAME
+  namespace: hive
+spec:
+  infraID: $FULL_CLUSTER_NAME-$(head /dev/urandom | tr -dc a-z0-9 | head -c 5)
+  clusterID: TBD
+  platform:
+    aws:
+      region: $REGION
+      credentialsSecretRef:
+        name: aws-credentials
+EOF
+    
+    cat > "$DEPROV_DIR/resources/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hive
+
+resources:
+  - cluster-deprovision.yaml
+EOF
+    
+    # Generate PipelineRun for cleanup
+    sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
+        bases/deprovisioning/pipeline/pipelinerun.yaml \
+        > "$DEPROV_DIR/pipeline/pipelinerun.yaml"
+    
+    cp bases/deprovisioning/pipeline/kustomization.yaml \
+        "$DEPROV_DIR/pipeline/kustomization.yaml"
+    
+    # Generate deprovisioning kustomization
+    cat > "$DEPROV_DIR/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deprovision.applicationset.yaml
+  - cleanup.applicationset.yaml
+EOF
+    
+    echo "Generated deprovisioning structure at $DEPROV_DIR"
+}
+
 generate_cluster_root_kustomization() {
     # Generate root kustomization for entire cluster
     cat > "$CLUSTER_ROOT_DIR/kustomization.yaml" << EOF
@@ -1299,6 +1360,7 @@ generate_operators
 generate_pipelines
 generate_deployments
 generate_gitops_applications
+generate_deprovisioning
 generate_cluster_root_kustomization
 update_clusters_kustomization
 update_gitops_kustomization

@@ -1,0 +1,13 @@
+apiVersion: hive.openshift.io/v1
+kind: ClusterDeprovision
+metadata:
+  name: CLUSTER_NAME
+  namespace: hive
+spec:
+  infraID: INFRA_ID
+  clusterID: CLUSTER_ID
+  platform:
+    aws:
+      region: REGION
+      credentialsSecretRef:
+        name: aws-credentials

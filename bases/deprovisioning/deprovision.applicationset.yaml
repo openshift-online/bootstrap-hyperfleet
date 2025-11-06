@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: CLUSTER_NAME-deprovision
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster-deprovision
+        path: clusters/CLUSTER_NAME/deprovisioning/resources
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+  
+  template:
+    metadata:
+      name: CLUSTER_NAME-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: CLUSTER_NAME
+        phase: deprovisioning
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+          allowEmpty: false
