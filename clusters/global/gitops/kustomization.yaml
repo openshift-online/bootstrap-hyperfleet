@@ -10,7 +10,7 @@ resources:
 - ./clusters/ # cluster-specific ApplicationSets
 
 # Cluster ApplicationSets
-- ../../ocp-002/gitops/
+#- ../../ocp-002/gitops/
 
 # Repository configuration for project forks
 - repo-url-patch.yaml
