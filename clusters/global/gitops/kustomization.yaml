@@ -10,6 +10,7 @@ resources:
 - ./clusters/ # cluster-specific ApplicationSets
 
 # Cluster ApplicationSets
+- ../../ocp-this-test-better-work/gitops/
 - ../../ocp-234/gitops/
 #- ../../ocp-002/gitops/
 

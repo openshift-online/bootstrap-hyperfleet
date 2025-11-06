@@ -1,0 +1,23 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: ocp-this-test-better-work
+  namespace: ocp-this-test-better-work
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  clusterLabels:
+    cloud: Amazon
+    name: ocp-this-test-better-work
+    vendor: OpenShift
+    region: us-west-2
+  clusterName: ocp-this-test-better-work
+  clusterNamespace: ocp-this-test-better-work
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  iamPolicyController:
+    enabled: true
