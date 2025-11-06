@@ -11,7 +11,6 @@ resources:
 
 # Cluster ApplicationSets
 - ../../ocp-345/gitops/
-- ../../ocp-test-01/gitops/
 
 # Repository configuration for project forks
 - repo-url-patch.yaml
