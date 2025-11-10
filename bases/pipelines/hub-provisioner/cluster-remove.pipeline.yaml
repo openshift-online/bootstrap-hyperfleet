@@ -15,10 +15,64 @@ spec:
       type: string
       description: "Name of the cluster to remove"
   tasks:
-    - name: remove-from-repo-and-commit
+    - name: query-cluster-metadata
       taskSpec:
         params:
           - name: cluster-name
+        results:
+          - name: infra-id
+            description: Infrastructure ID from ClusterDeployment
+          - name: cluster-id
+            description: Cluster ID from ClusterDeployment
+          - name: region
+            description: AWS region from ClusterDeployment
+        steps:
+          - name: query
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "Querying ClusterDeployment metadata for: $(params.cluster-name)"
+              
+              INFRA_ID=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
+                -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || \
+                oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
+                -o jsonpath='{.status.infraID}' 2>/dev/null || echo "")
+              
+              CLUSTER_ID=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
+                -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || \
+                oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
+                -o jsonpath='{.status.clusterID}' 2>/dev/null || echo "")
+              
+              REGION=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
+                -o jsonpath='{.spec.platform.aws.region}' 2>/dev/null || echo "")
+              
+              if [ -z "$INFRA_ID" ]; then
+                echo "Error: Could not find infraID for cluster $(params.cluster-name)" >&2
+                exit 1
+              fi
+              
+              echo "  Infra ID: $INFRA_ID"
+              echo "  Cluster ID: ${CLUSTER_ID:-$INFRA_ID}"
+              echo "  Region: $REGION"
+              
+              echo -n "$INFRA_ID" > $(results.infra-id.path)
+              echo -n "${CLUSTER_ID:-$INFRA_ID}" > $(results.cluster-id.path)
+              echo -n "$REGION" > $(results.region.path)
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
+    
+    - name: remove-from-repo-and-commit
+      runAfter:
+        - query-cluster-metadata
+      taskSpec:
+        params:
+          - name: cluster-name
+          - name: infra-id
+          - name: cluster-id
+          - name: region
         steps:
           - name: remove
             image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
@@ -63,7 +117,8 @@ spec:
                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
               
               echo "🗑️ Running bin/cluster-remove..."
-              bash bin/cluster-remove "$(params.cluster-name)"
+              INFRA_ID="$(params.infra-id)" CLUSTER_ID="$(params.cluster-id)" REGION="$(params.region)" \
+                bash bin/cluster-remove "$(params.cluster-name)"
               
               # Commit and push changes
               echo "📝 Committing changes..."
@@ -87,6 +142,12 @@ spec:
       params:
         - name: cluster-name
           value: "$(params.cluster-name)"
+        - name: infra-id
+          value: "$(tasks.query-cluster-metadata.results.infra-id)"
+        - name: cluster-id
+          value: "$(tasks.query-cluster-metadata.results.cluster-id)"
+        - name: region
+          value: "$(tasks.query-cluster-metadata.results.region)"
     
     - name: delete-applicationsets
       runAfter:

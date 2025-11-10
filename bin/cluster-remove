@@ -33,38 +33,40 @@ if [ ! -f "$INSTALL_CONFIG" ]; then
 fi
 
 echo "Extracting cluster metadata..."
-REGION=$(grep "region:" "$INSTALL_CONFIG" | awk '{print $2}')
+
+if [ -z "$INFRA_ID" ] || [ -z "$REGION" ]; then
+    echo "  Reading from install-config.yaml (fallback)..."
+    REGION=${REGION:-$(grep "region:" "$INSTALL_CONFIG" | awk '{print $2}')}
+    
+    if command -v oc &> /dev/null; then
+        echo "  Querying ClusterDeployment..."
+        INFRA_ID=${INFRA_ID:-$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
+          -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || \
+          oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
+          -o jsonpath='{.status.infraID}' 2>/dev/null || echo "")}
+        CLUSTER_ID=${CLUSTER_ID:-$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
+          -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || \
+          oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
+          -o jsonpath='{.status.clusterID}' 2>/dev/null || echo "")}
+    fi
+fi
+
+if [ -z "$INFRA_ID" ]; then
+    echo "Error: infraID is required but not provided" >&2
+    echo "       Set INFRA_ID environment variable or ensure ClusterDeployment exists" >&2
+    exit 1
+fi
 
 if [ -z "$REGION" ]; then
-    echo "Error: Could not extract region from install-config.yaml" >&2
+    echo "Error: Could not determine AWS region" >&2
     exit 1
 fi
+
+CLUSTER_ID=${CLUSTER_ID:-$INFRA_ID}
 
 echo "  Region: $REGION"
-
-echo ""
-echo "Querying ClusterDeployment for infraID and clusterID..."
-
-INFRA_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null)
-CLUSTER_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null)
-
-if [ -z "$INFRA_ID" ]; then
-    echo "Warning: Could not query infraID from ClusterDeployment in namespace ${CLUSTER_NAME}" >&2
-    echo "         Trying to extract from ClusterDeployment status..." >&2
-    
-    INFRA_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.status.infraID}' 2>/dev/null)
-    CLUSTER_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.status.clusterID}' 2>/dev/null)
-fi
-
-if [ -z "$INFRA_ID" ]; then
-    echo "Error: Could not find infraID for cluster ${CLUSTER_NAME}" >&2
-    echo "       ClusterDeployment may not be provisioned yet or doesn't exist" >&2
-    echo "       Checked namespaces: ${CLUSTER_NAME}" >&2
-    exit 1
-fi
-
 echo "  Infra ID: $INFRA_ID"
-echo "  Cluster ID: ${CLUSTER_ID:-$INFRA_ID}"
+echo "  Cluster ID: $CLUSTER_ID"
 
 DEPROV_DIR="$CLUSTER_DIR/deprovisioning"
 DEPROV_RESOURCES="$DEPROV_DIR/resources"
