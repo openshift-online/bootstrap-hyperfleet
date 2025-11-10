@@ -149,37 +149,6 @@ spec:
         - name: region
           value: "$(tasks.query-cluster-metadata.results.region)"
     
-    - name: trigger-bootstrap
-      runAfter:
-        - remove-from-repo-and-commit
-      taskSpec:
-        steps:
-          - name: trigger
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/bin/bash
-              set -e
-              
-              echo "🚀 Triggering bootstrap pipeline to reconcile changes..."
-              
-              # Create PipelineRun for bootstrap
-              cat <<EOF | oc create -f -
-              apiVersion: tekton.dev/v1
-              kind: PipelineRun
-              metadata:
-                generateName: bootstrap-post-removal-
-                namespace: hub-provisioner
-                labels:
-                  tekton.dev/pipeline: bootstrap-pipeline
-                  triggered-by: cluster-remove
-              spec:
-                pipelineRef:
-                  name: bootstrap-pipeline
-                timeout: 30m
-              EOF
-              
-              echo "✅ Bootstrap pipeline triggered"
-  
   finally:
     - name: removal-summary
       taskSpec:
@@ -196,14 +165,14 @@ spec:
               echo "Cluster Name: $(params.cluster-name)"
               echo "Timestamp: $(date -Iseconds)"
               echo ""
-              echo "✅ Cluster removed from repository"
+              echo "✅ Deprovisioning ApplicationSets created"
               echo "✅ Changes committed to GitHub"
-              echo "✅ Bootstrap pipeline triggered"
               echo ""
               echo "📌 Monitor:"
-              echo "   1. Bootstrap pipeline execution"
-              echo "   2. ManagedCluster and ClusterDeployment pruning"
-              echo "   3. Namespace cleanup"
+              echo "   1. ArgoCD sync of deprovisioning ApplicationSets"
+              echo "   2. Hive ClusterDeprovision resource creation"
+              echo "   3. AWS infrastructure teardown"
+              echo "   4. Cleanup pipeline execution"
               echo "=========================="
       params:
         - name: cluster-name
