@@ -6,9 +6,4 @@ kind: Kustomization
 resources:
   - global/
 
-  - ocp-123/
-  - ocp-234/
-  - ocp-this-test-better-work/
-  - ocp-test-01/
-  - ocp-345/
   - ocp-456/

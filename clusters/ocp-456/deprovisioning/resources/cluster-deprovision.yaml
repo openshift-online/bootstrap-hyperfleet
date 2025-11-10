@@ -2,7 +2,7 @@ apiVersion: hive.openshift.io/v1
 kind: ClusterDeprovision
 metadata:
   name: ocp-456
-  namespace: hive
+  namespace: ocp-456
 spec:
   infraID: ocp-456-lpdl8
   clusterID: df94bf26-3cba-4f62-99e6-2c92ca2523e8

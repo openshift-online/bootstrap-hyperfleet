@@ -2,7 +2,7 @@ apiVersion: hive.openshift.io/v1
 kind: ClusterDeprovision
 metadata:
   name: CLUSTER_NAME
-  namespace: hive
+  namespace: CLUSTER_NAME
 spec:
   infraID: INFRA_ID
   clusterID: CLUSTER_ID
