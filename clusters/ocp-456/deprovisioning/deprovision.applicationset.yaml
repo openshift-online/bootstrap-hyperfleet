@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-456-deprovision
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: cluster-deprovision
+        path: clusters/ocp-456/deprovisioning/resources
+        destination: https://kubernetes.default.svc
+        syncWave: "1"
+  
+  template:
+    metadata:
+      name: ocp-456-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: ocp-456
+        phase: deprovisioning
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+          allowEmpty: false
