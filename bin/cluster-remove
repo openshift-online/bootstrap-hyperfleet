@@ -44,17 +44,27 @@ echo "  Region: $REGION"
 
 echo ""
 echo "Querying ClusterDeployment for infraID and clusterID..."
-INFRA_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || echo "")
-CLUSTER_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || echo "")
+
+INFRA_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null)
+CLUSTER_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null)
 
 if [ -z "$INFRA_ID" ]; then
-    echo "Error: Could not query infraID from ClusterDeployment ${CLUSTER_NAME}" >&2
-    echo "       Ensure the cluster is provisioned and ClusterDeployment exists" >&2
+    echo "Warning: Could not query infraID from ClusterDeployment in namespace ${CLUSTER_NAME}" >&2
+    echo "         Trying to extract from ClusterDeployment status..." >&2
+    
+    INFRA_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.status.infraID}' 2>/dev/null)
+    CLUSTER_ID=$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" -o jsonpath='{.status.clusterID}' 2>/dev/null)
+fi
+
+if [ -z "$INFRA_ID" ]; then
+    echo "Error: Could not find infraID for cluster ${CLUSTER_NAME}" >&2
+    echo "       ClusterDeployment may not be provisioned yet or doesn't exist" >&2
+    echo "       Checked namespaces: ${CLUSTER_NAME}" >&2
     exit 1
 fi
 
 echo "  Infra ID: $INFRA_ID"
-echo "  Cluster ID: $CLUSTER_ID"
+echo "  Cluster ID: ${CLUSTER_ID:-$INFRA_ID}"
 
 DEPROV_DIR="$CLUSTER_DIR/deprovisioning"
 DEPROV_RESOURCES="$DEPROV_DIR/resources"
