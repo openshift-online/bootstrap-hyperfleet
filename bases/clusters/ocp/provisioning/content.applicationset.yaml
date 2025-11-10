@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ocp-456-content
+  name: CLUSTER_NAME-content
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "20"
@@ -10,26 +10,26 @@ spec:
   - list:
       elements:
       - component: operators
-        path: clusters/ocp-456/operators
-        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        path: clusters/CLUSTER_NAME/operators
+        destination: https://api.CLUSTER_NAME.DOMAIN:6443
         syncWave: "10"
       - component: pipelines
-        path: clusters/ocp-456/pipelines
-        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        path: clusters/CLUSTER_NAME/pipelines
+        destination: https://api.CLUSTER_NAME.DOMAIN:6443
         syncWave: "20"
       - component: deployments
-        path: clusters/ocp-456/deployments
-        destination: https://api.ocp-456.bootstrap.red-chesterfield.com:6443
+        path: clusters/CLUSTER_NAME/deployments
+        destination: https://api.CLUSTER_NAME.DOMAIN:6443
         syncWave: "30"
   
   template:
     metadata:
-      name: ocp-456-{{component}}
+      name: CLUSTER_NAME-{{component}}
       namespace: openshift-gitops
       annotations:
         argocd.argoproj.io/sync-wave: '{{syncWave}}'
       labels:
-        cluster: ocp-456
+        cluster: CLUSTER_NAME
         phase: content
     spec:
       project: default

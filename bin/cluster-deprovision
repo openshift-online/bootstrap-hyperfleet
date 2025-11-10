@@ -1,0 +1,102 @@
+#!/bin/bash
+set -e
+
+# Script to initiate cluster deprovisioning by enabling deprovisioning ApplicationSets
+# This follows declarative GitOps pattern - deprovisioning is done by adding config, not deleting it
+
+CLUSTER_NAME="$1"
+
+if [ -z "$CLUSTER_NAME" ]; then
+    echo "Error: Cluster name is required" >&2
+    echo "Usage: $0 CLUSTER_NAME" >&2
+    exit 1
+fi
+
+echo "Initiating deprovisioning for cluster: $CLUSTER_NAME"
+
+# Validate cluster directory exists
+CLUSTER_DIR="clusters/$CLUSTER_NAME"
+if [ ! -d "$CLUSTER_DIR" ]; then
+    echo "Error: Cluster directory not found: $CLUSTER_DIR" >&2
+    exit 1
+fi
+
+# Validate deprovisioning structure exists
+DEPROV_DIR="$CLUSTER_DIR/deprovisioning"
+if [ ! -d "$DEPROV_DIR" ]; then
+    echo "Error: Deprovisioning directory not found: $DEPROV_DIR" >&2
+    echo "Regenerate cluster with bin/cluster-generate to create deprovisioning structure" >&2
+    exit 1
+fi
+
+# Get infra ID from ClusterDeployment metadata if available
+echo "Fetching cluster metadata..."
+if command -v oc &> /dev/null && oc whoami &> /dev/null 2>&1; then
+    INFRA_ID=$(oc get clusterdeployment -n "$CLUSTER_NAME" "$CLUSTER_NAME" \
+        -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || echo "")
+    CLUSTER_ID=$(oc get clusterdeployment -n "$CLUSTER_NAME" "$CLUSTER_NAME" \
+        -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || echo "")
+    
+    if [ -n "$INFRA_ID" ]; then
+        echo "Found infraID: $INFRA_ID"
+        sed -i "s/infraID: .*/infraID: $INFRA_ID/" "$DEPROV_DIR/resources/cluster-deprovision.yaml"
+    else
+        echo "Warning: Could not fetch infraID from ClusterDeployment"
+        echo "ClusterDeprovision will use placeholder infraID - update manually if needed"
+    fi
+    
+    if [ -n "$CLUSTER_ID" ]; then
+        echo "Found clusterID: $CLUSTER_ID"
+        sed -i "s/clusterID: .*/clusterID: $CLUSTER_ID/" "$DEPROV_DIR/resources/cluster-deprovision.yaml"
+    fi
+else
+    echo "Warning: Not connected to hub cluster - using placeholder infraID"
+    echo "Connect with 'oc login' and re-run to fetch actual infraID"
+fi
+
+# Update clusters/global/gitops/kustomization.yaml to include deprovisioning ApplicationSets
+GITOPS_KUSTOMIZATION="clusters/global/gitops/kustomization.yaml"
+DEPROV_GITOPS_REF="- ../../$CLUSTER_NAME/deprovisioning/"
+
+echo "Updating $GITOPS_KUSTOMIZATION to enable deprovisioning..."
+
+if grep -q "$CLUSTER_NAME/deprovisioning/" "$GITOPS_KUSTOMIZATION"; then
+    echo "Deprovisioning already enabled for $CLUSTER_NAME"
+else
+    # Add deprovisioning reference after cluster gitops reference
+    if grep -q "$CLUSTER_NAME/gitops/" "$GITOPS_KUSTOMIZATION"; then
+        # Add after the existing gitops line
+        sed -i "/$CLUSTER_NAME\/gitops\//a\\
+$DEPROV_GITOPS_REF" "$GITOPS_KUSTOMIZATION"
+    else
+        # Add after Cluster ApplicationSets comment
+        sed -i "/# Cluster ApplicationSets/a\\
+$DEPROV_GITOPS_REF" "$GITOPS_KUSTOMIZATION"
+    fi
+    
+    echo "Added deprovisioning ApplicationSets to global gitops kustomization"
+fi
+
+# Stage changes
+git add "$DEPROV_DIR/"
+git add "$GITOPS_KUSTOMIZATION"
+
+echo ""
+echo "================================"
+echo "Deprovisioning Initiated"
+echo "================================"
+echo "Cluster: $CLUSTER_NAME"
+echo ""
+echo "Next steps:"
+echo "1. Review changes: git diff --cached"
+echo "2. Commit: git commit -m 'Initiate deprovisioning for $CLUSTER_NAME'"
+echo "3. Push: git push origin main"
+echo "4. Apply: bin/bootstrap (or wait for ArgoCD sync)"
+echo ""
+echo "Deprovisioning sequence:"
+echo "  Wave 1: ClusterDeprovision creates, AWS resources cleaned"
+echo "  Wave 2: cluster-remove pipeline runs, repo cleaned"
+echo "  Final: Cluster fully removed"
+echo ""
+echo "To abort: git reset HEAD && git checkout -- ."
+echo "================================"

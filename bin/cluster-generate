@@ -1139,11 +1139,11 @@ generate_deprovisioning() {
     
     # Generate deprovisioning ApplicationSets
     sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
-        bases/deprovisioning/deprovision.applicationset.yaml \
+        bases/clusters/ocp/deprovisioning/deprovision.applicationset.yaml \
         > "$DEPROV_DIR/deprovision.applicationset.yaml"
     
     sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
-        bases/deprovisioning/cleanup.applicationset.yaml \
+        bases/clusters/ocp/deprovisioning/cleanup.applicationset.yaml \
         > "$DEPROV_DIR/cleanup.applicationset.yaml"
     
     # Generate ClusterDeprovision resource (needs infra ID from metadata)
@@ -1175,10 +1175,10 @@ EOF
     
     # Generate PipelineRun for cleanup
     sed "s/CLUSTER_NAME/$FULL_CLUSTER_NAME/g" \
-        bases/deprovisioning/pipeline/pipelinerun.yaml \
+        bases/clusters/ocp/deprovisioning/pipeline/pipelinerun.yaml \
         > "$DEPROV_DIR/pipeline/pipelinerun.yaml"
     
-    cp bases/deprovisioning/pipeline/kustomization.yaml \
+    cp bases/clusters/ocp/deprovisioning/pipeline/kustomization.yaml \
         "$DEPROV_DIR/pipeline/kustomization.yaml"
     
     # Generate deprovisioning kustomization

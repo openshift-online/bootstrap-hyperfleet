@@ -21,7 +21,7 @@ oc apply -k clusters/global/
 
 This repository provides a **complete reusable infrastructure**:
 - **Self-Managing Hub** - ArgoCD, ACM, Vault, Pipelines all configured automatically
-- **Two-Phase Reuse** - GitHub for bootstrap, internal Gitea for cluster-specific configs  
+- **GitOps-Native** - ArgoCD manages all cluster resources automatically  
 - **Automatic Provisioning** - OpenShift (via Hive) and EKS (via CAPI) cluster creation
 - **Zero-Config GitOps** - ApplicationSets with proper dependency ordering
 - **Semantic Organization** - Intuitive directory structure for easy navigation
@@ -95,11 +95,11 @@ git clone https://github.com/openshift-online/bootstrap.git
 oc apply -k clusters/global/
 ```
 
-**Phase 2: Self-Referential Management**
+**Phase 2: Self-Managing Cluster**
 After bootstrap, your cluster becomes self-managing:
-- Internal Gitea service contains cluster-specific configurations
-- ArgoCD switches to internal Git for ongoing management
-- New clusters reference their own internal Git repository
+- ArgoCD continuously reconciles all cluster resources
+- New clusters are automatically managed via ApplicationSets
+- GitOps ensures declarative infrastructure as code
 
 ### Adding Clusters (Simple)
 

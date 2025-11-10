@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ocp-456-provisioning
+  name: CLUSTER_NAME-provisioning
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "10"
@@ -10,18 +10,18 @@ spec:
   - list:
       elements:
       - component: cluster
-        path: clusters/ocp-456/cluster
+        path: clusters/CLUSTER_NAME/cluster
         destination: https://kubernetes.default.svc
         syncWave: "10"
   
   template:
     metadata:
-      name: ocp-456-{{component}}
+      name: CLUSTER_NAME-{{component}}
       namespace: openshift-gitops
       annotations:
         argocd.argoproj.io/sync-wave: '{{syncWave}}'
       labels:
-        cluster: ocp-456
+        cluster: CLUSTER_NAME
         phase: provisioning
     spec:
       project: default

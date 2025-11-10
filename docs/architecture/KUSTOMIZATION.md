@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the current GitOps and Kustomize patterns used in the OpenShift Bootstrap repository. The architecture follows a **hub-spoke model** with **Application-level sync wave orchestration** and **self-referential management**.
+This document describes the current GitOps and Kustomize patterns used in the OpenShift Bootstrap repository. The architecture follows a **hub-spoke model** with **Application-level sync wave orchestration** and **declarative cluster lifecycle management**.
 
 ## Current Directory Structure
 
@@ -25,7 +25,6 @@ bootstrap/
 │   │       ├── openshift-pipelines-operator/ # Tekton operator
 │   │       ├── vault/              # Secret management
 │   │       ├── eso/                # External Secrets Operator
-│   │       ├── gitea/              # Internal Git service
 │   │       └── cluster-bootstrap/  # Bootstrap coordination
 │   │
 │   ├── my-cluster/                 # Managed cluster
@@ -61,7 +60,7 @@ The root GitOps kustomization (`clusters/global/gitops/kustomization.yaml`) mana
 - **Vault + ESO** (Wave 2): Secret management
 - **ACM ApplicationSet** (Wave 3): Multi-cluster management with internal ordering
 - **GitOps Integration** (Wave 4): Cluster integration and metrics
-- **Gitea + Bootstrap** (Wave 5): Internal Git and self-referential provisioning
+- **Hub Provisioner** (Wave 5): Cluster lifecycle automation pipelines
 
 ### Application-Level Sync Wave Strategy
 
@@ -98,30 +97,29 @@ spec:
         syncWave: "4"    # Internal ordering
 ```
 
-### Self-Referential ApplicationSet
+### Cluster ApplicationSets
 
-The cluster bootstrap ApplicationSet uses internal Gitea instead of external GitHub:
+Cluster-specific ApplicationSets manage cluster lifecycle:
 
 ```yaml
-# clusters/global/gitops/cluster-bootstrap-applicationset.yaml
+# Example: Provisioning ApplicationSet
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: cluster-bootstrap-internal
+  name: ocp-456-provisioning
   annotations:
-    argocd.argoproj.io/sync-wave: "20"
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   generators:
-  - clusters:
-      selector:
-        matchLabels:
-          cluster-type: internal
+  - list:
+      elements:
+      - component: cluster
+        path: clusters/ocp-456/cluster
   template:
     spec:
       source:
-        # Self-referential: points to internal Gitea
-        repoURL: 'http://gitea.gitea-system.svc.cluster.local:3000/myadmin/bootstrap.git'
-        path: 'clusters/{{name}}'
+        repoURL: 'https://github.com/openshift-online/bootstrap-hyperfleet'
+        path: '{{path}}'
 ```
 
 ## Cluster Provisioning Layer
@@ -262,9 +260,9 @@ spec:
 - **Auto-generation**: Complex overlays generated from simple specs
 - **Template reuse**: Base templates eliminate duplication
 
-### 3. **Self-Referential Management**
-- **Two-phase bootstrap**: GitHub for initial, Gitea for ongoing
-- **Internal Git service**: Clusters manage themselves
+### 3. **GitOps Cluster Management**
+- **Declarative**: All cluster config in Git
+- **ArgoCD-driven**: Continuous reconciliation
 - **Reuse-friendly**: Same base repo, cluster-specific configurations
 
 ### 4. **Secure Secret Management**

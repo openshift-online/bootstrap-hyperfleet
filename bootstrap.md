@@ -25,8 +25,7 @@ This single command creates all ArgoCD applications with proper ordering:
 - **Wave 3**: ACM (Advanced Cluster Management with ordered deployment)
   - Operator → Hub → Policies
 - **Wave 4**: GitOps Integration (cluster import)
-- **Wave 5**: Gitea (internal Git service)
-- **Wave 5**: Cluster Bootstrap (self-referential ApplicationSets)
+- **Wave 5**: Hub Provisioner Pipelines
 
 ### 4. Wait for Core Infrastructure
 ```bash
@@ -51,17 +50,15 @@ oc get pods -n vault
 echo "OpenShift: $(oc whoami --show-console)"
 echo "ArgoCD: https://$(oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.host}')"
 echo "ACM: https://$(oc get route multicloud-console -n open-cluster-management -o jsonpath='{.spec.host}')"
-echo "Gitea: https://$(oc get route gitea -n gitea-system -o jsonpath='{.spec.host}')"
 ```
 
 ## What Happens During Bootstrap
 
 1. **GitOps Installation**: ArgoCD operator installs and configures itself
 2. **Ordered Application Deployment**: Sync waves ensure proper dependency order
-3. **Self-Referential Setup**: Cluster prepares to manage additional clusters
-4. **Internal Git Service**: Gitea deployed for cluster-specific configurations
-5. **Secret Management**: Vault and ESO configured for secure credential handling
-6. **Multi-Cluster Ready**: ACM hub ready to manage regional clusters
+3. **GitOps Setup**: ArgoCD ApplicationSets configured for cluster management
+4. **Secret Management**: Vault and ESO configured for secure credential handling
+5. **Multi-Cluster Ready**: ACM hub ready to manage regional clusters
 
 ## Next Steps
 
