@@ -5,6 +5,8 @@ namespace: openshift-gitops
 
 resources:
   - ../../ocp-456/deprovisioning/
+  - ../../ocp-456/deprovisioning/
+  - ../../ocp-456/deprovisioning/
 # Global applications (base cluster infrastructure)
 - ./global/
 
