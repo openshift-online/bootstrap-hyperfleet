@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: cluster-remove-ocp-456-
+  name: cluster-remove-ocp-456
   namespace: hub-provisioner
   labels:
     tekton.dev/pipeline: cluster-remove-pipeline

@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: cluster-remove-CLUSTER_NAME-
+  name: cluster-remove-CLUSTER_NAME
   namespace: hub-provisioner
   labels:
     tekton.dev/pipeline: cluster-remove-pipeline
