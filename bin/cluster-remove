@@ -232,15 +232,15 @@ echo "Updating global GitOps configuration..."
 
 GITOPS_KUSTOMIZATION="clusters/global/gitops/kustomization.yaml"
 
-if grep -q "- ../../${CLUSTER_NAME}/gitops/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
-    sed -i "s|- \.\./\.\./.*${CLUSTER_NAME}/gitops/|- ../../${CLUSTER_NAME}/deprovisioning/|g" "$GITOPS_KUSTOMIZATION"
+if grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/gitops/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
+    sed -i "s|\s*- \.\./\.\./[^/]*/${CLUSTER_NAME}/gitops/|  - ../../${CLUSTER_NAME}/deprovisioning/|g" "$GITOPS_KUSTOMIZATION"
     echo "  ✅ Updated $GITOPS_KUSTOMIZATION (gitops → deprovisioning)"
+elif grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
+    echo "  ℹ️  Deprovisioning reference already exists in $GITOPS_KUSTOMIZATION"
 else
-    echo "  ℹ️  No gitops reference found in $GITOPS_KUSTOMIZATION"
-    if ! grep -q "- ../../${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
-        sed -i "/^resources:/a\\  - ../../${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION"
-        echo "  ✅ Added deprovisioning reference to $GITOPS_KUSTOMIZATION"
-    fi
+    echo "  ℹ️  No gitops reference found, adding deprovisioning reference"
+    sed -i "/# Cluster ApplicationSets/a\\  - ../../${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION"
+    echo "  ✅ Added deprovisioning reference to $GITOPS_KUSTOMIZATION"
 fi
 
 git add "$DEPROV_DIR"
