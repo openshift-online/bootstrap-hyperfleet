@@ -149,48 +149,9 @@ spec:
         - name: region
           value: "$(tasks.query-cluster-metadata.results.region)"
     
-    - name: delete-applicationsets
-      runAfter:
-        - remove-from-repo-and-commit
-      taskSpec:
-        params:
-          - name: cluster-name
-        steps:
-          - name: delete-appsets
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/bin/bash
-              set -e
-              
-              echo "🗑️ Deleting ArgoCD ApplicationSets for: $(params.cluster-name)"
-              
-              # Delete provisioning ApplicationSet
-              if oc get applicationset -n openshift-gitops "$(params.cluster-name)-provisioning" 2>/dev/null; then
-                echo "Deleting $(params.cluster-name)-provisioning ApplicationSet..."
-                oc delete applicationset -n openshift-gitops "$(params.cluster-name)-provisioning" --ignore-not-found=true
-                echo "✅ Deleted $(params.cluster-name)-provisioning"
-              else
-                echo "ℹ️ ApplicationSet $(params.cluster-name)-provisioning not found"
-              fi
-              
-              # Delete content ApplicationSet
-              if oc get applicationset -n openshift-gitops "$(params.cluster-name)-content" 2>/dev/null; then
-                echo "Deleting $(params.cluster-name)-content ApplicationSet..."
-                oc delete applicationset -n openshift-gitops "$(params.cluster-name)-content" --ignore-not-found=true
-                echo "✅ Deleted $(params.cluster-name)-content"
-              else
-                echo "ℹ️ ApplicationSet $(params.cluster-name)-content not found"
-              fi
-              
-              echo "✅ ApplicationSet deletion complete"
-              echo "Note: Resources will be pruned automatically due to prune: true setting"
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-
     - name: trigger-bootstrap
       runAfter:
-        - delete-applicationsets
+        - remove-from-repo-and-commit
       taskSpec:
         steps:
           - name: trigger
@@ -202,7 +163,7 @@ spec:
               echo "🚀 Triggering bootstrap pipeline to reconcile changes..."
               
               # Create PipelineRun for bootstrap
-              cat <<EOF | oc apply -f -
+              cat <<EOF | oc create -f -
               apiVersion: tekton.dev/v1
               kind: PipelineRun
               metadata:
@@ -237,7 +198,6 @@ spec:
               echo ""
               echo "✅ Cluster removed from repository"
               echo "✅ Changes committed to GitHub"
-              echo "✅ ApplicationSets deleted (resources will be pruned)"
               echo "✅ Bootstrap pipeline triggered"
               echo ""
               echo "📌 Monitor:"
