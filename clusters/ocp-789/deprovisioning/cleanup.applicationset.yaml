@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-789-cleanup
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: repo-cleanup
+        path: clusters/ocp-789/deprovisioning/pipeline
+        destination: https://kubernetes.default.svc
+        syncWave: "2"
+  
+  template:
+    metadata:
+      name: ocp-789-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: ocp-789
+        phase: deprovisioning
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+          allowEmpty: false

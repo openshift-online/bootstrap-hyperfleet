@@ -1,0 +1,13 @@
+apiVersion: hive.openshift.io/v1
+kind: ClusterDeprovision
+metadata:
+  name: ocp-789
+  namespace: hive
+spec:
+  infraID: ocp-789-rqi42
+  clusterID: TBD
+  platform:
+    aws:
+      region: us-west-2
+      credentialsSecretRef:
+        name: aws-credentials
