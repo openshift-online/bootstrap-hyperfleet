@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-# Script for "build up to tear down" cluster deprovisioning
-# Creates deprovisioning ApplicationSets that trigger infrastructure teardown
+# Script to remove cluster directory from repository and trigger bootstrap
+# Called by cluster-remove-pipeline after ClusterDeprovision completes
 # Usage: cluster-remove CLUSTER_NAME
 
-echo "OpenShift Cluster Deprovisioning Tool (Build Up to Tear Down)"
-echo "=============================================================="
+echo "OpenShift Cluster Repository Cleanup Tool"
+echo "=========================================="
 echo ""
 
 CLUSTER_NAME="$1"
@@ -19,237 +19,49 @@ fi
 
 echo "Cluster: $CLUSTER_NAME"
 
-if [ ! -d "clusters/$CLUSTER_NAME" ]; then
-    echo "Error: Cluster directory not found: clusters/$CLUSTER_NAME" >&2
-    exit 1
-fi
-
 CLUSTER_DIR="clusters/$CLUSTER_NAME"
-INSTALL_CONFIG="$CLUSTER_DIR/cluster/install-config.yaml"
 
-if [ ! -f "$INSTALL_CONFIG" ]; then
-    echo "Error: install-config.yaml not found at: $INSTALL_CONFIG" >&2
-    exit 1
+if [ ! -d "$CLUSTER_DIR" ]; then
+    echo "Warning: Cluster directory not found: $CLUSTER_DIR" >&2
+    echo "Cluster may have already been removed"
+    exit 0
 fi
-
-echo "Extracting cluster metadata..."
-
-if [ -z "$INFRA_ID" ] || [ -z "$REGION" ]; then
-    echo "  Reading from install-config.yaml (fallback)..."
-    REGION=${REGION:-$(grep "region:" "$INSTALL_CONFIG" | awk '{print $2}')}
-    
-    if command -v oc &> /dev/null; then
-        echo "  Querying ClusterDeployment..."
-        INFRA_ID=${INFRA_ID:-$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
-          -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || \
-          oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
-          -o jsonpath='{.status.infraID}' 2>/dev/null || echo "")}
-        CLUSTER_ID=${CLUSTER_ID:-$(oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
-          -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || \
-          oc get clusterdeployment -n "${CLUSTER_NAME}" "${CLUSTER_NAME}" \
-          -o jsonpath='{.status.clusterID}' 2>/dev/null || echo "")}
-    fi
-fi
-
-if [ -z "$INFRA_ID" ]; then
-    echo "Error: infraID is required but not provided" >&2
-    echo "       Set INFRA_ID environment variable or ensure ClusterDeployment exists" >&2
-    exit 1
-fi
-
-if [ -z "$REGION" ]; then
-    echo "Error: Could not determine AWS region" >&2
-    exit 1
-fi
-
-CLUSTER_ID=${CLUSTER_ID:-$INFRA_ID}
-
-echo "  Region: $REGION"
-echo "  Infra ID: $INFRA_ID"
-echo "  Cluster ID: $CLUSTER_ID"
-
-DEPROV_DIR="$CLUSTER_DIR/deprovisioning"
-DEPROV_RESOURCES="$DEPROV_DIR/resources"
-DEPROV_PIPELINE="$DEPROV_DIR/pipeline"
 
 echo ""
-echo "Creating deprovisioning resources..."
+echo "Removing cluster from repository..."
 
-mkdir -p "$DEPROV_RESOURCES"
-mkdir -p "$DEPROV_PIPELINE"
-
-cat > "$DEPROV_DIR/kustomization.yaml" <<EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - deprovision.applicationset.yaml
-  - cleanup.applicationset.yaml
-EOF
-
-cat > "$DEPROV_DIR/deprovision.applicationset.yaml" <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: ${CLUSTER_NAME}-deprovision
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
-spec:
-  generators:
-  - list:
-      elements:
-      - component: cluster-deprovision
-        path: clusters/${CLUSTER_NAME}/deprovisioning/resources
-        destination: https://kubernetes.default.svc
-        syncWave: "1"
-  
-  template:
-    metadata:
-      name: ${CLUSTER_NAME}-{{component}}
-      namespace: openshift-gitops
-      annotations:
-        argocd.argoproj.io/sync-wave: '{{syncWave}}'
-      labels:
-        cluster: ${CLUSTER_NAME}
-        phase: deprovisioning
-    spec:
-      project: default
-      source:
-        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
-        path: '{{path}}'
-        targetRevision: main
-      destination:
-        server: '{{destination}}'
-      syncPolicy:
-        automated:
-          selfHeal: true
-          prune: true
-          allowEmpty: false
-EOF
-
-cat > "$DEPROV_DIR/cleanup.applicationset.yaml" <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: ${CLUSTER_NAME}-cleanup
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  generators:
-  - list:
-      elements:
-      - component: repo-cleanup
-        path: clusters/${CLUSTER_NAME}/deprovisioning/pipeline
-        destination: https://kubernetes.default.svc
-        syncWave: "2"
-  
-  template:
-    metadata:
-      name: ${CLUSTER_NAME}-{{component}}
-      namespace: openshift-gitops
-      annotations:
-        argocd.argoproj.io/sync-wave: '{{syncWave}}'
-      labels:
-        cluster: ${CLUSTER_NAME}
-        phase: deprovisioning
-    spec:
-      project: default
-      source:
-        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
-        path: '{{path}}'
-        targetRevision: main
-      destination:
-        server: '{{destination}}'
-      syncPolicy:
-        automated:
-          selfHeal: true
-          prune: true
-          allowEmpty: false
-EOF
-
-cat > "$DEPROV_RESOURCES/kustomization.yaml" <<EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - cluster-deprovision.yaml
-EOF
-
-cat > "$DEPROV_RESOURCES/cluster-deprovision.yaml" <<EOF
-apiVersion: hive.openshift.io/v1
-kind: ClusterDeprovision
-metadata:
-  name: ${CLUSTER_NAME}
-  namespace: ${CLUSTER_NAME}
-spec:
-  infraID: ${INFRA_ID}
-  clusterID: ${CLUSTER_ID}
-  platform:
-    aws:
-      region: ${REGION}
-      credentialsSecretRef:
-        name: aws-credentials
-EOF
-
-cat > "$DEPROV_PIPELINE/kustomization.yaml" <<EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-namespace: hub-provisioner
-
-resources:
-  - pipelinerun.yaml
-EOF
-
-cat > "$DEPROV_PIPELINE/pipelinerun.yaml" <<EOF
-apiVersion: tekton.dev/v1
-kind: PipelineRun
-metadata:
-  name: cluster-remove-${CLUSTER_NAME}
-  namespace: hub-provisioner
-  labels:
-    tekton.dev/pipeline: cluster-remove-pipeline
-    cluster: ${CLUSTER_NAME}
-spec:
-  pipelineRef:
-    name: cluster-remove-pipeline
-  params:
-    - name: cluster-name
-      value: ${CLUSTER_NAME}
-  timeout: 1h
-EOF
-
-echo "  ✅ Created deprovisioning ApplicationSets"
-echo "  ✅ Created ClusterDeprovision resource"
-echo "  ✅ Created cleanup PipelineRun"
+rm -rf "$CLUSTER_DIR"
+echo "  ✅ Removed directory: $CLUSTER_DIR"
 
 echo ""
 echo "Updating global GitOps configuration..."
 
 GITOPS_KUSTOMIZATION="clusters/global/gitops/kustomization.yaml"
 
-if grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/gitops/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
-    sed -i "s|\s*- \.\./\.\./[^/]*/${CLUSTER_NAME}/gitops/|  - ../../${CLUSTER_NAME}/deprovisioning/|g" "$GITOPS_KUSTOMIZATION"
-    echo "  ✅ Updated $GITOPS_KUSTOMIZATION (gitops → deprovisioning)"
-elif grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
-    echo "  ℹ️  Deprovisioning reference already exists in $GITOPS_KUSTOMIZATION"
+if grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then
+    sed -i "/\- \.\./\.\./[^/]*\/${CLUSTER_NAME}\//d" "$GITOPS_KUSTOMIZATION"
+    echo "  ✅ Removed references from $GITOPS_KUSTOMIZATION"
 else
-    echo "  ℹ️  No gitops reference found, adding deprovisioning reference"
-    sed -i "/# Cluster ApplicationSets/a\\  - ../../${CLUSTER_NAME}/deprovisioning/" "$GITOPS_KUSTOMIZATION"
-    echo "  ✅ Added deprovisioning reference to $GITOPS_KUSTOMIZATION"
+    echo "  ℹ️  No references found in $GITOPS_KUSTOMIZATION"
 fi
 
-git add "$DEPROV_DIR"
-git add "$GITOPS_KUSTOMIZATION"
+CLUSTERS_KUSTOMIZATION="clusters/kustomization.yaml"
+
+if grep -q "\- ${CLUSTER_NAME}/" "$CLUSTERS_KUSTOMIZATION" 2>/dev/null; then
+    sed -i "/\- ${CLUSTER_NAME}\//d" "$CLUSTERS_KUSTOMIZATION"
+    echo "  ✅ Removed reference from $CLUSTERS_KUSTOMIZATION"
+else
+    echo "  ℹ️  No reference found in $CLUSTERS_KUSTOMIZATION"
+fi
+
+git add -A
 
 echo ""
-echo "=============================================================="
-echo "Deprovisioning setup complete!"
+echo "=========================================="
+echo "Cluster repository cleanup complete!"
 echo ""
-echo "Next steps:"
-echo "  1. Commit and push these changes to trigger ArgoCD"
-echo "  2. Wave 1: ClusterDeprovision tears down AWS infrastructure"
-echo "  3. Wave 2: Cleanup pipeline removes cluster from repository"
-echo "=============================================================="
+echo "Removed cluster: $CLUSTER_NAME"
+echo ""
+echo "Next step:"
+echo "  Trigger bootstrap pipeline to reconcile changes"
+echo "=========================================="

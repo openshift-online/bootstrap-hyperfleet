@@ -4,75 +4,20 @@ metadata:
   name: cluster-remove-pipeline
   namespace: hub-provisioner
   annotations:
-    description: "Pipeline for removing cluster configurations and disabling ArgoCD sync"
+    description: "Pipeline for removing cluster from repository and triggering bootstrap"
 spec:
   description: >-
-    Cluster removal pipeline that removes cluster from repository,
-    commits the changes to GitHub, deletes ArgoCD ApplicationSets,
-    and triggers bootstrap to reconcile changes.
+    Cluster removal pipeline that removes cluster directory from repository,
+    commits the changes to GitHub, and triggers bootstrap pipeline to reconcile.
   params:
     - name: cluster-name
       type: string
       description: "Name of the cluster to remove"
   tasks:
-    - name: query-cluster-metadata
-      taskSpec:
-        params:
-          - name: cluster-name
-        results:
-          - name: infra-id
-            description: Infrastructure ID from ClusterDeployment
-          - name: cluster-id
-            description: Cluster ID from ClusterDeployment
-          - name: region
-            description: AWS region from ClusterDeployment
-        steps:
-          - name: query
-            image: registry.redhat.io/openshift4/ose-cli
-            script: |
-              #!/bin/bash
-              set -e
-              
-              echo "Querying ClusterDeployment metadata for: $(params.cluster-name)"
-              
-              INFRA_ID=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
-                -o jsonpath='{.spec.clusterMetadata.infraID}' 2>/dev/null || \
-                oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
-                -o jsonpath='{.status.infraID}' 2>/dev/null || echo "")
-              
-              CLUSTER_ID=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
-                -o jsonpath='{.spec.clusterMetadata.clusterID}' 2>/dev/null || \
-                oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
-                -o jsonpath='{.status.clusterID}' 2>/dev/null || echo "")
-              
-              REGION=$(oc get clusterdeployment -n "$(params.cluster-name)" "$(params.cluster-name)" \
-                -o jsonpath='{.spec.platform.aws.region}' 2>/dev/null || echo "")
-              
-              if [ -z "$INFRA_ID" ]; then
-                echo "Error: Could not find infraID for cluster $(params.cluster-name)" >&2
-                exit 1
-              fi
-              
-              echo "  Infra ID: $INFRA_ID"
-              echo "  Cluster ID: ${CLUSTER_ID:-$INFRA_ID}"
-              echo "  Region: $REGION"
-              
-              echo -n "$INFRA_ID" > $(results.infra-id.path)
-              echo -n "${CLUSTER_ID:-$INFRA_ID}" > $(results.cluster-id.path)
-              echo -n "$REGION" > $(results.region.path)
-      params:
-        - name: cluster-name
-          value: "$(params.cluster-name)"
-    
     - name: remove-from-repo-and-commit
-      runAfter:
-        - query-cluster-metadata
       taskSpec:
         params:
           - name: cluster-name
-          - name: infra-id
-          - name: cluster-id
-          - name: region
         steps:
           - name: remove
             image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel9@sha256:cbd89c531953a43b8055bda72f7696be80f57fd1d782567a91d82e0fbcb3d26d
@@ -117,8 +62,7 @@ spec:
                 git clone git@github.com:openshift-online/bootstrap-hyperfleet.git .
               
               echo "🗑️ Running bin/cluster-remove..."
-              INFRA_ID="$(params.infra-id)" CLUSTER_ID="$(params.cluster-id)" REGION="$(params.region)" \
-                bash bin/cluster-remove "$(params.cluster-name)"
+              bash bin/cluster-remove "$(params.cluster-name)"
               
               # Commit and push changes
               echo "📝 Committing changes..."
@@ -142,12 +86,42 @@ spec:
       params:
         - name: cluster-name
           value: "$(params.cluster-name)"
-        - name: infra-id
-          value: "$(tasks.query-cluster-metadata.results.infra-id)"
-        - name: cluster-id
-          value: "$(tasks.query-cluster-metadata.results.cluster-id)"
-        - name: region
-          value: "$(tasks.query-cluster-metadata.results.region)"
+    
+    - name: trigger-bootstrap
+      runAfter:
+        - remove-from-repo-and-commit
+      taskSpec:
+        params:
+          - name: cluster-name
+        steps:
+          - name: trigger
+            image: registry.redhat.io/openshift4/ose-cli
+            script: |
+              #!/bin/bash
+              set -e
+              
+              echo "🔄 Triggering bootstrap pipeline to reconcile changes..."
+              
+              if oc get pipeline bootstrap-pipeline -n hub-provisioner &>/dev/null; then
+                oc create -f - <<EOF
+              apiVersion: tekton.dev/v1
+              kind: PipelineRun
+              metadata:
+                generateName: bootstrap-post-removal-
+                namespace: hub-provisioner
+              spec:
+                pipelineRef:
+                  name: bootstrap-pipeline
+                timeout: 1h
+              EOF
+                echo "✅ Bootstrap pipeline triggered successfully"
+              else
+                echo "ℹ️  Bootstrap pipeline not found - skipping trigger"
+                echo "   ArgoCD will auto-sync the changes"
+              fi
+      params:
+        - name: cluster-name
+          value: "$(params.cluster-name)"
     
   finally:
     - name: removal-summary
@@ -165,14 +139,14 @@ spec:
               echo "Cluster Name: $(params.cluster-name)"
               echo "Timestamp: $(date -Iseconds)"
               echo ""
-              echo "✅ Deprovisioning ApplicationSets created"
+              echo "✅ Cluster directory removed from repository"
               echo "✅ Changes committed to GitHub"
+              echo "✅ Bootstrap pipeline triggered"
               echo ""
-              echo "📌 Monitor:"
-              echo "   1. ArgoCD sync of deprovisioning ApplicationSets"
-              echo "   2. Hive ClusterDeprovision resource creation"
-              echo "   3. AWS infrastructure teardown"
-              echo "   4. Cleanup pipeline execution"
+              echo "📌 Next steps:"
+              echo "   1. Bootstrap pipeline reconciles ArgoCD changes"
+              echo "   2. ArgoCD prunes cluster resources"
+              echo "   3. Cluster removal complete"
               echo "=========================="
       params:
         - name: cluster-name
