@@ -4,6 +4,8 @@ kind: ClusterDeployment
 metadata:
   namespace: ocp-01
   name: ocp-01
+  annotations:
+    hive.openshift.io/fake-cluster: "true"
 spec:
   baseDomain: bootstrap.red-chesterfield.com
   clusterName: ocp-01
