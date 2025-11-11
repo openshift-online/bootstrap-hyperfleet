@@ -964,6 +964,15 @@ EOF
 }
 
 generate_pipelines() {
+    # Generate parent pipelines kustomization
+    cat > "$CLUSTER_ROOT_DIR/pipelines/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cloud-infrastructure/
+EOF
+
     # Generate cloud-infrastructure pipeline kustomization
     cat > "$PIPELINES_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -1360,7 +1369,6 @@ generate_operators
 generate_pipelines
 generate_deployments
 generate_gitops_applications
-generate_deprovisioning
 generate_cluster_root_kustomization
 update_clusters_kustomization
 update_gitops_kustomization
