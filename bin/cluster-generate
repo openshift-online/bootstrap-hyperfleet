@@ -67,7 +67,7 @@ CLUSTER_ROOT_DIR="clusters/$FULL_CLUSTER_NAME"
 CLUSTER_OUTPUT_DIR="$CLUSTER_ROOT_DIR/cluster"
 OPERATORS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/operators"
 PIPELINES_OUTPUT_DIR="$CLUSTER_ROOT_DIR/pipelines/cloud-infrastructure"
-DEPLOYMENTS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/deployments/ocm"
+DEPLOYMENTS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/deployments/clm"
 GITOPS_OUTPUT_DIR="$CLUSTER_ROOT_DIR/gitops"
 
 # Defaults
@@ -951,7 +951,7 @@ generate_operators() {
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ocm-$FULL_CLUSTER_NAME
+namespace: clm-$FULL_CLUSTER_NAME
 
 commonAnnotations:
   cluster: $FULL_CLUSTER_NAME
@@ -978,7 +978,7 @@ EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ocm-$FULL_CLUSTER_NAME
+namespace: clm-$FULL_CLUSTER_NAME
 
 commonAnnotations:
   cluster: $FULL_CLUSTER_NAME
@@ -998,7 +998,7 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   name: cloud-infrastructure-provisioning-run
-  namespace: ocm-$FULL_CLUSTER_NAME
+  namespace: clm-$FULL_CLUSTER_NAME
 spec:
   pipelineRef:
     name: cloud-infrastructure-provisioning-pipeline
@@ -1026,13 +1026,22 @@ EOF
 }
 
 generate_deployments() {
-    # Generate deployments kustomization.yaml
+    # Generate parent deployments kustomization
+    cat > "$CLUSTER_ROOT_DIR/deployments/kustomization.yaml" << EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - clm/
+EOF
+
+    # Generate clm deployment kustomization.yaml
     cat > "$DEPLOYMENTS_OUTPUT_DIR/kustomization.yaml" << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../../../../bases/ocm
+  - ../../../../bases/clm
 EOF
 }
 
@@ -1242,7 +1251,7 @@ EOF
 
 update_gitops_kustomization() {
     local gitops_kustomization="clusters/global/gitops/kustomization.yaml"
-    local cluster_gitops_ref="- ../../$FULL_CLUSTER_NAME/gitops/"
+    local cluster_gitops_ref="  - ../../$FULL_CLUSTER_NAME/gitops/"
     
     # Check if the cluster gitops is already referenced
     if ! grep -q "$FULL_CLUSTER_NAME/gitops/" "$gitops_kustomization"; then
