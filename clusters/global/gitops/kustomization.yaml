@@ -9,7 +9,6 @@ resources:
   - ./clusters/ # cluster-specific ApplicationSets
 
   # Cluster ApplicationSets
-  - ../../ocp-456/deprovisioning/
 
   # Repository configuration for project forks
   - repo-url-patch.yaml
