@@ -1,0 +1,15 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: cluster-remove-ocp-mgt-01
+  namespace: hub-provisioner
+  labels:
+    tekton.dev/pipeline: cluster-remove-pipeline
+    cluster: ocp-mgt-01
+spec:
+  pipelineRef:
+    name: cluster-remove-pipeline
+  params:
+    - name: cluster-name
+      value: ocp-mgt-01
+  timeout: 1h
