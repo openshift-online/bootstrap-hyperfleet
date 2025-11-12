@@ -226,6 +226,38 @@ echo "  ✅ Created ClusterDeprovision resource"
 echo "  ✅ Created cleanup PipelineRun"
 
 echo ""
+echo "Deleting ClusterDeployment from cluster kustomization..."
+
+CLUSTER_KUSTOMIZATION="$CLUSTER_DIR/cluster/kustomization.yaml"
+
+if [ ! -f "$CLUSTER_KUSTOMIZATION" ]; then
+    echo "  ⚠️  Cluster kustomization not found: $CLUSTER_KUSTOMIZATION"
+else
+    # Check if ClusterDeployment patch already has $patch: delete
+    if grep -A5 "BEGIN: ClusterDeployment" "$CLUSTER_KUSTOMIZATION" | grep -q "\$patch: delete"; then
+        echo "  ℹ️  ClusterDeployment already marked for deletion"
+    else
+        # Use delimiter comments to replace the ClusterDeployment patch block
+        sed -i '/# BEGIN: ClusterDeployment patch/,/# END: ClusterDeployment patch/c\
+  # BEGIN: ClusterDeployment patch - Managed by bin/cluster-deprovision\
+  - target:\
+      kind: ClusterDeployment\
+      version: v1\
+      group: hive.openshift.io\
+    patch: |-\
+      $patch: delete\
+      apiVersion: hive.openshift.io/v1\
+      kind: ClusterDeployment\
+      metadata:\
+        name: '"$CLUSTER_NAME"'\
+  # END: ClusterDeployment patch' "$CLUSTER_KUSTOMIZATION"
+        
+        echo "  ✅ Added \$patch: delete directive to ClusterDeployment"
+        git add "$CLUSTER_KUSTOMIZATION"
+    fi
+fi
+
+echo ""
 echo "Updating global GitOps configuration..."
 
 GITOPS_KUSTOMIZATION="clusters/global/gitops/kustomization.yaml"

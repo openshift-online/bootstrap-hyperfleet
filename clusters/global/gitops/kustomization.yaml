@@ -8,8 +8,6 @@ resources:
   - ./global/
   - ./clusters/ # cluster-specific ApplicationSets
 
-  # Cluster ApplicationSets
-
   # Repository configuration for project forks
   - repo-url-patch.yaml
 

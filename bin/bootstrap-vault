@@ -39,7 +39,7 @@ EOF
 
   # 4. Apply ExternalSecrets for this namespace
   echo "Applying ExternalSecrets for ${namespace}..."
-  sed "s/CLUSTER_NAMESPACE/${namespace}/g" bases/ocm/external-secrets-template.yaml | oc apply -f -
+  sed "s/CLUSTER_NAMESPACE/${namespace}/g" bases/clm/external-secrets-template.yaml | oc apply -f -
   sleep .2
 
   # 5. ExternalSecrets created - secrets will sync when ESO is ready and cluster namespace exists

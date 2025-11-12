@@ -185,7 +185,7 @@ CLUSTER_DIR="clusters/$CLUSTER_NAME"
 mkdir -p "$CLUSTER_DIR"
 
 # Generate cluster specification
-cat > "$CLUSTER_DIR/$CLUSTER_NAME.yaml" << EOF
+cat > "$CLUSTER_DIR/region.yaml" << EOF
 apiVersion: regional.openshift.io/v1
 kind: RegionalCluster
 metadata:
@@ -204,7 +204,7 @@ EOF
 
 # Add type-specific configuration
 if [ "$CLUSTER_TYPE" = "ocp" ]; then
-    cat >> "$SPEC_DIR/region.yaml" << EOF
+    cat >> "$CLUSTER_DIR/region.yaml" << EOF
     
   # Type-specific configuration
   openshift:
@@ -212,14 +212,14 @@ if [ "$CLUSTER_TYPE" = "ocp" ]; then
     channel: stable
 EOF
 elif [ "$CLUSTER_TYPE" = "eks" ]; then
-    cat >> "$SPEC_DIR/region.yaml" << EOF
+    cat >> "$CLUSTER_DIR/region.yaml" << EOF
     
   # Type-specific configuration
   kubernetes:
     version: "1.28"
 EOF
 elif [ "$CLUSTER_TYPE" = "hcp" ]; then
-    cat >> "$SPEC_DIR/region.yaml" << EOF
+    cat >> "$CLUSTER_DIR/region.yaml" << EOF
     
   # HyperShift specific configuration
   hypershift:
@@ -230,13 +230,13 @@ EOF
 fi
 
 echo ""
-echo "Generated cluster specification at: $CLUSTER_DIR/$CLUSTER_NAME.yaml"
+echo "Generated cluster specification at: $CLUSTER_DIR/region.yaml"
 
 # Run cluster-generate to create full cluster configuration
 echo "Running bin/cluster-generate to create cluster configuration..."
 echo ""
 
-if ! ./bin/cluster-generate "$CLUSTER_DIR/$CLUSTER_NAME.yaml"; then
+if ! ./bin/cluster-generate "$CLUSTER_DIR"; then
     echo "Error: Failed to generate cluster configuration" >&2
     echo "Cleaning up cluster specification..."
     rm -rf "clusters/$CLUSTER_NAME"

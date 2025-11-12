@@ -853,6 +853,7 @@ secretGenerator:
       - install-config.yaml
 
 patches:
+  # BEGIN: ClusterDeployment patch - Managed by bin/cluster-generate
   - target:
       kind: ClusterDeployment
       version: v1
@@ -870,6 +871,7 @@ patches:
       - op: replace
         path: /spec/platform/aws/region
         value: $REGION
+  # END: ClusterDeployment patch
   - target:
       kind: ManagedCluster
       version: v1

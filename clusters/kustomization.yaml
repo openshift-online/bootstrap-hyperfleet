@@ -5,6 +5,3 @@ kind: Kustomization
 
 resources:
   - global/
-
-  - ocp-456/
-  - ocp-789/
