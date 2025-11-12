@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ocp-mgt-01-content
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  generators:
+  - list:
+      elements:
+      - component: operators
+        path: clusters/ocp-mgt-01/operators
+        destination: https://api.ocp-mgt-01.bootstrap.red-chesterfield.com:6443
+        syncWave: "10"
+      - component: pipelines
+        path: clusters/ocp-mgt-01/pipelines
+        destination: https://api.ocp-mgt-01.bootstrap.red-chesterfield.com:6443
+        syncWave: "20"
+      - component: deployments
+        path: clusters/ocp-mgt-01/deployments
+        destination: https://api.ocp-mgt-01.bootstrap.red-chesterfield.com:6443
+        syncWave: "30"
+  
+  template:
+    metadata:
+      name: ocp-mgt-01-{{component}}
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      labels:
+        cluster: ocp-mgt-01
+        phase: content
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/openshift-online/bootstrap-hyperfleet
+        path: '{{path}}'
+        targetRevision: main
+      destination:
+        server: '{{destination}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+          allowEmpty: false
+        syncOptions:
+        - CreateNamespace=true
