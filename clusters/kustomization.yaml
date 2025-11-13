@@ -5,4 +5,3 @@ kind: Kustomization
 
 resources:
   - global/
-  - ocp-mgt-02/
