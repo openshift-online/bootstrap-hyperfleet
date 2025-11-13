@@ -36,6 +36,15 @@ echo "  ✅ Removed directory: $CLUSTER_DIR"
 echo ""
 echo "Updating global GitOps configuration..."
 
+GLOBAL_KUSTOMIZATION="clusters/global/kustomization.yaml"
+
+if grep -q "\- \.\./[^/]*/${CLUSTER_NAME}/" "$GLOBAL_KUSTOMIZATION" 2>/dev/null; then
+    sed -i "/\- \.\./[^/]*\/${CLUSTER_NAME}\//d" "$GLOBAL_KUSTOMIZATION"
+    echo "  ✅ Removed references from $GLOBAL_KUSTOMIZATION"
+else
+    echo "  ℹ️  No references found in $GLOBAL_KUSTOMIZATION"
+fi
+
 GITOPS_KUSTOMIZATION="clusters/global/gitops/kustomization.yaml"
 
 if grep -q "\- \.\./\.\./[^/]*/${CLUSTER_NAME}/" "$GITOPS_KUSTOMIZATION" 2>/dev/null; then

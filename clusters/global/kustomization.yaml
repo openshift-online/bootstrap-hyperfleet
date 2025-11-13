@@ -7,5 +7,5 @@ resources:
   - gitops/
   
   # Cluster registrations (ArgoCD ApplicationSets)
-  - ../ocp-mgt-01/gitops/
+
 
