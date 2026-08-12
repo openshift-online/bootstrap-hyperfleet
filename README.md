@@ -200,6 +200,54 @@ BOOTSTRAP_TIMEOUT=3600       # Max wait in seconds
 NO_COLOR=1                   # Disable ANSI color output
 ```
 
+## User Access
+
+All Red Hat engineers from the OCM production roster are pre-seeded into Keycloak across all environments. Users are sourced from the `ocm-resources/data/uhc-production/users/` directory (938 accounts).
+
+### Credentials
+
+- **Username:** your kerberos ID (e.g. `mturansk`)
+- **Password:** `changeme` (temporary — you will be prompted to set a new password on first login)
+- **Group:** `hypershell-users`
+- **Role:** `openshell-user`
+
+### Login via Browser
+
+Open the Keycloak console for your target environment and sign in:
+
+```
+https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell/account
+```
+
+### Login via CLI
+
+```bash
+# Get a token using direct access grant (openshell-cli client)
+curl -s -X POST \
+  "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell/protocol/openid-connect/token" \
+  -d "client_id=openshell-cli" \
+  -d "grant_type=password" \
+  -d "username=mturansk" \
+  -d "password=changeme" | jq .access_token
+```
+
+### Admin Accounts
+
+| Username | Password | Role | Notes |
+|----------|----------|------|-------|
+| `admin` | `admin` | `openshell-admin` | Full admin, non-temporary password |
+| `developer` | `developer` | `openshell-user` | Dev testing, non-temporary password |
+
+### Managing Users
+
+Users are defined in `bases/hypershell/base/hypershell-realm.json` and imported when Keycloak starts (`--import-realm`). To add or remove users, edit the `users` array in that file, commit, and restart Keycloak:
+
+```bash
+oc rollout restart deployment -l app=keycloak -n hypershell-int
+oc rollout restart deployment -l app=keycloak -n hypershell-stage
+oc rollout restart deployment -l app=keycloak -n hypershell-prod
+```
+
 ## Monitoring
 
 ```bash
