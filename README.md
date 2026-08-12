@@ -265,3 +265,8 @@ oc get applications.argoproj.io -n openshift-gitops
 # Operator status
 oc get csv -A | grep -v Succeeded
 ```
+
+
+
+ https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell/protocol/openid-connect/auth?client_id=openshell-cli&response_type=code&redirect_uri=http://localhost:8080/callback
+  https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/admin/master/console/
