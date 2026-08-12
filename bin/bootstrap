@@ -1,43 +1,360 @@
 #!/bin/bash
+set -uo pipefail
 
-# Verify that the user is logged into a Kubernetes Cluster
-if [[ ! $(oc cluster-info) ]]; then
-  echo "Please log in to an OpenShift cluster using 'oc login'"
-  exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+POLL_INTERVAL=${BOOTSTRAP_POLL_INTERVAL:-10}
+TIMEOUT=${BOOTSTRAP_TIMEOUT:-3600}
+NO_COLOR=${NO_COLOR:-}
+CURSOR_HIDDEN=false
+
+if [[ -z "$NO_COLOR" ]] && [[ -t 1 ]]; then
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  RED=$'\033[31m'
+  CYAN=$'\033[36m'
+  RESET=$'\033[0m'
+  CLEAR_LINE=$'\033[2K'
+  SAVE_CURSOR=$'\033[s'
+  RESTORE_CURSOR=$'\033[u'
+  HIDE_CURSOR=$'\033[?25l'
+  SHOW_CURSOR=$'\033[?25h'
+else
+  BOLD="" DIM="" GREEN="" YELLOW="" RED="" CYAN="" RESET=""
+  CLEAR_LINE="" SAVE_CURSOR="" RESTORE_CURSOR=""
+  HIDE_CURSOR="" SHOW_CURSOR=""
 fi
 
-echo "Content will be deployed to the cluster running at:";
-oc cluster-info
+cleanup() {
+  if [[ "$CURSOR_HIDDEN" == true ]]; then
+    printf '%b' "$SHOW_CURSOR"
+  fi
+}
+trap cleanup EXIT INT TERM
 
-# Install the OpenShift GitOps Operator
-echo "Installing the OpenShift GitOps Operator"
-oc apply -k clusters/global/operators/openshift-gitops
+declare -A COMPONENT_STATUS
+declare -A COMPONENT_DETAIL
 
-./bin/monitor-status applications.argoproj.io
+check_operator_csv() {
+  local namespace="$1"
+  local name_pattern="$2"
+  local csv
+  csv=$(oc get csv -n "$namespace" --no-headers 2>/dev/null | grep "$name_pattern" | head -1) || true
+  if [[ -z "$csv" ]]; then
+    echo "Pending"
+    return
+  fi
+  local phase
+  phase=$(echo "$csv" | awk '{print $NF}')
+  case "$phase" in
+    Succeeded) echo "Ready" ;;
+    Installing|InstallReady|Replacing) echo "Installing" ;;
+    Failed) echo "Failed" ;;
+    *) echo "Installing" ;;
+  esac
+}
 
-# Apply the GitOps Applications to complete bootstrap
-echo "Applying the GitOps Applications to complete bootstrap"
-oc apply -k clusters/global/
+check_deployment_ready() {
+  local namespace="$1"
+  local name="$2"
+  if ! oc get deployment "$name" -n "$namespace" --no-headers 2>/dev/null | grep -q "$name"; then
+    echo "Pending"
+    return
+  fi
+  local ready desired
+  ready=$(oc get deployment "$name" -n "$namespace" -o jsonpath='{.status.readyReplicas}' 2>/dev/null) || true
+  desired=$(oc get deployment "$name" -n "$namespace" -o jsonpath='{.spec.replicas}' 2>/dev/null) || true
+  ready=${ready:-0}
+  desired=${desired:-1}
+  if [[ "$ready" == "$desired" ]] && [[ "$ready" != "0" ]]; then
+    echo "Ready"
+  else
+    echo "Installing"
+  fi
+}
 
-echo "Waiting for openshift-gitops (aka Argo) to complete"
-./bin/wait-kube route openshift-gitops-server openshift-gitops '{.metadata.name}' openshift-gitops-server
+check_statefulset_ready() {
+  local namespace="$1"
+  local name="$2"
+  if ! oc get statefulset "$name" -n "$namespace" --no-headers 2>/dev/null | grep -q "$name"; then
+    echo "Pending"
+    return
+  fi
+  local ready desired
+  ready=$(oc get statefulset "$name" -n "$namespace" -o jsonpath='{.status.readyReplicas}' 2>/dev/null) || true
+  desired=$(oc get statefulset "$name" -n "$namespace" -o jsonpath='{.spec.replicas}' 2>/dev/null) || true
+  ready=${ready:-0}
+  desired=${desired:-1}
+  if [[ "$ready" == "$desired" ]] && [[ "$ready" != "0" ]]; then
+    echo "Ready"
+  else
+    echo "Installing"
+  fi
+}
 
-echo "Waiting for ACM to complete"
-./bin/wait-kube mch multiclusterhub open-cluster-management '{.status.conditions[?(@.type=="Complete")].message}' "All hub components ready."
+status_icon() {
+  case "$1" in
+    Ready)      printf '%b%-12s%b' "$GREEN" "Ready" "$RESET" ;;
+    Installing) printf '%b%-12s%b' "$YELLOW" "Installing" "$RESET" ;;
+    Syncing)    printf '%b%-12s%b' "$YELLOW" "Syncing" "$RESET" ;;
+    Pending)    printf '%b%-12s%b' "$DIM" "Pending" "$RESET" ;;
+    Failed)     printf '%b%-12s%b' "$RED" "Failed" "$RESET" ;;
+    Waiting)    printf '%b%-12s%b' "$DIM" "Waiting" "$RESET" ;;
+    *)          printf '%b%-12s%b' "$DIM" "$1" "$RESET" ;;
+  esac
+}
 
-echo "Control plane is ready: $(oc whoami --show-console)"
+poll_phase1() {
+  COMPONENT_STATUS[gitops]=$(check_operator_csv "openshift-gitops" "openshift-gitops-operator")
+  COMPONENT_STATUS[pipelines]=$(check_operator_csv "openshift-operators" "openshift-pipelines-operator")
+  COMPONENT_STATUS[cnpg]=$(check_operator_csv "cnpg-system" "cloud-native-postgresql")
+  COMPONENT_STATUS[keycloak_op]=$(check_operator_csv "keycloak-system" "rhbk-operator")
+  COMPONENT_STATUS[grafana_op]=$(check_operator_csv "grafana-operator-system" "grafana-operator")
+  COMPONENT_STATUS[vault]=$(check_statefulset_ready "vault" "vault-helm")
+  COMPONENT_STATUS[eso]=$(check_deployment_ready "external-secrets" "eso-external-secrets")
+  COMPONENT_STATUS[sandbox]=$(check_deployment_ready "agent-sandbox-system" "agent-sandbox-controller")
+  COMPONENT_STATUS[monitoring]=$(check_deployment_ready "openshift-user-workload-monitoring" "prometheus-operator")
+}
 
-echo "Waiting for regional clusters to provision"
-# Note: Cluster provisioning is handled by GitOps - clusters will be created automatically
-# Wait times depend on cluster type: EKS (~15min), OCP via Hive (~45min), HCP (~10min)
+poll_phase2() {
+  for env in int stage prod; do
+    local ns="hypershell-${env}"
+    local prefix="${env}-"
+    local api_status db_status ctrl_status kc_status overall
 
-echo "GitOps has begun cluster provisioning. You can monitor progress with:"
-echo "  oc get applications -n openshift-gitops"
-echo "  oc get clusterdeployments -A  # For OCP clusters"
-echo "  oc get clusters -A            # For EKS clusters" 
-echo "  oc get hostedclusters -A      # For HCP clusters"
-echo ""
+    api_status=$(check_deployment_ready "$ns" "${prefix}hypershell-api-server")
+    db_status=$(check_statefulset_ready "$ns" "${prefix}hypershell-postgres")
+    ctrl_status=$(check_deployment_ready "$ns" "${prefix}hypershell-controller")
+    kc_status=$(check_deployment_ready "$ns" "${prefix}keycloak")
 
-echo "Setting up Vault-based secret management for provisioned cluster namespaces"
-echo "Note: ExternalSecrets will be created but won't sync until clusters are fully provisioned"
-./bin/bootstrap-vault
+    if [[ "$api_status" == "Ready" ]] && [[ "$db_status" == "Ready" ]] && [[ "$ctrl_status" == "Ready" ]] && [[ "$kc_status" == "Ready" ]]; then
+      overall="Ready"
+    elif [[ "$api_status" == "Pending" ]] && [[ "$db_status" == "Pending" ]] && [[ "$ctrl_status" == "Pending" ]] && [[ "$kc_status" == "Pending" ]]; then
+      overall="Waiting"
+    else
+      overall="Installing"
+    fi
+
+    COMPONENT_STATUS["hs_${env}"]="$overall"
+    COMPONENT_DETAIL["hs_${env}"]="api:${api_status:0:1} db:${db_status:0:1} ctrl:${ctrl_status:0:1} kc:${kc_status:0:1}"
+  done
+}
+
+format_elapsed() {
+  local seconds=$1
+  local mins=$((seconds / 60))
+  local secs=$((seconds % 60))
+  if [[ $mins -gt 0 ]]; then
+    printf "%dm %02ds" "$mins" "$secs"
+  else
+    printf "%ds" "$secs"
+  fi
+}
+
+DASHBOARD_LINES=0
+
+emit_line() {
+  printf '%b%b\n' "$CLEAR_LINE" "$1"
+  DASHBOARD_LINES=$((DASHBOARD_LINES + 1))
+}
+
+render_dashboard() {
+  local elapsed=$1
+  local api_url
+  api_url=$(oc whoami --show-server 2>/dev/null) || api_url="unknown"
+
+  local p1_ready=0 p1_total=9
+  for key in gitops pipelines cnpg keycloak_op grafana_op vault eso sandbox monitoring; do
+    [[ "${COMPONENT_STATUS[$key]:-Pending}" == "Ready" ]] && p1_ready=$((p1_ready + 1))
+  done
+
+  local p2_ready=0 p2_total=3
+  for env in int stage prod; do
+    [[ "${COMPONENT_STATUS[hs_${env}]:-Waiting}" == "Ready" ]] && p2_ready=$((p2_ready + 1))
+  done
+
+  if [[ $DASHBOARD_LINES -gt 0 ]] && [[ -z "$NO_COLOR" ]] && [[ -t 1 ]]; then
+    printf '\033[%dA' "$DASHBOARD_LINES"
+  fi
+
+  DASHBOARD_LINES=0
+
+  emit_line ""
+  emit_line "${BOLD}HyperShell Bootstrap${RESET}                                    ${DIM}${api_url}${RESET}"
+  emit_line "${DIM}$(printf '%.0s─' {1..74})${RESET}"
+  emit_line ""
+  emit_line "${BOLD}Phase 1: Operators${RESET}                                        ${CYAN}[${p1_ready}/${p1_total} Ready]${RESET}"
+  emit_line "  OpenShift GitOps $(printf '%*.s' 39 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[gitops]:-Pending}")"
+  emit_line "  OpenShift Pipelines $(printf '%*.s' 36 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[pipelines]:-Pending}")"
+  emit_line "  CloudNativePG $(printf '%*.s' 42 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[cnpg]:-Pending}")"
+  emit_line "  Keycloak Operator $(printf '%*.s' 38 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[keycloak_op]:-Pending}")"
+  emit_line "  Grafana Operator $(printf '%*.s' 39 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[grafana_op]:-Pending}")"
+  emit_line "  Vault $(printf '%*.s' 50 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[vault]:-Pending}")"
+  emit_line "  External Secrets Operator $(printf '%*.s' 30 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[eso]:-Pending}")"
+  emit_line "  Agent Sandbox Controller $(printf '%*.s' 31 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[sandbox]:-Pending}")"
+  emit_line "  User Workload Monitoring $(printf '%*.s' 31 '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[monitoring]:-Pending}")"
+  emit_line ""
+  emit_line "${BOLD}Phase 2: HyperShell Environments${RESET}                          ${CYAN}[${p2_ready}/${p2_total} Ready]${RESET}"
+  for env in int stage prod; do
+    local detail="${COMPONENT_DETAIL[hs_${env}]:-}"
+    local detail_str=""
+    if [[ -n "$detail" ]] && [[ "${COMPONENT_STATUS[hs_${env}]:-Waiting}" != "Waiting" ]] && [[ "${COMPONENT_STATUS[hs_${env}]:-Waiting}" != "Ready" ]]; then
+      detail_str=" ${DIM}(${detail})${RESET}"
+    fi
+    emit_line "  hypershell-${env} $(printf '%*.s' $((46 - ${#env})) '' | tr ' ' '.')  $(status_icon "${COMPONENT_STATUS[hs_${env}]:-Waiting}")${detail_str}"
+  done
+  emit_line ""
+  emit_line "${DIM}Elapsed: $(format_elapsed "$elapsed")                                    Ctrl+C safe (idempotent)${RESET}"
+}
+
+all_ready() {
+  for key in gitops pipelines cnpg keycloak_op grafana_op vault eso sandbox monitoring; do
+    [[ "${COMPONENT_STATUS[$key]:-Pending}" != "Ready" ]] && return 1
+  done
+  for env in int stage prod; do
+    [[ "${COMPONENT_STATUS[hs_${env}]:-Waiting}" != "Ready" ]] && return 1
+  done
+  return 0
+}
+
+any_failed() {
+  for key in "${!COMPONENT_STATUS[@]}"; do
+    [[ "${COMPONENT_STATUS[$key]}" == "Failed" ]] && return 0
+  done
+  return 1
+}
+
+preflight() {
+  if ! oc cluster-info &>/dev/null; then
+    printf '%b%s%b\n' "$RED" "Not logged in to an OpenShift cluster." "$RESET"
+    printf 'Run: oc login <cluster-api-url>\n'
+    exit 1
+  fi
+
+  if ! oc auth can-i create subscriptions.operators.coreos.com --all-namespaces &>/dev/null; then
+    printf '%b%s%b\n' "$RED" "Insufficient permissions. cluster-admin required." "$RESET"
+    exit 1
+  fi
+}
+
+apply_with_retry() {
+  local kustomize_path="$1"
+  local max_attempts=${2:-5}
+  local wait_between=${3:-15}
+
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    local output
+    output=$(oc apply -k "$kustomize_path" 2>&1) || true
+    local errors
+    errors=$(echo "$output" | grep -c -i "error" 2>/dev/null) || errors=0
+
+    if [[ $errors -eq 0 ]]; then
+      echo "$output" | tail -3
+      return 0
+    fi
+
+    if [[ $attempt -lt $max_attempts ]]; then
+      printf '%b  Attempt %d/%d — %d resource errors, retrying in %ds...%b\n' \
+        "$DIM" "$attempt" "$max_attempts" "$errors" "$wait_between" "$RESET"
+      sleep "$wait_between"
+    else
+      echo "$output" | tail -5
+    fi
+  done
+  return 0
+}
+
+apply_manifests() {
+  printf '%b%s%b\n' "$BOLD" "Applying OpenShift GitOps operator..." "$RESET"
+  apply_with_retry clusters/global/operators/openshift-gitops 3 10
+
+  printf '%b%s%b\n' "$BOLD" "Waiting for ArgoCD CRD..." "$RESET"
+  local deadline=$((SECONDS + 300))
+  while true; do
+    if oc get crd applications.argoproj.io -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' 2>/dev/null | grep -q "True"; then
+      break
+    fi
+    if [[ $SECONDS -ge $deadline ]]; then
+      printf '%b%s%b\n' "$RED" "Timed out waiting for ArgoCD CRD after 5 minutes." "$RESET"
+      exit 1
+    fi
+    sleep 5
+  done
+  printf '%b%s%b\n' "$GREEN" "ArgoCD CRD ready." "$RESET"
+
+  printf '%b%s%b\n' "$BOLD" "Applying cluster configuration (with convergence retries)..." "$RESET"
+  apply_with_retry clusters/global/ 5 20
+
+  printf '\n%b%s%b\n' "$GREEN" "Manifests applied. ArgoCD will reconcile all components." "$RESET"
+}
+
+monitor() {
+  printf '%b' "$HIDE_CURSOR"
+  CURSOR_HIDDEN=true
+  local start_time=$SECONDS
+
+  while true; do
+    local elapsed=$((SECONDS - start_time))
+
+    if [[ $elapsed -ge $TIMEOUT ]]; then
+      render_dashboard "$elapsed"
+      printf '\n%b%s%b\n' "$RED" "Timed out after $(format_elapsed $TIMEOUT)." "$RESET"
+      printf 'Re-run to continue monitoring: ./bin/bootstrap --monitor\n'
+      exit 1
+    fi
+
+    poll_phase1
+    poll_phase2
+    render_dashboard "$elapsed"
+
+    if all_ready; then
+      printf '\n%b%b%s%b\n' "$GREEN" "$BOLD" "Bootstrap complete." "$RESET"
+      printf 'Console: %s\n' "$(oc whoami --show-console 2>/dev/null || echo 'unavailable')"
+      printf 'ArgoCD:  %s\n\n' "$(oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='https://{.spec.host}' 2>/dev/null || echo 'unavailable')"
+      exit 0
+    fi
+
+    if any_failed; then
+      printf '\n%b%s%b\n' "$RED" "Component failure detected. Check:" "$RESET"
+      printf '  oc get csv -A | grep -v Succeeded\n'
+      printf '  oc get applications -n openshift-gitops\n'
+      printf 'Re-run to retry: ./bin/bootstrap\n'
+      exit 1
+    fi
+
+    sleep "$POLL_INTERVAL"
+  done
+}
+
+main() {
+  local monitor_only=false
+
+  for arg in "$@"; do
+    case "$arg" in
+      --monitor|-m) monitor_only=true ;;
+      --help|-h)
+        printf 'Usage: ./bin/bootstrap [--monitor]\n\n'
+        printf '  --monitor, -m   Skip apply, only monitor existing deployment\n'
+        printf '\nEnvironment variables:\n'
+        printf '  BOOTSTRAP_POLL_INTERVAL  Seconds between polls (default: 10)\n'
+        printf '  BOOTSTRAP_TIMEOUT        Max wait in seconds (default: 3600)\n'
+        printf '  NO_COLOR                 Disable color output\n'
+        exit 0
+        ;;
+    esac
+  done
+
+  preflight
+
+  if [[ "$monitor_only" == false ]]; then
+    apply_manifests
+  fi
+
+  monitor
+}
+
+main "$@"

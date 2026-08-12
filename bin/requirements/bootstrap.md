@@ -1,110 +1,118 @@
-# bin/bootstrap.sh Requirements
+# bin/bootstrap Requirements
 
 ## Purpose
 
-The `bootstrap.sh` script orchestrates the complete initialization of an OpenShift GitOps-managed multi-cluster control plane, deploying all prerequisites, operators, and GitOps applications required for automated cluster lifecycle management.
+Bootstrap the HyperShell hosting platform on an OpenShift cluster by deploying all operators, GitOps applications, and HyperShell environments (int/stage/prod) with a live progress dashboard.
 
 ## Functional Requirements
 
-### Prerequisites Validation
-- **Cluster Authentication**: Must verify user is logged into an OpenShift cluster via `oc cluster-info`
-- **Permission Check**: Must have cluster-admin privileges to deploy operators and CRDs
-- **Exit Condition**: Must exit with error code 1 if authentication fails
+### Preflight Validation
+- **Cluster Authentication**: Verify `oc cluster-info` succeeds
+- **Permission Check**: Verify `oc auth can-i create subscriptions.operators.coreos.com --all-namespaces`
+- **Exit Condition**: Exit code 1 with clear messaging on failure
 
 ### Deployment Sequence
-1. **Operator Installation**: Install OpenShift GitOps Operator directly via subscription manifest
-2. **Operator Readiness**: Wait for GitOps CRDs to be available via `status.sh applications.argoproj.io`
-3. **GitOps Applications**: Deploy all GitOps applications via `oc apply -k ./gitops-applications`
-4. **Component Readiness**: Wait for core components (GitOps, ACM) to be fully operational
-5. **Vault Integration**: Initialize vault-based secret management for cluster namespaces
+1. **GitOps Operator**: Apply `clusters/global/operators/openshift-gitops` directly via `oc apply -k`
+2. **CRD Gate**: Wait for `applications.argoproj.io` CRD to be Established (5min timeout)
+3. **Full Apply**: Apply `clusters/global/` which deploys all ArgoCD Applications via sync-waves
+4. **Monitor**: Enter live dashboard polling loop until all components report Ready
 
-### Component Readiness Requirements
+### Operator Components (Phase 1)
 
-#### OpenShift GitOps (ArgoCD)
-- **Wait Condition**: Route `openshift-gitops-server` in `openshift-gitops` namespace exists
-- **Validation**: Route kind must equal "Route"
-- **Timeout**: Must handle reasonable timeout for operator deployment
+All operators deploy in parallel via ArgoCD sync-waves:
 
-#### Advanced Cluster Management (ACM)
-- **Wait Condition**: MultiClusterHub `multiclusterhub` in `open-cluster-management` namespace
-- **Status Check**: `status.conditions[?(@.type=="Complete")].message` equals "All hub components ready."
-- **Validation**: All ACM hub components must be operational
+| Wave | Component | Readiness Check |
+|------|-----------|----------------|
+| -1 | OpenShift GitOps | CSV phase = Succeeded |
+| 1 | OpenShift Pipelines | CSV phase = Succeeded |
+| 1 | User Workload Monitoring | prometheus-operator Deployment ready |
+| 2 | CloudNativePG | CSV phase = Succeeded |
+| 2 | Keycloak Operator (RHBK) | CSV phase = Succeeded |
+| 2 | Grafana Operator | CSV phase = Succeeded |
+| 2 | External Secrets Operator | eso-external-secrets Deployment ready |
+| 2 | Vault | vault-helm StatefulSet ready |
+| 3 | Agent Sandbox Controller | agent-sandbox-controller Deployment ready |
 
-### Output Requirements
+### HyperShell Environments (Phase 2)
 
-#### Progress Reporting
-- **Cluster Info**: Display target cluster information before deployment
-- **Step Notifications**: Clear messaging for each deployment phase
-- **Console Access**: Provide OpenShift console URL upon completion
+| Wave | Environment | Readiness Check |
+|------|-------------|----------------|
+| 10 | hypershell-int | api-server + postgres + controller + keycloak all ready |
+| 11 | hypershell-stage | api-server + postgres + controller + keycloak all ready |
+| 12 | hypershell-prod | api-server + postgres + controller + keycloak all ready |
 
-#### Monitoring Guidance
-- **Application Status**: `oc get applications -n openshift-gitops`
-- **OCP Clusters**: `oc get clusterdeployments -A`
-- **EKS Clusters**: `oc get clusters -A`
-- **HCP Clusters**: `oc get hostedclusters -A`
+### Live Progress Dashboard
 
-### Integration Requirements
+The script renders an in-place terminal table that updates every poll cycle:
 
-#### Vault Secret Management
-- **Post-Deployment**: Execute `bootstrap.vault-integration.sh` after core components
-- **ExternalSecrets**: Create external secret configurations for cluster namespaces
-- **Deferred Sync**: ExternalSecrets won't sync until target clusters are provisioned
+```
+HyperShell Bootstrap                          https://api.cluster:6443
+──────────────────────────────────────────────────────────────────────────
 
-#### GitOps Automation
-- **Cluster Provisioning**: Automated via GitOps ApplicationSets
-- **Timing Expectations**: 
-  - EKS clusters: ~15 minutes
-  - OCP via Hive: ~45 minutes  
-  - HCP clusters: ~10 minutes
+Phase 1: Operators                                        [9/9 Ready]
+  OpenShift GitOps .......................................  Ready
+  OpenShift Pipelines ....................................  Ready
+  CloudNativePG ..........................................  Ready
+  Keycloak Operator ......................................  Ready
+  Grafana Operator .......................................  Ready
+  Vault ..................................................  Ready
+  External Secrets Operator ..............................  Ready
+  Agent Sandbox Controller ...............................  Ready
+  User Workload Monitoring ...............................  Ready
 
-### Error Handling Requirements
+Phase 2: HyperShell Environments                          [3/3 Ready]
+  hypershell-int .........................................  Ready
+  hypershell-stage .......................................  Ready
+  hypershell-prod ........................................  Ready
 
-#### Authentication Failures
-- **Clear Messaging**: "Please log in to an OpenShift cluster using 'oc login'"
-- **Exit Code**: Must exit with code 1 for script automation compatibility
+Elapsed: 12m 34s                                  Ctrl+C safe (idempotent)
+```
 
-#### Deployment Failures
-- **Component Timeouts**: Graceful handling of component readiness timeouts
-- **Operator Issues**: Clear error reporting for operator deployment failures
-- **Resource Conflicts**: Handle existing resource conflicts appropriately
+Status states: `Pending` (not created), `Installing` (in progress), `Ready` (healthy), `Failed` (error), `Waiting` (blocked on dependency), `Syncing` (ArgoCD reconciling).
 
-### Usage Patterns
+### Idempotency
+
+- Safe to Ctrl+C at any time; ArgoCD continues reconciling independently
+- Safe to re-run; `oc apply -k` is idempotent, monitor resumes where it left off
+- `--monitor` flag skips the apply phase and only observes current state
+
+### Error Handling
+
+- **Authentication**: Clear message with `oc login` guidance
+- **Permissions**: Explicit cluster-admin requirement message
+- **CRD Timeout**: 5-minute deadline for ArgoCD CRD with exit code 1
+- **Component Failure**: Detect CSV Failed phase, print diagnostic commands
+- **Overall Timeout**: Configurable via `BOOTSTRAP_TIMEOUT` (default 3600s)
+
+## Usage
 
 ```bash
-# Standard bootstrap deployment
-./bin/bootstrap.sh
+./bin/bootstrap              # Apply manifests + monitor until ready
+./bin/bootstrap --monitor    # Monitor only (skip apply)
+./bin/bootstrap --help       # Show usage
 
-# Verify cluster access first
-oc cluster-info && ./bin/bootstrap.sh
+# Environment variables
+BOOTSTRAP_POLL_INTERVAL=10   # Seconds between polls
+BOOTSTRAP_TIMEOUT=3600       # Max wait in seconds
+NO_COLOR=1                   # Disable ANSI color output
 ```
 
 ## Dependencies
 
-### External Scripts
-- `status.sh` - CRD readiness validation
-- `wait.kube.sh` - Resource readiness waiting
-- `bootstrap.vault-integration.sh` - Vault secret management setup
-
-### Kustomize Configurations
-- `./gitops-applications` - GitOps ApplicationSets and Applications (includes OpenShift GitOps operator management)
+### Kustomize Paths
+- `clusters/global/operators/openshift-gitops` - GitOps operator (applied first, gates everything)
+- `clusters/global/` - All operators, pipelines, gitops applications, HyperShell environments
 
 ### Required Permissions
-- **cluster-admin** role for operator deployment
-- **Persistent storage** access for GitOps and ACM components
-- **Network policies** configuration for multi-cluster communication
+- **cluster-admin** role for operator deployment and CRD creation
 
-## Related Tools
-
-### Prerequisites
-- **[status.md](./status.md)** - Used for CRD establishment validation
-- **[wait-kube.md](./wait-kube.md)** - Used for resource readiness monitoring
-
-### Workflow Integration  
-- **[bootstrap-vault-integration.md](./bootstrap-vault-integration.md)** - Called after core components are ready
-
-### Monitoring and Validation
-- **[health-check.md](./health-check.md)** - Comprehensive status checking after bootstrap
+### External Tools
+- `oc` - OpenShift CLI (authenticated to target cluster)
+- `kustomize` - Used via `oc apply -k`
 
 ## Design Principles
 
-*This script enables **GitOps-first infrastructure** - all cluster lifecycle management is automated through declarative configuration and continuous deployment.*
+- **Observe, don't orchestrate**: The script applies declarative state, then observes convergence. ArgoCD does the actual orchestration via sync-waves.
+- **Idempotent by design**: Every operation is safe to repeat. No mutable state outside the cluster.
+- **Terminal-native UX**: ANSI dashboard with NO_COLOR support, cursor management, and graceful cleanup on exit.
+- **Self-contained**: No external script dependencies (replaces monitor-status, wait-kube).

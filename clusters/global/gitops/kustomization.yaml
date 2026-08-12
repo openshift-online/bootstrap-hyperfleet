@@ -7,6 +7,8 @@ resources:
   # Global applications (base cluster infrastructure)
   - ./global/
   - ./clusters/ # cluster-specific ApplicationSets
+  # HyperShell application environments (int/stage/prod)
+  - ./hypershell/
 
   # Repository configuration for project forks
   - repo-url-patch.yaml

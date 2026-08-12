@@ -5,7 +5,11 @@ namespace: openshift-gitops
 
 resources:
   - openshift-gitops/
-  - advanced-cluster-management/
+  - user-workload-monitoring/
+  - cloudnative-pg/
+  - keycloak-operator/
+  - grafana-operator/
+  - agent-sandbox-controller/
   - openshift-pipelines/
   - vault/
   - ../eso/global/
