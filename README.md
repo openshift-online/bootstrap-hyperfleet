@@ -211,24 +211,27 @@ All Red Hat engineers from the OCM production roster are pre-seeded into Keycloa
 - **Group:** `hypershell-users`
 - **Role:** `openshell-user`
 
-### Login via Browser
+### First Login (required)
 
-Open the Keycloak console for your target environment and sign in:
+You must change your temporary password via the browser before using the CLI. Open the Keycloak account console:
 
 ```
 https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell/account
 ```
 
+Sign in with your kerberos ID and `changeme`, then set a new password when prompted.
+
 ### Login via CLI
 
+After changing your password, get a token using the direct access grant:
+
 ```bash
-# Get a token using direct access grant (openshell-cli client)
 curl -s -X POST \
   "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell/protocol/openid-connect/token" \
   -d "client_id=openshell-cli" \
   -d "grant_type=password" \
   -d "username=mturansk" \
-  -d "password=changeme" | jq .access_token
+  -d "password=YOUR_NEW_PASSWORD" | jq .access_token
 ```
 
 ### Admin Accounts
