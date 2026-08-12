@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hypershell-int
+
+resources:
+  - ../../base
+
+namePrefix: int-
+
+patches:
+  - target:
+      kind: Namespace
+      name: hypershell
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: hypershell-int
+      - op: replace
+        path: /metadata/annotations/openshift.io~1display-name
+        value: "HyperShell Integration"
+
+  - target:
+      kind: Deployment
+      name: hypershell-controller
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "hypershell-int"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/4/value
+        value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+  - target:
+      kind: ClusterRoleBinding
+      name: hypershell-controller
+    patch: |
+      - op: replace
+        path: /subjects/0/namespace
+        value: hypershell-int
+
+  - target:
+      kind: Deployment
+      name: keycloak
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "keycloak-int-hypershell.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+images:
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-api-server-main
+    newTag: latest
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-control-plane-main
+    newTag: latest

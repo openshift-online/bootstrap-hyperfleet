@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hypershell-stage
+
+resources:
+  - ../../base
+
+namePrefix: stage-
+
+patches:
+  - target:
+      kind: Namespace
+      name: hypershell
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: hypershell-stage
+      - op: replace
+        path: /metadata/annotations/openshift.io~1display-name
+        value: "HyperShell Staging"
+
+  - target:
+      kind: Deployment
+      name: hypershell-controller
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "hypershell-stage"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/4/value
+        value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+  - target:
+      kind: ClusterRoleBinding
+      name: hypershell-controller
+    patch: |
+      - op: replace
+        path: /subjects/0/namespace
+        value: hypershell-stage
+
+  - target:
+      kind: Deployment
+      name: keycloak
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "keycloak-stage-hypershell.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+images:
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-api-server-main
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-control-plane-main
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
