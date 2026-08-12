@@ -78,13 +78,41 @@ Three environments provide progressive delivery. Int auto-deploys from `main`, s
 
 On the IBM ROKS cluster (`hypershell-cluster`, us-east):
 
-| Environment | API | Keycloak |
-|-------------|-----|----------|
-| int | https://int-hypershell-api-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
-| stage | https://stage-hypershell-api-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://stage-keycloak-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
-| prod | https://prod-hypershell-api-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://prod-keycloak-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
+#### Integration
 
-**ArgoCD:** https://openshift-gitops-server-openshift-gitops.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+https://int-hypershell-api-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+```
+https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+#### Staging
+
+```
+https://stage-hypershell-api-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+```
+https://stage-keycloak-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+#### Production
+
+```
+https://prod-hypershell-api-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+```
+https://prod-keycloak-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
+
+#### ArgoCD
+
+```
+https://openshift-gitops-server-openshift-gitops.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+```
 
 ## Progressive Delivery
 
