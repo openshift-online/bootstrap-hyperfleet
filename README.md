@@ -1,190 +1,188 @@
-# OpenShift Bootstrap
+# HyperShell Platform
 
-**A reusable GitOps framework for multi-cluster management.** Clone this repository to instantly deploy a complete OpenShift hub cluster that can provision and manage regional clusters at scale.
+GitOps infrastructure for deploying and operating the HyperShell gateway platform on OpenShift. Manages operators, environments, and progressive delivery through ArgoCD.
 
-## Quick Reuse
+## Quick Start
 
 ```bash
-# 1. Clone and bootstrap
-git clone https://github.com/openshift-online/bootstrap.git
-cd bootstrap
-oc login https://api.your-hub-cluster.example.com:6443
-oc apply -k clusters/global/
-
-# 2. Add your first cluster
-./bin/cluster-create
-
-# 3. Done - GitOps handles the rest
+oc login https://api.your-cluster.example.com:6443
+./bin/bootstrap
 ```
 
-## What You Get
+The bootstrap script applies all manifests, then monitors convergence with a live dashboard:
 
-This repository provides a **complete reusable infrastructure**:
-- **Self-Managing Hub** - ArgoCD, ACM, Vault, Pipelines all configured automatically
-- **GitOps-Native** - ArgoCD manages all cluster resources automatically  
-- **Automatic Provisioning** - OpenShift (via Hive) and EKS (via CAPI) cluster creation
-- **Zero-Config GitOps** - ApplicationSets with proper dependency ordering
-- **Semantic Organization** - Intuitive directory structure for easy navigation
+```
+HyperShell Bootstrap                          https://api.cluster:6443
+──────────────────────────────────────────────────────────────────────────
 
-**Key benefit:** From zero to production-ready multi-cluster environment in minutes, not days.
+Phase 1: Operators                                        [9/9 Ready]
+  OpenShift GitOps .......................................  Ready
+  OpenShift Pipelines ....................................  Ready
+  CloudNativePG ..........................................  Ready
+  Keycloak Operator ......................................  Ready
+  Grafana Operator .......................................  Ready
+  Vault ..................................................  Ready
+  External Secrets Operator ..............................  Ready
+  Agent Sandbox Controller ...............................  Ready
+  User Workload Monitoring ...............................  Ready
 
-## 🏗️ Architecture Overview
+Phase 2: HyperShell Environments                          [3/3 Ready]
+  hypershell-int .........................................  Ready
+  hypershell-stage .......................................  Ready
+  hypershell-prod ........................................  Ready
 
-**Hub-Spoke Model**: One OpenShift hub cluster manages multiple regional clusters (OpenShift or EKS) using GitOps automation.
+Elapsed: 12m 34s                                  Ctrl+C safe (idempotent)
+```
 
-- **Hub Cluster**: Runs ArgoCD, ACM, and all cluster management operators
-- **Managed Clusters**: Regional OpenShift (OCP) or EKS clusters provisioned and managed automatically
-- **Automated Provisioning**: Single command creates complete cluster overlays with proper GitOps integration
+## HyperShell Environments
 
-## 📁 Directory Structure & Navigation
+Three environments provide progressive delivery. Int auto-deploys from `main`, stage and prod pin to promoted sha digests.
 
-The repository uses **semantic directory organization** designed for intuitive navigation. Each directory level follows consistent patterns that clearly indicate purpose and scope.
+### Integration (hypershell-int)
 
-### 🔍 Semantic Organization Patterns
+| Service | URL |
+|---------|-----|
+| API Server | `https://int-hypershell-api-hypershell-int.<ingress-domain>` |
+| Keycloak SSO | `https://int-keycloak-hypershell-int.<ingress-domain>` |
+| gRPC (internal) | `int-hypershell-api-server.hypershell-int.svc:9000` |
 
-**Top-level directories:**
-- `clusters/` - All cluster resources (hub and managed)
-- `bases/` - Reusable template components
-- `bin/` - Management scripts
+- **Namespace:** `hypershell-int`
+- **Image tag:** `:latest` (auto-deploys main branch)
+- **Replicas:** 1
 
-**Consolidated structure:**
-```bash
-clusters/
-├── global/                      # Hub cluster resources
-│   ├── operators/              # ACM, GitOps, Pipelines, Vault
-│   ├── pipelines/              # Hub provisioner pipelines
-│   └── gitops/                 # ArgoCD ApplicationSets
-└── {cluster-name}/             # Managed cluster (e.g., ocp-02, eks-01)
-    ├── {cluster-name}.yaml     # Cluster specification
-    ├── cluster/                # Provisioning resources (Hive/CAPI)
-    ├── operators/              # Cluster operators
-    ├── pipelines/              # Cluster pipelines
-    ├── deployments/            # Cluster deployments
-    └── gitops/                 # Cluster GitOps apps
+### Staging (hypershell-stage)
+
+| Service | URL |
+|---------|-----|
+| API Server | `https://stage-hypershell-api-hypershell-stage.<ingress-domain>` |
+| Keycloak SSO | `https://stage-keycloak-hypershell-stage.<ingress-domain>` |
+| gRPC (internal) | `stage-hypershell-api-server.hypershell-stage.svc:9000` |
+
+- **Namespace:** `hypershell-stage`
+- **Image tag:** pinned to sha256 digest (promoted from int)
+- **Replicas:** 1
+
+### Production (hypershell-prod)
+
+| Service | URL |
+|---------|-----|
+| API Server | `https://prod-hypershell-api-hypershell-prod.<ingress-domain>` |
+| Keycloak SSO | `https://prod-keycloak-hypershell-prod.<ingress-domain>` |
+| gRPC (internal) | `prod-hypershell-api-server.hypershell-prod.svc:9000` |
+
+- **Namespace:** `hypershell-prod`
+- **Image tag:** pinned to sha256 digest (promoted from stage)
+- **Replicas:** 2 (api-server, keycloak)
+
+### Current Cluster Endpoints
+
+On the IBM ROKS cluster (`hypershell-cluster`, us-east):
+
+| Environment | API | Keycloak |
+|-------------|-----|----------|
+| int | https://int-hypershell-api-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
+| stage | https://stage-hypershell-api-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://stage-keycloak-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
+| prod | https://prod-hypershell-api-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud | https://prod-keycloak-hypershell-prod.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud |
+
+**ArgoCD:** https://openshift-gitops-server-openshift-gitops.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+
+## Progressive Delivery
+
+```
+main branch commit
+       |
+       v
+  hypershell-int (:latest, auto-deploy)
+       |
+       | tests pass, promote sha
+       v
+  hypershell-stage (sha256 digest)
+       |
+       | validation, promote sha
+       v
+  hypershell-prod (sha256 digest, 2 replicas)
+```
+
+To promote a sha from int to stage, update `bases/hypershell/overlays/stage/kustomization.yaml`:
+
+```yaml
+images:
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-server
+    digest: sha256:<promoted-digest>
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-controller
+    digest: sha256:<promoted-digest>
+```
+
+Commit and push. ArgoCD syncs the change automatically.
+
+## Architecture
+
+### Components
+
+Each HyperShell environment deploys:
+- **API Server** — HTTP (8000) and gRPC (9000) with JWT auth and OIDC
+- **Controller** — reconciles gateway provisioning
+- **PostgreSQL** — StatefulSet with persistent storage
+- **Keycloak** — OIDC provider with pre-configured realm
+
+### Operators (deployed via ArgoCD sync-waves)
+
+| Wave | Operator | Purpose |
+|------|----------|---------|
+| -1 | OpenShift GitOps | ArgoCD — manages everything else |
+| 1 | OpenShift Pipelines | Tekton CI/CD |
+| 1 | User Workload Monitoring | Prometheus for app metrics |
+| 2 | CloudNativePG | PostgreSQL operator |
+| 2 | Keycloak (RHBK) | OIDC/SSO operator |
+| 2 | Grafana | Dashboards |
+| 2 | External Secrets | Vault-backed secrets |
+| 2 | Vault | Secret storage |
+| 3 | Agent Sandbox Controller | OpenShell sandbox runtime |
+
+### Directory Structure
+
+```
+clusters/global/
+  operators/           Operator subscriptions and configs
+  gitops/              ArgoCD Applications
+    global/            Operator apps (sync-wave 1-3)
+    hypershell/        Environment apps (sync-wave 10-12)
+  pipelines/           Tekton pipelines
 
 bases/
-├── clusters/                   # Cluster provisioning templates
-├── operators/                  # Operator base configurations
-└── pipelines/                  # Reusable Tekton pipelines
+  hypershell/
+    base/              Shared manifests (api-server, controller, postgres, keycloak)
+    overlays/
+      int/             :latest tags, 1 replica
+      stage/           sha256 digests, 1 replica
+      prod/            sha256 digests, 2 replicas
+  operators/           Reusable operator bases with channel overlays
 ```
 
-## 🧭 Navigation Pattern
+## Usage
 
 ```bash
-# View all clusters
-ls clusters/                        # → global, ocp-02, ocp-03, eks-01
+./bin/bootstrap              # Apply manifests + monitor
+./bin/bootstrap --monitor    # Monitor only (skip apply)
+./bin/bootstrap --help       # Show usage
 
-# View hub cluster resources
-ls clusters/global/                 # → operators, pipelines, gitops
-ls clusters/global/operators/       # → advanced-cluster-management, gitops-integration, openshift-gitops, openshift-pipelines, vault
-
-# View managed cluster resources
-ls clusters/ocp-02/                 # → ocp-02.yaml, cluster, operators, pipelines, deployments, gitops
-
-# View reusable bases
-ls bases/                           # → clusters, operators, pipelines
+# Environment variables
+BOOTSTRAP_POLL_INTERVAL=10   # Seconds between polls
+BOOTSTRAP_TIMEOUT=3600       # Max wait in seconds
+NO_COLOR=1                   # Disable ANSI color output
 ```
 
-## 🚀 How Reuse Works
-
-### Two-Phase Bootstrap Pattern
-
-**Phase 1: Bootstrap from GitHub**
-```bash
-git clone https://github.com/openshift-online/bootstrap.git
-oc apply -k clusters/global/
-```
-
-**Phase 2: Self-Managing Cluster**
-After bootstrap, your cluster becomes self-managing:
-- ArgoCD continuously reconciles all cluster resources
-- New clusters are automatically managed via ApplicationSets
-- GitOps ensures declarative infrastructure as code
-
-### Adding Clusters (Simple)
+## Monitoring
 
 ```bash
-./bin/cluster-create    # Interactive cluster specification
-# GitOps automatically handles the rest
+# Check environment health
+oc get pods -n hypershell-int
+oc get pods -n hypershell-stage
+oc get pods -n hypershell-prod
+
+# ArgoCD application status
+oc get applications.argoproj.io -n openshift-gitops
+
+# Operator status
+oc get csv -A | grep -v Succeeded
 ```
-
-**The system automatically:**
-- ✅ Creates cluster provisioning resources (OpenShift/EKS)
-- ✅ Generates pipeline deployments  
-- ✅ Configures operator installations
-- ✅ Sets up service deployments
-- ✅ Orders deployment with sync waves
-- ✅ Integrates with ACM management
-
-## 📖 Documentation
-
-- **[REUSE.md](./REUSE.md)** - How to clone and reuse this repository
-- **[BOOTSTRAP.md](./BOOTSTRAP.md)** - Step-by-step bootstrap walkthrough  
-- **[docs/getting-started/QUICKSTART.md](./docs/getting-started/QUICKSTART.md)** - 5-minute overview
-- **[docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md)** - Visual architecture diagrams  
-
-## 🏛️ Architecture & Components
-
-### Hub Cluster Components
-- **OpenShift GitOps (ArgoCD)**: Manages all cluster deployments via ApplicationSets
-- **Red Hat Advanced Cluster Management (ACM)**: Multi-cluster lifecycle and governance
-- **Cluster API (CAPI)**: EKS cluster provisioning with AWS infrastructure provider
-- **Hive**: OpenShift cluster provisioning operator
-- **OpenShift Pipelines (Tekton)**: CI/CD automation across all clusters
-
-### Deployment Flow with Sync Waves
-ApplicationSets deploy resources in ordered waves to ensure proper dependencies:
-
-1. **Wave 1**: Cluster provisioning (Hive ClusterDeployment or CAPI resources)
-2. **Wave 2**: Operator installation (OpenShift Pipelines operator)
-3. **Wave 3**: Pipeline deployment (Tekton Pipeline and PipelineRun resources)
-4. **Wave 4**: Service deployment (OCM database services and applications)
-
-### GitOps Integration
-- **Automated cluster registration**: ACM automatically registers managed clusters with ArgoCD
-- **ApplicationSet pattern**: Single ApplicationSet generates all required applications per cluster
-- **Resource exclusions**: ArgoCD excludes transient resources like TaskRuns but allows Pipeline/PipelineRun
-- **Multi-platform support**: Seamlessly manages both OpenShift and EKS clusters
-
-
-## 🔄 Workflow Diagram
-
-```mermaid
-sequenceDiagram
-   participant Admin
-   participant Generator as bin/cluster-generate
-   participant Git as Git Repository
-   participant Hub as Hub Cluster
-   participant ArgoCD
-   participant ACM
-   participant Target as Managed Cluster
-   
-   Admin->>Generator: ./bin/cluster-create
-   Generator->>Git: Create overlays + ApplicationSet
-   
-   Admin->>Hub: ./bin/bootstrap.sh
-   Hub->>ArgoCD: Deploy ApplicationSet
-   
-   ArgoCD->>Git: Sync Wave 1 (cluster)
-   Git->>ArgoCD: Cluster resources
-   ArgoCD->>ACM: Deploy cluster (Hive/CAPI)
-   ACM->>Target: Provision cluster
-   
-   Target->>ACM: Cluster ready
-   ACM->>ArgoCD: Register cluster
-   
-   ArgoCD->>Git: Sync Wave 2-4 (operators→pipelines→services)
-   Git->>ArgoCD: Application resources
-   ArgoCD->>Target: Deploy applications
-   
-   Target->>Admin: Multi-cluster environment ready
-```
-
-## 🛠️ Development & Troubleshooting
-
-- **Validation**: All overlays include `kustomize build` validation and dry-run checks
-- **Monitoring**: Built-in status monitoring scripts for cluster provisioning
-- **Rollback**: Clean rollback procedures for failed deployments
-- **Extensibility**: Base template system allows easy addition of new services and pipelines
-
-**For detailed installation and troubleshooting guidance, see [docs/getting-started/production-installation.md](./docs/getting-started/production-installation.md)**
