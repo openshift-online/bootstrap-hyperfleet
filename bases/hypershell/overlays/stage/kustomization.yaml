@@ -25,6 +25,12 @@ patches:
       name: hypershell-controller
     patch: |
       - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "stage-hypershell-api-server:9000"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "http://stage-hypershell-api-server:8000"
+      - op: replace
         path: /spec/template/spec/containers/0/env/2/value
         value: "hypershell-stage"
       - op: replace
@@ -46,6 +52,17 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/0/value
         value: "https://stage-keycloak-hypershell-stage.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+  - target:
+      kind: Secret
+      name: hypershell-db
+    patch: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: hypershell-db
+      stringData:
+        db.host: "stage-hypershell-postgres"
 
   - target:
       kind: Secret
