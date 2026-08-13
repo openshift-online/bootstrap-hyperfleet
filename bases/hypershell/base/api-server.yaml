@@ -34,7 +34,7 @@ spec:
             - --db-name-file=/secrets/db.name
             - --db-user-file=/secrets/db.user
             - --db-password-file=/secrets/db.password
-            - --db-sslmode=require
+            - --db-sslmode=disable
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -60,7 +60,7 @@ spec:
             - --db-name-file=/secrets/db.name
             - --db-user-file=/secrets/db.user
             - --db-password-file=/secrets/db.password
-            - --db-sslmode=require
+            - --db-sslmode=disable
           ports:
             - containerPort: 8000
               name: http

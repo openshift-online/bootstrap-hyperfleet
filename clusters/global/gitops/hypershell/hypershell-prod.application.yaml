@@ -12,7 +12,7 @@ spec:
   project: default
   source:
     path: bases/hypershell/overlays/prod
-    repoURL: 'https://github.com/openshift-online/bootstrap'
+    repoURL: 'https://github.com/openshift-online/bootstrap-hyperfleet'
     targetRevision: main
   syncPolicy:
     automated:

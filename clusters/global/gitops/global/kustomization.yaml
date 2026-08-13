@@ -13,5 +13,4 @@ resources:
   - openshift-pipelines/
   - vault/
   - ../eso/global/
-  - hub-provisioner/
 

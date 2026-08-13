@@ -10,6 +10,9 @@ resources:
   - keycloak.yaml
   - route.yaml
 
+configurations:
+  - name-reference.yaml
+
 configMapGenerator:
   - name: keycloak-realm-config
     files:

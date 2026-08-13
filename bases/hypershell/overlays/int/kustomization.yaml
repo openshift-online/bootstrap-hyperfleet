@@ -25,6 +25,12 @@ patches:
       name: hypershell-controller
     patch: |
       - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "int-hypershell-api-server:9000"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "http://int-hypershell-api-server:8000"
+      - op: replace
         path: /spec/template/spec/containers/0/env/2/value
         value: "hypershell-int"
       - op: replace
@@ -45,7 +51,33 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/containers/0/env/0/value
-        value: "keycloak-int-hypershell.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+        value: "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+
+  - target:
+      kind: Secret
+      name: hypershell-db
+    patch: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: hypershell-db
+      stringData:
+        db.host: "int-hypershell-postgres"
+
+  - target:
+      kind: Secret
+      name: sso-credentials
+    patch: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: sso-credentials
+      stringData:
+        KEYCLOAK_ADMIN_PASSWORD: "admin"
+        SSO_ISSUER_URL: "http://int-keycloak-service:8080/realms/hypershell"
+        SSO_FRONTEND_ISSUER_URL: "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
+        SSO_CLIENT_SECRET: "dev-secret-do-not-use-in-prod"
+        SSO_REDIRECT_URI: "https://int-hypershell-api-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/*"
 
 images:
   - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-api-server-main
