@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  annotations:
-    openshift.io/display-name: "CloudNativePG"
-  labels:
-    openshift.io/cluster-monitoring: 'true'
-    argocd.argoproj.io/managed-by: openshift-gitops
-  name: cnpg-system

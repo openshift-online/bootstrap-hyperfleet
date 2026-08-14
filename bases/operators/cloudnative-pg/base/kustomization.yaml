@@ -1,9 +1,47 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: cnpg-system
-
+# HYPERSHELL-38: CloudNativePG is installed from the community upstream release
+# manifest (public ghcr.io/cloudnative-pg images), NOT via OLM.
+#
+# Why not OLM on this cluster:
+#   - Community "cloudnative-pg" OLM bundles require k8s >= 1.31; this hub is
+#     OCP 4.17 (k8s 1.30) so the CSV stays Pending (RequirementsNotMet).
+#   - The EDB-certified "cloud-native-postgresql" operator-manager image is
+#     behind docker.enterprisedb.com auth we don't have.
+# The raw release manifest has no minKubeVersion gate and uses public images,
+# so it installs cleanly on k8s 1.30 and self-heals via ArgoCD.
+#
+# To bump: replace cnpg-<ver>.yaml with a newer release file
+# (https://github.com/cloudnative-pg/cloudnative-pg/tree/main/releases) and
+# update the resource ref below.
 resources:
-  - namespace.yaml
-  - operator-group.yaml
-  - subscription.yaml
+  - cnpg-1.26.1.yaml
+
+# Keep the hub's namespace conventions on the operator namespace that the
+# upstream manifest creates.
+patches:
+  - patch: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: cnpg-system
+        labels:
+          openshift.io/cluster-monitoring: "true"
+          argocd.argoproj.io/managed-by: openshift-gitops
+        annotations:
+          openshift.io/display-name: "CloudNativePG"
+
+  # The upstream operator Deployment hardcodes runAsUser/runAsGroup 10001, which
+  # OpenShift's restricted-v2 SCC rejects (the namespace has an assigned UID
+  # range). Drop them so OpenShift injects a valid UID; runAsNonRoot, dropped
+  # capabilities, read-only rootfs and the RuntimeDefault seccomp profile all
+  # stay and satisfy restricted-v2.
+  - target:
+      kind: Deployment
+      name: cnpg-controller-manager
+    patch: |
+      - op: remove
+        path: /spec/template/spec/containers/0/securityContext/runAsUser
+      - op: remove
+        path: /spec/template/spec/containers/0/securityContext/runAsGroup
