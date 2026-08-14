@@ -1,5 +1,0 @@
-nameReference:
-  - kind: Service
-    fieldSpecs:
-      - kind: Route
-        path: spec/to/name

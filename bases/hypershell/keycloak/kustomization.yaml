@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# HYPERSHELL-38: ONE shared Keycloak per cluster, serving every hypershell env
+# (int/stage/prod) from its own `keycloak` namespace. Passthrough to the
+# upstream deploy/keycloak (source of truth), pinned to a SHA; this overlay only
+# patches the external Route host + KC_HOSTNAME to the real cluster domain.
+#
+# No namePrefix and no per-env copies: the api-server in every env validates
+# JWTs against this instance's internal JWKS
+# (keycloak-service.keycloak.svc.cluster.local). Deployed by its own ArgoCD
+# Application at a lower sync-wave than the app envs, because the api-server's
+# JWKS fetch is eager and fatal.
+#
+# Pinned to the hypershell main merge commit of PR1 (#113).
+resources:
+  - github.com/openshift-online/hypershell/deploy/keycloak?ref=b98d8017caee635a759135c893cbbf941f55261f
+
+patches:
+  # External Route host for browser/OIDC access on this cluster.
+  - patch: |
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: keycloak
+        namespace: keycloak
+      spec:
+        host: keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+
+  # Keycloak's own hostname (the OIDC issuer) must match the Route host.
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: keycloak
+        namespace: keycloak
+      spec:
+        template:
+          spec:
+            containers:
+              - name: keycloak
+                env:
+                  - name: KC_HOSTNAME
+                    value: "https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"

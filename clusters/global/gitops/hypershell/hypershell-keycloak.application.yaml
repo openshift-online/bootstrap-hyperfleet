@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hypershell-keycloak
+  namespace: openshift-gitops
+  annotations:
+    # Lower sync-wave than the app envs (10): the shared Keycloak must be up
+    # before any api-server, whose JWKS fetch is eager and fatal on failure.
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  destination:
+    name: in-cluster
+    namespace: keycloak
+  project: default
+  source:
+    path: bases/hypershell/keycloak
+    repoURL: 'https://github.com/openshift-online/bootstrap-hyperfleet'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
