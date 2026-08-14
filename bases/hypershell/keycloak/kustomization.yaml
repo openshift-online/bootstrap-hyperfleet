@@ -28,6 +28,7 @@ resources:
   - keycloak.yaml
   - realm-import.yaml
   - route.yaml
-  # Custom login theme, pinned to the upstream commit that split it into a
-  # standalone base (openshift-online/hypershell#121).
-  - github.com/openshift-online/hypershell/deploy/base/keycloak/theme?ref=fc699366d71aebcaa314dc3f7c4d029079ab28f1
+  # Custom login theme (standalone base added upstream by
+  # openshift-online/hypershell#121). Pinned to the same hypershell SHA as the
+  # deploy/hub base ref (bases/hypershell/base) for a single source commit.
+  - github.com/openshift-online/hypershell/deploy/base/keycloak/theme?ref=8eafa6af7a9d615fc65911f481663fc177399e98

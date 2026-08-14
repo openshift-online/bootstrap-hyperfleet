@@ -17,6 +17,8 @@ kind: Kustomization
 # a `hypershell-api-config` Secret that each env overlay supplies. There is no
 # api-server command override here anymore.
 #
-# Pinned to hypershell main including PR #117 (auth contract).
+# Pinned to hypershell main including PR #117 (auth contract) and PR #124
+# (controller `bind` on the privileged SCC, so it can grant sandboxes the SCC
+# at gateway-provision time).
 resources:
-  - github.com/openshift-online/hypershell/deploy/hub?ref=b3e533badd0f8144bd16bbb84601ec744263cab8
+  - github.com/openshift-online/hypershell/deploy/hub?ref=8eafa6af7a9d615fc65911f481663fc177399e98
