@@ -11,6 +11,7 @@ resources:
   - ../../base
   - cnpg.yaml
   - sso.yaml
+  - web-console-oidc.yaml
 
 namePrefix: int-
 
@@ -39,6 +40,39 @@ patches:
       - op: replace
         path: /subjects/0/namespace
         value: hypershell-int
+
+  # Turn on OIDC login in the web-console BFF. Setting OIDC_ISSUER activates
+  # auth; CLIENT_ID + SESSION_SECRET are then required. The browser client is
+  # public (PKCE), so no client secret. REDIRECT_URI host must match the console
+  # Route and the realm frontend client's redirectUris. SESSION_SECRET comes
+  # from the Secret in web-console-oidc.yaml (namePrefix rewrites the ref).
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: hypershell-web-console
+        namespace: hypershell-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: web-console
+                env:
+                  # deploy/hub hardcodes the api origin to the upstream ns/name;
+                  # retarget it to this env's prefixed api-server service.
+                  - name: HYPERSHELL_API_ORIGIN
+                    value: "http://int-hypershell-api-server.hypershell-int.svc.cluster.local:8000"
+                  - name: OIDC_ISSUER
+                    value: "https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
+                  - name: OIDC_CLIENT_ID
+                    value: "hypershell-frontend"
+                  - name: OIDC_REDIRECT_URI
+                    value: "https://int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/auth/callback"
+                  - name: SESSION_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: hypershell-web-console-oidc
+                        key: SESSION_SECRET
 
   # Point the controller at this env's api-server, namespace, and cluster domain.
   # Name-based (not index-based) so it survives upstream env reordering.
