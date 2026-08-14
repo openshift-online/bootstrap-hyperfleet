@@ -33,7 +33,9 @@ spec:
   host: int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
   to:
     kind: Service
-    name: int-hypershell-web-console
+    # Unprefixed: the Route->Service nameReference (bases/hypershell/base) lets
+    # namePrefix rewrite this to <env>-hypershell-web-console.
+    name: hypershell-web-console
     weight: 100
   port:
     targetPort: http

@@ -22,3 +22,9 @@ kind: Kustomization
 # at gateway-provision time).
 resources:
   - github.com/openshift-online/hypershell/deploy/hub?ref=8eafa6af7a9d615fc65911f481663fc177399e98
+
+# Teach kustomize about CRD references its built-in table doesn't know
+# (Certificate->Issuer, Route->Service), so the overlays' namePrefix rewrites
+# them in lockstep with their targets. See name-references.yaml for the why.
+configurations:
+  - name-references.yaml
