@@ -52,13 +52,16 @@ spec:
             config:
               access.token.claim: "true"
               introspection.token.claim: "true"
+          # Emit realm roles as a top-level `roles` claim: the web-console BFF
+          # reads claims.roles (bff/src/auth.ts) and surfaces it via
+          # /auth/session for role-gated UI.
           - name: realm-roles
             protocol: openid-connect
             protocolMapper: oidc-usermodel-realm-role-mapper
             consentRequired: false
             config:
               multivalued: "true"
-              claim.name: groups
+              claim.name: roles
               jsonType.label: String
               id.token.claim: "true"
               access.token.claim: "true"
