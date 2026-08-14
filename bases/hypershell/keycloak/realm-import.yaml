@@ -1,0 +1,131 @@
+# Realm + clients for hypershell, imported into the operator-managed Keycloak.
+# This is the gitops source of truth for the realm (clients, roles, mappers,
+# redirect URIs) -- it is NOT maintained in the upstream hypershell repo.
+#
+# Dev-grade credentials (client secrets, seed users) are inlined here for int;
+# rotate/externalize before stage/prod.
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: hypershell
+  namespace: keycloak-system
+spec:
+  keycloakCRName: hypershell-keycloak
+  realm:
+    realm: hypershell
+    enabled: true
+    loginTheme: hypershell
+    registrationAllowed: false
+    clients:
+      - clientId: hypershell-frontend
+        enabled: true
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        fullScopeAllowed: true
+        redirectUris:
+          # int web-console (BFF OIDC callback lives under this host).
+          - "https://int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/*"
+          # local development.
+          - "https://console.hypershell.localhost/*"
+          - "https://console.hypershell.localhost:*"
+        webOrigins:
+          - "+"
+        defaultClientScopes:
+          - openid
+          - email
+          - profile
+        protocolMappers:
+          - name: audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: hypershell-frontend
+              id.token.claim: "false"
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+          - name: sub
+            protocol: openid-connect
+            protocolMapper: oidc-sub-mapper
+            consentRequired: false
+            config:
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+          # Emit realm roles as a top-level `roles` claim: the web-console BFF
+          # reads claims.roles (bff/src/auth.ts) and surfaces it via
+          # /auth/session for role-gated UI.
+          - name: realm-roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            consentRequired: false
+            config:
+              multivalued: "true"
+              claim.name: roles
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              introspection.token.claim: "true"
+      - clientId: hypershell-provisioner
+        enabled: true
+        publicClient: false
+        serviceAccountsEnabled: true
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        secret: provisioner-secret
+      - clientId: hypershell-control-plane
+        enabled: true
+        publicClient: false
+        serviceAccountsEnabled: true
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        secret: control-plane-secret
+        protocolMappers:
+          - name: audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: hypershell-frontend
+              id.token.claim: "false"
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+    roles:
+      realm:
+        - name: hypershell-admins
+          description: HyperShell administrators
+        - name: hypershell-users
+          description: HyperShell users
+    users:
+      - username: admin
+        firstName: Admin
+        lastName: User
+        email: admin@hypershell.local
+        emailVerified: true
+        enabled: true
+        credentials:
+          - type: password
+            value: admin
+            temporary: false
+        realmRoles:
+          - hypershell-admins
+          - hypershell-users
+      - username: developer
+        firstName: Developer
+        lastName: User
+        email: developer@hypershell.local
+        emailVerified: true
+        enabled: true
+        credentials:
+          - type: password
+            value: developer
+            temporary: false
+        realmRoles:
+          - hypershell-users
+    clientScopeMappings:
+      hypershell-provisioner:
+        - client: realm-management
+          roles:
+            - manage-clients
+            - manage-users

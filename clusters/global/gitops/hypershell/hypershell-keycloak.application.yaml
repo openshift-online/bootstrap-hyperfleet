@@ -10,7 +10,7 @@ metadata:
 spec:
   destination:
     name: in-cluster
-    namespace: keycloak
+    namespace: keycloak-system
   project: default
   source:
     path: bases/hypershell/keycloak

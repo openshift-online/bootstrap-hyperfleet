@@ -1,0 +1,43 @@
+# INT web-console OIDC wiring (HYPERSHELL-38).
+#
+# The web-console BFF (components/web-console/bff) turns on OIDC login when
+# OIDC_ISSUER is set; it then requires OIDC_CLIENT_ID and SESSION_SECRET. It
+# performs OpenID Connect discovery against the issuer and mounts
+# /auth/login|callback|logout|session. The browser client is public (PKCE, no
+# client secret), matching the realm's `hypershell-frontend` client.
+#
+# The deployment env (OIDC_ISSUER/CLIENT_ID/REDIRECT_URI) is patched in the
+# overlay kustomization; this file supplies the pieces that are resources:
+#   - Secret: SESSION_SECRET (32-byte hex; encrypts the @fastify/secure-session
+#     cookie). namePrefix rewrites this name and the deployment secretKeyRef
+#     together. PLACEHOLDER value below (must be a real 64-char hex 32-byte key;
+#     supply via Vault/sealed-secret before any non-throwaway use). Kept out of
+#     git deliberately, like the prod image-digest placeholders.
+#   - Route: external browser entrypoint. Host must match OIDC_REDIRECT_URI's
+#     host and the realm frontend client's redirectUris
+#     (https://int-hypershell-console.<appdomain>/*).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-web-console-oidc
+type: Opaque
+stringData:
+  # PLACEHOLDER 32-byte hex key — replace with a real secret out-of-band.
+  SESSION_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hypershell-console
+spec:
+  host: int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+  to:
+    kind: Service
+    name: int-hypershell-web-console
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

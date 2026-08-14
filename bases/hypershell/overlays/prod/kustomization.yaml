@@ -11,6 +11,7 @@ namespace: hypershell-prod
 resources:
   - ../../base
   - cnpg.yaml
+  - sso.yaml
 
 namePrefix: prod-
 
@@ -71,6 +72,12 @@ patches:
                     value: "hypershell-prod"
                   - name: GATEWAY_API_BASE_DOMAIN
                     value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+                  # deploy/hub defaults this to rhel9/postgresql-16:1-82, whose
+                  # manifest no longer exists (ImagePullBackOff on gateway DBs).
+                  # Pin to the current postgresql-16 digest (tag :1), which the
+                  # IBM Cloud registry mirror serves; verified pulling on-cluster.
+                  - name: HYPERSHELL_DATABASE_IMAGE
+                    value: "registry.redhat.io/rhel9/postgresql-16@sha256:443369b1681d4997d55bc3fca0d248f4f5555627c0c109d883ef41fbe99554f7"
 
 images:
   - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-api-server-main

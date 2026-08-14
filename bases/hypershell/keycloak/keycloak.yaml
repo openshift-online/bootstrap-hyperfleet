@@ -1,0 +1,71 @@
+# Operator-managed Keycloak (Red Hat build of Keycloak / RHBK operator, already
+# installed on the hub in keycloak-system). ONE shared instance per cluster,
+# serving every hypershell env (int/stage/prod). Replaces the upstream raw
+# dev-mode Deployment.
+#
+# TLS terminates at the OpenShift Route (edge), so Keycloak runs HTTP internally
+# and trusts X-Forwarded-* headers. The api-server in each env validates JWTs
+# against this instance's internal JWKS (HTTP, in-cluster) to avoid a Route/TLS
+# startup dependency; browsers/console reach it over the external https hostname.
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: hypershell-keycloak
+  namespace: keycloak-system
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: keycloak-db-rw
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-creds
+      key: username
+    passwordSecret:
+      name: keycloak-db-creds
+      key: password
+  hostname:
+    hostname: https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+  http:
+    httpEnabled: true
+  proxy:
+    headers: xforwarded
+  # We manage the external Route ourselves (route.yaml) to control host + edge
+  # TLS, so disable the operator's own ingress.
+  ingress:
+    enabled: false
+  # Mount the custom "hypershell" login theme into the operator-managed pod.
+  # Keycloak reads themes from /opt/keycloak/themes at runtime, so mounting the
+  # theme ConfigMaps (pulled as a remote ref in kustomization.yaml) here needs
+  # no custom image. Paths mirror the upstream deploy/base/keycloak Deployment
+  # exactly. podTemplate is a strategic
+  # merge onto the operator's generated pod (container name: keycloak).
+  unsupported:
+    podTemplate:
+      spec:
+        containers:
+          - name: keycloak
+            volumeMounts:
+              - name: hypershell-theme
+                mountPath: /opt/keycloak/themes/hypershell/login/theme.properties
+                subPath: theme.properties
+              - name: hypershell-theme
+                mountPath: /opt/keycloak/themes/hypershell/login/resources/css/login.css
+                subPath: login.css
+              - name: hypershell-theme
+                mountPath: /opt/keycloak/themes/hypershell/login/messages/messages_en.properties
+                subPath: messages_en.properties
+              - name: hypershell-theme-assets
+                mountPath: /opt/keycloak/themes/hypershell/login/resources/img/hypershell-logo.png
+                subPath: hypershell-logo.png
+              - name: hypershell-theme-assets
+                mountPath: /opt/keycloak/themes/hypershell/login/resources/fonts/RedHatText-latin.woff2
+                subPath: RedHatText-latin.woff2
+        volumes:
+          - name: hypershell-theme
+            configMap:
+              name: keycloak-hypershell-theme
+          - name: hypershell-theme-assets
+            configMap:
+              name: keycloak-hypershell-theme-assets
