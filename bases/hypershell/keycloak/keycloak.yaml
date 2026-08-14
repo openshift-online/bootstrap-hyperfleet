@@ -37,8 +37,9 @@ spec:
     enabled: false
   # Mount the custom "hypershell" login theme into the operator-managed pod.
   # Keycloak reads themes from /opt/keycloak/themes at runtime, so mounting the
-  # theme ConfigMaps (theme.yaml) here needs no custom image. Paths mirror the
-  # upstream deploy/base/keycloak Deployment exactly. podTemplate is a strategic
+  # theme ConfigMaps (pulled as a remote ref in kustomization.yaml) here needs
+  # no custom image. Paths mirror the upstream deploy/base/keycloak Deployment
+  # exactly. podTemplate is a strategic
   # merge onto the operator's generated pod (container name: keycloak).
   unsupported:
     podTemplate:
