@@ -11,6 +11,7 @@ namespace: hypershell-prod
 resources:
   - ../../base
   - cnpg.yaml
+  - sso.yaml
 
 namePrefix: prod-
 

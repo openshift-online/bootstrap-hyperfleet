@@ -1,0 +1,22 @@
+# OIDC/SSO wiring consumed by deploy/hub (PR #117). The api-server and
+# controller read these keys from a `hypershell-api-config` Secret:
+#   api-service.jwkCertUrl   -> api-server --jwk-cert-url (internal JWKS; HTTP,
+#                               in-cluster, so no Route/TLS startup dependency)
+#   api-service.issuerUrl    -> controller OIDC_ISSUER (external https issuer)
+#   api-service.clientId     -> controller OIDC_CLIENT_ID
+#   api-service.clientSecret -> controller OIDC_CLIENT_SECRET
+#
+# Points at the shared per-cluster Keycloak (keycloak-system). namePrefix
+# rewrites this Secret's name and the deployment secretKeyRefs together.
+# clientId/secret match the realm's confidential `hypershell-control-plane`
+# client (see bases/hypershell/keycloak/realm-import.yaml); dev-grade secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-api-config
+type: Opaque
+stringData:
+  api-service.jwkCertUrl: "http://hypershell-keycloak-service.keycloak-system.svc.cluster.local:8080/realms/hypershell/protocol/openid-connect/certs"
+  api-service.issuerUrl: "https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
+  api-service.clientId: "hypershell-control-plane"
+  api-service.clientSecret: "control-plane-secret"

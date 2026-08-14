@@ -4,46 +4,19 @@ kind: Kustomization
 # HYPERSHELL-38: this base is a thin passthrough to the hypershell repo, which
 # is the single source of truth. It remote-refs deploy/hub (app-only: api-server,
 # controller, web-console) pinned to a SHA. Env overlays patch only the
-# per-instance bits (namespace, namePrefix, images, domain, DB).
+# per-instance bits (namespace, namePrefix, images, domain, DB, SSO).
 #
 # Deployed separately (NOT here):
 #   - Keycloak: one shared instance per cluster (bases/hypershell/keycloak,
-#     remote-refing deploy/keycloak).
+#     managed by the RHBK operator).
 #   - Platform DB: a CloudNativePG Cluster authored in each env overlay.
 #
-# Pinned to the hypershell main merge commit of PR1 (#113).
+# Auth is fully wired by deploy/hub (via deploy/openshift, PR #117): the
+# api-server gets --enable-jwt/--enable-authz/--jwk-cert-url + auth-bypass flags
+# and the controller gets OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET, all sourced from
+# a `hypershell-api-config` Secret that each env overlay supplies. There is no
+# api-server command override here anymore.
+#
+# Pinned to hypershell main including PR #117 (auth contract).
 resources:
-  - github.com/openshift-online/hypershell/deploy/hub?ref=b98d8017caee635a759135c893cbbf941f55261f
-
-patches:
-  # Enable auth for every env and validate JWTs against the self-hosted Keycloak.
-  # rh-trex only exposes --jwk-cert-url (raw JWKS; iss/aud are not checked) and it
-  # defaults to Red Hat public SSO, so we must point it at Keycloak explicitly.
-  # Internal service URL: one shared Keycloak/realm, avoids a Route/TLS startup
-  # dependency (the JWKS fetch is eager and fatal on failure).
-  - patch: |
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: hypershell-api-server
-        namespace: hypershell-system
-      spec:
-        template:
-          spec:
-            containers:
-              - name: api-server
-                command:
-                  - /usr/local/bin/hypershell
-                  - serve
-                  - --api-server-bindaddress=0.0.0.0:8000
-                  - --grpc-server-bindaddress=0.0.0.0:9000
-                  - --health-check-server-bindaddress=0.0.0.0:8434
-                  - --enable-authz=true
-                  - --enable-jwt=true
-                  - --jwk-cert-url=http://keycloak-service.keycloak.svc.cluster.local:8080/realms/hypershell/protocol/openid-connect/certs
-                  - --db-host-file=/secrets/db.host
-                  - --db-port-file=/secrets/db.port
-                  - --db-name-file=/secrets/db.name
-                  - --db-user-file=/secrets/db.user
-                  - --db-password-file=/secrets/db.password
-                  - --db-sslmode=disable
+  - github.com/openshift-online/hypershell/deploy/hub?ref=b3e533badd0f8144bd16bbb84601ec744263cab8

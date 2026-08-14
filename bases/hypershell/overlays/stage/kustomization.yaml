@@ -10,6 +10,7 @@ namespace: hypershell-stage
 resources:
   - ../../base
   - cnpg.yaml
+  - sso.yaml
 
 namePrefix: stage-
 
