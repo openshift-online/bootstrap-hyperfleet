@@ -11,10 +11,9 @@ kind: Kustomization
 #     remote-refing deploy/keycloak).
 #   - Platform DB: a CloudNativePG Cluster authored in each env overlay.
 #
-# NOTE: the pinned SHA is the tip of the PR1 branch (deploy/hub + deploy/keycloak).
-# Update it to the squash-merge commit on hypershell main once PR1 (#113) merges.
+# Pinned to the hypershell main merge commit of PR1 (#113).
 resources:
-  - github.com/openshift-online/hypershell/deploy/hub?ref=4e532a2267112c64137bb8e31e51efc2faafb15e
+  - github.com/openshift-online/hypershell/deploy/hub?ref=b98d8017caee635a759135c893cbbf941f55261f
 
 patches:
   # Enable auth for every env and validate JWTs against the self-hosted Keycloak.

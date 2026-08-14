@@ -12,10 +12,9 @@ kind: Kustomization
 # Application at a lower sync-wave than the app envs, because the api-server's
 # JWKS fetch is eager and fatal.
 #
-# NOTE: pinned to the PR1 branch tip (deploy/hub + deploy/keycloak). Update to
-# the squash-merge commit on hypershell main once PR1 (#113) merges.
+# Pinned to the hypershell main merge commit of PR1 (#113).
 resources:
-  - github.com/openshift-online/hypershell/deploy/keycloak?ref=4e532a2267112c64137bb8e31e51efc2faafb15e
+  - github.com/openshift-online/hypershell/deploy/keycloak?ref=b98d8017caee635a759135c893cbbf941f55261f
 
 patches:
   # External Route host for browser/OIDC access on this cluster.
