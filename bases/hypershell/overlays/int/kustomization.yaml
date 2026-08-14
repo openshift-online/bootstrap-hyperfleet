@@ -1,86 +1,71 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# INT overlay for hypershell. The base is a passthrough to the upstream
+# deploy/hub (source of truth); this overlay patches only the int-specific bits:
+# namespace, name prefix, controller wiring, the platform DB (CloudNativePG),
+# and image tags. Auth is enabled in the base (shared across envs).
 namespace: hypershell-int
 
 resources:
   - ../../base
+  - cnpg.yaml
 
 namePrefix: int-
 
 patches:
+  # Rename the upstream Namespace object (hypershell-system) to this env's ns.
+  # deploy/hub ships the Namespace with no annotations, so add the block.
   - target:
       kind: Namespace
-      name: hypershell
+      name: hypershell-system
     patch: |
       - op: replace
         path: /metadata/name
         value: hypershell-int
-      - op: replace
-        path: /metadata/annotations/openshift.io~1display-name
-        value: "HyperShell Integration"
+      - op: add
+        path: /metadata/annotations
+        value:
+          openshift.io/display-name: "HyperShell Integration"
 
-  - target:
-      kind: Deployment
-      name: hypershell-controller
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0/value
-        value: "int-hypershell-api-server:9000"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: "http://int-hypershell-api-server:8000"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/2/value
-        value: "hypershell-int"
-      - op: replace
-        path: /spec/template/spec/containers/0/env/4/value
-        value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
-
+  # The sandbox privileged-SCC binding targets a ServiceAccount the controller
+  # creates at runtime (not a manifest resource), so the namespace transformer
+  # leaves its subject at hypershell-system — retarget it to this env's ns.
   - target:
       kind: ClusterRoleBinding
-      name: hypershell-controller
+      name: hypershell-sandbox-scc
     patch: |
       - op: replace
         path: /subjects/0/namespace
         value: hypershell-int
 
-  - target:
+  # Point the controller at this env's api-server, namespace, and cluster domain.
+  # Name-based (not index-based) so it survives upstream env reordering.
+  - patch: |
+      apiVersion: apps/v1
       kind: Deployment
-      name: keycloak
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0/value
-        value: "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
-
-  - target:
-      kind: Secret
-      name: hypershell-db
-    patch: |
-      apiVersion: v1
-      kind: Secret
       metadata:
-        name: hypershell-db
-      stringData:
-        db.host: "int-hypershell-postgres"
-
-  - target:
-      kind: Secret
-      name: sso-credentials
-    patch: |
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: sso-credentials
-      stringData:
-        KEYCLOAK_ADMIN_PASSWORD: "admin"
-        SSO_ISSUER_URL: "http://int-keycloak-service:8080/realms/hypershell"
-        SSO_FRONTEND_ISSUER_URL: "https://int-keycloak-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
-        SSO_CLIENT_SECRET: "dev-secret-do-not-use-in-prod"
-        SSO_REDIRECT_URI: "https://int-hypershell-api-hypershell-int.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/*"
+        name: hypershell-controller
+        namespace: hypershell-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: controller
+                env:
+                  - name: HYPERSHELL_GRPC_SERVER_ADDR
+                    value: "int-hypershell-api-server:9000"
+                  - name: HYPERSHELL_API_SERVER_URL
+                    value: "http://int-hypershell-api-server:8000"
+                  - name: HYPERSHELL_NAMESPACE
+                    value: "hypershell-int"
+                  - name: GATEWAY_API_BASE_DOMAIN
+                    value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
 
 images:
   - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-api-server-main
     newTag: latest
   - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-control-plane-main
+    newTag: latest
+  - name: quay.io/redhat-services-prod/hcm-eng-prod-tenant/hypershell-main/hypershell-web-console-main
     newTag: latest

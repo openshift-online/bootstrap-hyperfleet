@@ -1,0 +1,39 @@
+# Platform backing DB for the hypershell api-server, provisioned by the
+# CloudNativePG operator (installed hub-wide). See int/cnpg.yaml for the
+# rationale; string refs in the Cluster spec are written already-prefixed
+# (stage-) since namePrefix does not rewrite CNPG spec fields.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: hypershell-db
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: hypershell
+      owner: hypershell
+      secret:
+        name: stage-hypershell-db-owner
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-db-owner
+type: kubernetes.io/basic-auth
+stringData:
+  username: hypershell
+  password: "dev-db-password-change-me"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-db
+type: Opaque
+stringData:
+  db.host: "stage-hypershell-db-rw"
+  db.port: "5432"
+  db.name: "hypershell"
+  db.user: "hypershell"
+  db.password: "dev-db-password-change-me"

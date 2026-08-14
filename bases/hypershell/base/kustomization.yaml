@@ -1,21 +1,50 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# HYPERSHELL-38: this base is a thin passthrough to the hypershell repo, which
+# is the single source of truth. It remote-refs deploy/hub (app-only: api-server,
+# controller, web-console) pinned to a SHA. Env overlays patch only the
+# per-instance bits (namespace, namePrefix, images, domain, DB).
+#
+# Deployed separately (NOT here):
+#   - Keycloak: one shared instance per cluster (bases/hypershell/keycloak,
+#     remote-refing deploy/keycloak).
+#   - Platform DB: a CloudNativePG Cluster authored in each env overlay.
+#
+# NOTE: the pinned SHA is the tip of the PR1 branch (deploy/hub + deploy/keycloak).
+# Update it to the squash-merge commit on hypershell main once PR1 (#113) merges.
 resources:
-  - namespace.yaml
-  - postgres.yaml
-  - api-server.yaml
-  - controller.yaml
-  - controller-rbac.yaml
-  - keycloak.yaml
-  - route.yaml
+  - github.com/openshift-online/hypershell/deploy/hub?ref=4e532a2267112c64137bb8e31e51efc2faafb15e
 
-configurations:
-  - name-reference.yaml
-
-configMapGenerator:
-  - name: keycloak-realm-config
-    files:
-      - hypershell-realm.json
-    options:
-      disableNameSuffixHash: true
+patches:
+  # Enable auth for every env and validate JWTs against the self-hosted Keycloak.
+  # rh-trex only exposes --jwk-cert-url (raw JWKS; iss/aud are not checked) and it
+  # defaults to Red Hat public SSO, so we must point it at Keycloak explicitly.
+  # Internal service URL: one shared Keycloak/realm, avoids a Route/TLS startup
+  # dependency (the JWKS fetch is eager and fatal on failure).
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: hypershell-api-server
+        namespace: hypershell-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api-server
+                command:
+                  - /usr/local/bin/hypershell
+                  - serve
+                  - --api-server-bindaddress=0.0.0.0:8000
+                  - --grpc-server-bindaddress=0.0.0.0:9000
+                  - --health-check-server-bindaddress=0.0.0.0:8434
+                  - --enable-authz=true
+                  - --enable-jwt=true
+                  - --jwk-cert-url=http://keycloak-service.keycloak.svc.cluster.local:8080/realms/hypershell/protocol/openid-connect/certs
+                  - --db-host-file=/secrets/db.host
+                  - --db-port-file=/secrets/db.port
+                  - --db-name-file=/secrets/db.name
+                  - --db-user-file=/secrets/db.user
+                  - --db-password-file=/secrets/db.password
+                  - --db-sslmode=disable

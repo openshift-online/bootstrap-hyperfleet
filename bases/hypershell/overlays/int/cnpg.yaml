@@ -1,0 +1,48 @@
+# Platform backing DB for the hypershell api-server, provisioned by the
+# CloudNativePG operator (installed hub-wide). This replaces the bundled
+# postgres that deploy/hub intentionally omits.
+#
+# The api-server reads a Secret named `hypershell-db` (keys db.host/port/name/
+# user/password, mounted via --db-*-file). CNPG's own generated secret has
+# different keys, so we author `hypershell-db` ourselves and keep its password
+# in sync with the CNPG bootstrap owner secret below.
+#
+# NOTE: namePrefix (int-) rewrites every metadata.name here, but NOT the string
+# references inside the CNPG Cluster spec — those are written already-prefixed on
+# purpose (initdb.secret.name -> int-hypershell-db-owner; db.host ->
+# int-hypershell-db-rw, the service CNPG derives from the prefixed cluster name).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: hypershell-db
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: hypershell
+      owner: hypershell
+      secret:
+        name: int-hypershell-db-owner
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-db-owner
+type: kubernetes.io/basic-auth
+stringData:
+  username: hypershell
+  password: "dev-db-password-change-me"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hypershell-db
+type: Opaque
+stringData:
+  db.host: "int-hypershell-db-rw"
+  db.port: "5432"
+  db.name: "hypershell"
+  db.user: "hypershell"
+  db.password: "dev-db-password-change-me"

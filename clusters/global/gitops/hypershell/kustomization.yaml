@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: openshift-gitops
 
 resources:
+  - hypershell-keycloak.application.yaml
   - hypershell-int.application.yaml
   - hypershell-stage.application.yaml
   - hypershell-prod.application.yaml
