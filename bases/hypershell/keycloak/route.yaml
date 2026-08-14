@@ -1,0 +1,21 @@
+# External browser/OIDC entrypoint for the shared Keycloak. TLS terminates here
+# (edge) and forwards HTTP to the operator-created hypershell-keycloak-service;
+# Keycloak trusts X-Forwarded-* (spec.proxy.headers=xforwarded) and advertises
+# the https hostname (spec.hostname.hostname). Host must match that hostname.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: keycloak
+  namespace: keycloak-system
+spec:
+  host: keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+  to:
+    kind: Service
+    name: hypershell-keycloak-service
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

@@ -1,0 +1,32 @@
+# Backing Postgres for the operator-managed Keycloak, provisioned by the
+# CloudNativePG operator (installed hub-wide, see bases/operators/cloudnative-pg).
+# The RHBK operator requires an external database; we give it a dedicated CNPG
+# Cluster in keycloak-system. CNPG creates the `keycloak-db-rw` service.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: keycloak-system
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+      secret:
+        name: keycloak-db-creds
+---
+# Owner/app credentials. CNPG consumes this as the initdb owner; the Keycloak CR
+# reads the same username/password to connect. basic-auth keys (username/password)
+# satisfy both CNPG and the RHBK db.usernameSecret/passwordSecret refs.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-db-creds
+  namespace: keycloak-system
+type: kubernetes.io/basic-auth
+stringData:
+  username: keycloak
+  password: "dev-keycloak-db-password-change-me"
