@@ -1,0 +1,32 @@
+# Kustomize nameReference config for references its built-in table doesn't know.
+#
+# The env overlays apply `namePrefix: <env>-`, which renames the upstream
+# objects (Issuer hypershell-selfsigned -> int-hypershell-selfsigned, Service
+# hypershell-api-server -> int-hypershell-api-server, ...). Kustomize only
+# rewrites references it has an entry for; these CRD fields aren't built in, so
+# the refs were left pointing at the old, now-nonexistent names:
+#
+#   - Certificate.spec.issuerRef.name -> Issuer/ClusterIssuer
+#       CertificateRequest fails "Referenced Issuer not found"; the CA chain
+#       (ca-secret, client, server certs) never issues -> apps Degraded.
+#   - Route.spec.to.name -> Service
+#       the router finds no matching Service -> 503 "all pods are down".
+#
+# Teaching kustomize these references makes them follow the prefixed target
+# names. Declared in this shared passthrough base so all three overlays inherit
+# it (nameReference configs accumulate from bases into the overlay transforms).
+nameReference:
+  - kind: Issuer
+    group: cert-manager.io
+    fieldSpecs:
+      - path: spec/issuerRef/name
+        kind: Certificate
+  - kind: ClusterIssuer
+    group: cert-manager.io
+    fieldSpecs:
+      - path: spec/issuerRef/name
+        kind: Certificate
+  - kind: Service
+    fieldSpecs:
+      - path: spec/to/name
+        kind: Route
