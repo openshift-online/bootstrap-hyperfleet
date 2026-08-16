@@ -63,11 +63,11 @@ patches:
                   - name: HYPERSHELL_API_ORIGIN
                     value: "http://int-hypershell-api-server.hypershell-int.svc.cluster.local:8000"
                   - name: OIDC_ISSUER
-                    value: "https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
+                    value: "https://keycloak.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
                   - name: OIDC_CLIENT_ID
                     value: "hypershell-frontend"
                   - name: OIDC_REDIRECT_URI
-                    value: "https://int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/auth/callback"
+                    value: "https://int-hypershell-console.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/auth/callback"
                   - name: SESSION_SECRET
                     valueFrom:
                       secretKeyRef:
@@ -95,7 +95,7 @@ patches:
                   - name: HYPERSHELL_NAMESPACE
                     value: "hypershell-int"
                   - name: GATEWAY_API_BASE_DOMAIN
-                    value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+                    value: "hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
                   # deploy/hub defaults this to rhel9/postgresql-16:1-82, whose
                   # manifest no longer exists (ImagePullBackOff on gateway DBs).
                   # Pin to the current postgresql-16 digest (tag :1), which the

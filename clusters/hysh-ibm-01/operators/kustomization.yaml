@@ -1,0 +1,85 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# IBM ROKS (hysh-ibm-01) operator profile -- RAW installs, mirrored images.
+#
+# This is the ROKS counterpart to clusters/global/operators (the ROSA/OCP hub,
+# which installs via OLM Subscriptions). hysh-ibm-01 is HyperShift-hosted, so:
+#   - OperatorHub/marketplace catalog pods are unpullable, AND
+#   - node-level image mirroring (IDMS/ImageContentSourcePolicy) is
+#     admission-denied by the HostedCluster's `mirror` policy.
+# So OLM Subscriptions cannot converge here. Every operator is therefore
+# installed from RAW manifests (no Subscription) and every image is repointed to
+# the in-cluster registry mirror -- nodes can pull ONLY IBM registries + the
+# internal registry (image-registry.openshift-image-registry.svc:5000).
+#
+# Prerequisite (one-time, out of band -- nodes cannot reach the source
+# registries): mirror these images into the internal registry with skopeo, into
+# a globally-pullable namespace (`openshift`), before ArgoCD syncs this profile:
+#   quay.io/keycloak/keycloak-operator:26.6.4  -> openshift/keycloak-operator:26.6.4
+#   quay.io/keycloak/keycloak:26.6.4           -> openshift/keycloak:26.6.4
+#   ghcr.io/cloudnative-pg/cloudnative-pg:1.26.1 -> openshift/cloudnative-pg:1.26.1
+#   (agent-sandbox controller is mirrored + repointed by its own overlay.)
+#
+# Operators covered here (the core HyperShell + auth + sandbox stack):
+#   - keycloak-operator  (raw; the OIDC IdP -- unblocks CLI/browser gateway auth)
+#   - cloudnative-pg     (already raw upstream in its base; images mirrored here)
+#   - agent-sandbox      (already raw; image mirrored by its own overlay)
+#   - user-workload-monitoring (ConfigMap only; no image -- reused as-is)
+# Deferred (Helm / OLM, tracked separately): external-secrets, vault,
+# grafana-operator, openshift-pipelines.
+resources:
+  - ../../../bases/operators/keycloak-operator/overlays/raw
+  - ../../../bases/operators/cloudnative-pg/overlays/stable
+  - ../../../bases/operators/agent-sandbox-controller/overlays/v0.5
+  - ../../../clusters/global/operators/user-workload-monitoring
+
+# Repoint every upstream operator image to the internal registry mirror.
+images:
+  - name: quay.io/keycloak/keycloak-operator
+    newName: image-registry.openshift-image-registry.svc:5000/openshift/keycloak-operator
+    newTag: "26.6.4"
+  - name: ghcr.io/cloudnative-pg/cloudnative-pg
+    newName: image-registry.openshift-image-registry.svc:5000/openshift/cloudnative-pg
+    newTag: "1.26.1"
+
+patches:
+  # The Keycloak operator launches the Keycloak SERVER pod from the image in
+  # RELATED_IMAGE_KEYCLOAK (defaults to quay.io/keycloak/keycloak:26.6.4, which
+  # ROKS nodes cannot pull). kustomize `images:` only rewrites container images,
+  # not env values, so repoint the server image to the mirror here -- otherwise
+  # the operator-created Keycloak StatefulSet ImagePullBackOffs.
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: keycloak-operator
+        namespace: keycloak-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: keycloak-operator
+                env:
+                  - name: RELATED_IMAGE_KEYCLOAK
+                    value: image-registry.openshift-image-registry.svc:5000/openshift/keycloak:26.6.4
+
+  # Same self-reference problem for cloudnative-pg: the operator copies its
+  # instance-manager binary into every PostgreSQL pod via an init container
+  # pulled from OPERATOR_IMAGE_NAME (defaults to the ghcr ref). `images:` only
+  # rewrote the operator's own `image:` field, not this env, so repoint it to the
+  # mirror -- otherwise every managed database pod ImagePullBackOffs on ghcr.
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cnpg-controller-manager
+        namespace: cnpg-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: manager
+                env:
+                  - name: OPERATOR_IMAGE_NAME
+                    value: image-registry.openshift-image-registry.svc:5000/openshift/cloudnative-pg:1.26.1

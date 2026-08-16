@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hysh-ibm-01-operators
+  namespace: openshift-gitops
+  annotations:
+    # Wave 2: all operators converge before the Keycloak CR (wave 5) and the
+    # hypershell app envs (wave 10) that depend on them, mirroring the hub's
+    # per-operator wave-2 Applications.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  destination:
+    # Applied while logged into the ROKS cluster; its own openshift-gitops
+    # reconciles this onto itself (hub-of-one). ROKS is HyperShift-hosted and
+    # cannot be an in-cluster OLM target of the ROSA hub, so it runs a standalone
+    # app-of-apps rather than being driven by the hub's cluster ApplicationSet.
+    name: in-cluster
+  project: default
+  source:
+    # The RAW, mirror-repointed operator profile (keycloak + cnpg + agent-sandbox
+    # + user-workload-monitoring). Counterpart to clusters/global/operators, which
+    # installs the same operators via OLM Subscriptions on the ROSA hub.
+    path: clusters/hysh-ibm-01/operators
+    repoURL: 'https://github.com/openshift-online/bootstrap-hyperfleet'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      # CRDs (keycloak, agent-sandbox) land in the same Application as the
+      # Deployments that never reference them at sync time; skip the dry-run that
+      # would fail before the CRD is established.
+      - SkipDryRunOnMissingResource=true

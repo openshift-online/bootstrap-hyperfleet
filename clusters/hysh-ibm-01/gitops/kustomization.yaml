@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ROKS (hysh-ibm-01) app-of-apps root -- the standalone GitOps entrypoint for
+# the IBM cluster, counterpart to clusters/global/gitops for the ROSA hub.
+#
+# ROKS is HyperShift-hosted and cannot be an in-cluster OLM/ApplicationSet target
+# of the hub, so it runs as a "hub of one": install openshift-gitops on the ROKS
+# cluster, then `oc apply -k clusters/hysh-ibm-01/gitops` while logged into it.
+# Its own ArgoCD then reconciles these Applications onto itself (destination
+# name: in-cluster), by sync-wave:
+#   wave 2  operators.application         raw operators + mirrored images
+#   wave 5  hypershell-keycloak           shared OIDC IdP (before any api-server)
+#   wave 10 hypershell env(s)             DEFERRED -- needs app-image mirror
+#                                         overlay + hostname reconciliation
+#                                         (see clusters/hysh-ibm-01/README).
+namespace: openshift-gitops
+
+resources:
+  - operators.application.yaml
+  - hypershell-keycloak.application.yaml
+  - repo-url-patch.yaml
+
+# Override repoURL for project forks, matching the hub's convention so a fork can
+# repoint every ROKS Application from one ConfigMap.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: repo-config
+      fieldPath: data.repoURL
+    targets:
+      - select:
+          kind: Application
+        fieldPaths:
+          - spec.source.repoURL
+        reject:
+          - annotationSelector: external-repo=true

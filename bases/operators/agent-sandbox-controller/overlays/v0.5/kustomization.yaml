@@ -6,5 +6,5 @@ resources:
 
 images:
   - name: patch-me-see-overlays-dir
-    newName: image-registry.openshift-image-registry.svc:5000/hypershell/agent-sandbox-controller
-    newTag: v0.5.1
+    newName: image-registry.openshift-image-registry.svc:5000/openshift/agent-sandbox-controller
+    newTag: v0.5.5

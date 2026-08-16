@@ -8,7 +8,7 @@ metadata:
   name: keycloak
   namespace: keycloak-system
 spec:
-  host: keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+  host: keycloak.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
   to:
     kind: Service
     name: hypershell-keycloak-service

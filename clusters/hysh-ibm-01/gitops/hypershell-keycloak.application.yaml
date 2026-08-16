@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hysh-ibm-01-keycloak
+  namespace: openshift-gitops
+  annotations:
+    # Wave 5, like the hub: the shared Keycloak (the OIDC IdP that unblocks
+    # gateway CLI/browser auth) must be Running before any api-server, whose JWKS
+    # fetch is eager and fatal on failure.
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  destination:
+    name: in-cluster
+    namespace: keycloak-system
+  project: default
+  source:
+    # Reused UNCHANGED from the hub. The Keycloak/KeycloakRealmImport CRs set no
+    # spec.image, so the server + realm-import images come from the operator's
+    # RELATED_IMAGE_KEYCLOAK -- which the ROKS operator profile repoints to the
+    # in-cluster mirror. Same v2beta1 CRDs on the raw operator as on RHBK, so the
+    # base needs no ROKS-specific fork.
+    path: bases/hypershell/keycloak
+    repoURL: 'https://github.com/openshift-online/bootstrap-hyperfleet'
+    targetRevision: main
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
