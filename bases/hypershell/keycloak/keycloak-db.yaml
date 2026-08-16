@@ -9,6 +9,11 @@ metadata:
   namespace: keycloak-system
 spec:
   instances: 1
+  # CNPG's default operand (ghcr.io/cloudnative-pg/postgresql) is unpullable on
+  # ROKS nodes, so pin the mirrored copy in the internal registry. Set here
+  # (not via kustomize images:) because CNPG reads spec.imageName to launch the
+  # Postgres pods, and images: only rewrites container image: fields.
+  imageName: image-registry.openshift-image-registry.svc:5000/openshift/cnpg-postgresql:17.5
   storage:
     size: 5Gi
   bootstrap:

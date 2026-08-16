@@ -17,6 +17,6 @@ metadata:
 type: Opaque
 stringData:
   api-service.jwkCertUrl: "http://hypershell-keycloak-service.keycloak-system.svc.cluster.local:8080/realms/hypershell/protocol/openid-connect/certs"
-  api-service.issuerUrl: "https://keycloak.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
+  api-service.issuerUrl: "https://keycloak.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/realms/hypershell"
   api-service.clientId: "hypershell-control-plane"
   api-service.clientSecret: "control-plane-secret"

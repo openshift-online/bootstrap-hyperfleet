@@ -61,7 +61,7 @@ patches:
                   - name: HYPERSHELL_NAMESPACE
                     value: "hypershell-stage"
                   - name: GATEWAY_API_BASE_DOMAIN
-                    value: "hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
+                    value: "hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud"
                   # deploy/hub defaults this to rhel9/postgresql-16:1-82, whose
                   # manifest no longer exists (ImagePullBackOff on gateway DBs).
                   # Pin to the current postgresql-16 digest (tag :1), which the

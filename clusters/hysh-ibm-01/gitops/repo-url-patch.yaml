@@ -1,0 +1,13 @@
+# Repository configuration for project-specific forks (ROKS app-of-apps).
+#
+# Mirrors clusters/global/gitops/repo-url-patch.yaml: the replacements block in
+# this directory's kustomization.yaml stamps this repoURL onto every ROKS
+# Application's spec.source.repoURL. To deploy from a fork, update the value.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: repo-config
+  namespace: openshift-gitops
+data:
+  # UPDATE THIS TO YOUR FORK
+  repoURL: "https://github.com/openshift-online/bootstrap-hyperfleet"

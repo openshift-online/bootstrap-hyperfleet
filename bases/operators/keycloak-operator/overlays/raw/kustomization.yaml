@@ -1,0 +1,50 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# RAW (non-OLM) upstream community Keycloak Operator install.
+#
+# For clusters WITHOUT a working OperatorHub -- e.g. IBM ROKS / HyperShift,
+# where the redhat-operators marketplace catalog is unpullable AND node-level
+# image mirroring (IDMS/ICSP) is admission-denied -- so the OLM `Subscription`
+# overlay (../stable-v26) cannot converge. This overlay installs the operator
+# from vendored raw manifests instead: CRDs + RBAC + Deployment, no OLM.
+#
+# It serves the SAME k8s.keycloak.org/v2beta1 CRDs (Keycloak,
+# KeycloakRealmImport) as the RHBK operator the OLM overlay installs, so
+# bases/hypershell/keycloak reconciles UNCHANGED on either flavor. RHBK is Red
+# Hat's downstream build of this exact operator.
+#
+# Images stay at their upstream (quay.io) refs here -- this overlay is the
+# cloud-agnostic RAW mechanism. Repointing to an in-cluster registry mirror is
+# layered by the cloud profile (see clusters/hysh-ibm-01/operators), NOT here.
+#
+# Vendored from github.com/keycloak/keycloak-k8s-resources @ 26.6.4
+# (kubernetes/{kubernetes,keycloaks.*,keycloakrealmimports.*}.yml). 26.6.4 is
+# the community line that matches RHBK stable-v26 and is the first 26.6.x to
+# serve v2beta1 (26.5.x and earlier served v2alpha1). To bump: re-vendor the
+# three files at the new tag and update the resource refs + filenames below.
+#
+# The operator watches its own namespace (JOSDK_WATCH_CURRENT), so it must run
+# in keycloak-system alongside the Keycloak CRs -- the namespace transformer
+# below places it (and rewrites the RoleBinding/ClusterRoleBinding subjects the
+# upstream manifest hardcodes to `keycloak`).
+namespace: keycloak-system
+
+resources:
+  - namespace.yaml
+  - vendor/keycloaks.crd-26.6.4.yml
+  - vendor/keycloakrealmimports.crd-26.6.4.yml
+  - vendor/keycloak-operator-26.6.4.yml
+
+patches:
+  # kustomize's namespace transformer rewrites ServiceAccount subject
+  # namespaces in RoleBindings but NOT in ClusterRoleBindings, so the upstream
+  # subject stays pinned to `keycloak`. Retarget it to keycloak-system, else the
+  # operator ServiceAccount never actually binds the cluster role.
+  - target:
+      kind: ClusterRoleBinding
+      name: keycloak-operator-clusterrole-binding
+    patch: |
+      - op: replace
+        path: /subjects/0/namespace
+        value: keycloak-system

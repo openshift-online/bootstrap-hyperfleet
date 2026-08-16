@@ -25,7 +25,7 @@ spec:
         fullScopeAllowed: true
         redirectUris:
           # int web-console (BFF OIDC callback lives under this host).
-          - "https://int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/*"
+          - "https://int-hypershell-console.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud/*"
           # local development.
           - "https://console.hypershell.localhost/*"
           - "https://console.hypershell.localhost:*"

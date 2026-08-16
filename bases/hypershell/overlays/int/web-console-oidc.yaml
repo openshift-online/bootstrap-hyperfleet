@@ -30,7 +30,7 @@ kind: Route
 metadata:
   name: hypershell-console
 spec:
-  host: int-hypershell-console.hypershell-cluster-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
+  host: int-hypershell-console.hysh-ibm-01-4c28435107377e996c6eb39230b7bcf5-0000.us-east.containers.appdomain.cloud
   to:
     kind: Service
     # Unprefixed: the Route->Service nameReference (bases/hypershell/base) lets
